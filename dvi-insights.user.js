@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.18
+// @version      0.4.22
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -2809,6 +2809,13 @@ SOFTWARE.
       "客户端已更新，规则待校验": "Client updated; rules need verification",
       "工作 {work}；跑路 {walk}；存取 {bank}；被抓 {stun}；95% 尝试预算 {attempts} 次":
         "Work {work}; travel {walk}; banking {bank}; stun {stun}; 95% attempt budget {attempts}",
+      时间明细: "Time details",
+      工作时间: "Work time",
+      移动时间: "Travel time",
+      存取时间: "Banking time",
+      被抓耗时: "Stun time",
+      "95% 尝试预算 {attempts} 次": "95% attempt budget: {attempts}",
+      "更新中…": "Updating…",
       "单田估算，未计多田与跑路": "Single field; excludes multi-field travel",
       "约 {count} 次 · {time}": "~{count} attempts · {time}",
       材料: "Materials",
@@ -17868,16 +17875,16 @@ SOFTWARE.
       ],
     },
     version: {
-      version: "1.0.2206",
+      version: "1.0.2247",
       env: "live",
-      commit: "20073e14",
+      commit: "3f4d2be7",
       branch: "professions",
-      subject: "Merge night-fixes into professions",
-      committedAt: "2026-10-10T08:31:59+02:00",
+      subject: "Changelog 1.0.1185: faster loading and smoother crowds",
+      committedAt: "2026-10-11T06:29:31+02:00",
       dirty: true,
-      builtAt: "2026-10-10T06:33:37.444Z",
+      builtAt: "2026-10-11T04:36:05.161Z",
     },
-    clientAsset: "index-D6Kqxt3a.js",
+    clientAsset: "index-Dv9cdUtd.js",
     labels: {
       Copper: "铜矿",
       Tin: "锡矿",
@@ -18178,7 +18185,7 @@ SOFTWARE.
       "Vein of gems": "宝石矿脉",
       "Hoard of gems": "宝石堆",
     },
-    sourceSha256: "fe655aa68301c21ef8c00e65bd335c8718da15bf3c33f425a1dbc1d4682b2c65",
+    sourceSha256: "36a359b70adc95df9019e48b63290373e7cd8393cef8b52a17b524d299ab6a22",
   };
 
   // ---- Local forecast worker ----
@@ -35351,6 +35358,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       document.documentElement.classList.add("dvi-insights");
     if (!appearanceStyle.isConnected) document.documentElement.append(appearanceStyle);
     polishBossRows();
+    polishBossPanel();
     polishGuildLayout();
     polishGuildList();
     polishGuildPresentations();
@@ -35840,6 +35848,521 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (document.hidden) bossAnnouncement.dismiss();
   });
   window.addEventListener("pagehide", () => bossAnnouncement.dispose());
+
+  // ---- src/boss-panel-ui.js ----
+  /* Decorate native raid data and controls. Never starts, leaves or changes combat. */
+  function bossDamageValue(text) {
+    const match = String(text)
+      .replace(/,/g, "")
+      .trim()
+      .match(/^(\d+(?:\.\d+)?)\s*([KMB])?$/i);
+    return match
+      ? Math.round(Number(match[1]) * ({ K: 1e3, M: 1e6, B: 1e9 }[match[2]?.toUpperCase()] || 1))
+      : null;
+  }
+  function bossPanelPosition(position, width, height, viewWidth, viewHeight) {
+    const edge = 8,
+      maxX = Math.max(edge, viewWidth - width - edge),
+      maxY = Math.max(edge, viewHeight - height - edge);
+    return {
+      x: Math.min(maxX, Math.max(edge, Number(position.x) || edge)),
+      y: Math.min(maxY, Math.max(edge, Number(position.y) || edge)),
+    };
+  }
+  const bossPanelNodes = new WeakMap(),
+    bossDamageRecords = new WeakMap();
+  let bossFloatingPosition = null;
+  function positionBossPanel(panel, position) {
+    const rect = panel.getBoundingClientRect(),
+      safe = bossPanelPosition(position, rect.width, rect.height, innerWidth, innerHeight);
+    const nodes = bossPanelNodes.get(panel);
+    if (nodes && !nodes.anchor) {
+      nodes.anchor = document.createComment("DVI boss position");
+      panel.before(nodes.anchor);
+      document.body.append(panel);
+    }
+    panel.style.left = safe.x + "px";
+    panel.style.top = safe.y + "px";
+    panel.classList.add("dvi-boss-floating");
+    bossFloatingPosition = safe;
+  }
+  function bindBossPanel(panel) {
+    const row = panel.querySelector(".boss-banner-row");
+    if (!row) return null;
+    const drag = document.createElement("button");
+    drag.type = "button";
+    drag.className = "dvi-boss-drag";
+    drag.dataset.noI18n = "";
+    row.prepend(drag);
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "dvi-boss-reset";
+    reset.dataset.noI18n = "";
+    reset.textContent = "↺";
+    row.append(reset);
+    reset.addEventListener("click", () => {
+      bossFloatingPosition = null;
+      const nodes = bossPanelNodes.get(panel);
+      if (nodes?.anchor) {
+        nodes.anchor.replaceWith(panel);
+        nodes.anchor = null;
+      }
+      panel.classList.remove("dvi-boss-floating");
+      panel.style.removeProperty("left");
+      panel.style.removeProperty("top");
+    });
+    let moving = null;
+    drag.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const rect = panel.getBoundingClientRect();
+      positionBossPanel(panel, { x: rect.left, y: rect.top });
+      moving = { id: e.pointerId, x: e.clientX, y: e.clientY, left: rect.left, top: rect.top };
+      drag.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    drag.addEventListener("pointermove", (e) => {
+      if (!moving || moving.id !== e.pointerId) return;
+      positionBossPanel(panel, {
+        x: moving.left + e.clientX - moving.x,
+        y: moving.top + e.clientY - moving.y,
+      });
+    });
+    const end = () => {
+      moving = null;
+    };
+    drag.addEventListener("pointerup", end);
+    drag.addEventListener("pointercancel", end);
+    drag.addEventListener("lostpointercapture", end);
+    drag.addEventListener("keydown", (e) => {
+      const steps = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] },
+        step = steps[e.key];
+      if (!step) return;
+      e.preventDefault();
+      const rect = panel.getBoundingClientRect(),
+        amount = e.shiftKey ? 40 : 10;
+      positionBossPanel(panel, { x: rect.left + step[0] * amount, y: rect.top + step[1] * amount });
+    });
+    const details = document.createElement("details");
+    details.className = "dvi-boss-tactics";
+    details.dataset.noI18n = "";
+    const summary = document.createElement("summary");
+    details.append(summary);
+    const pace = panel.querySelector(".boss-pace"),
+      odds = panel.querySelector(".boss-odds");
+    if (pace) {
+      pace.before(details);
+      details.append(pace);
+    }
+    if (odds) details.append(odds);
+    const label = document.createElement("div");
+    label.className = "dvi-boss-ranking-label";
+    label.dataset.noI18n = "";
+    label.append(document.createElement("span"), document.createElement("span"));
+    panel.querySelector(".boss-top-wrap")?.prepend(label);
+    const group = panel.querySelector(".boss-group");
+    if (group) label.append(group);
+    const footer = document.createElement("div");
+    footer.className = "dvi-boss-footer";
+    const food = panel.querySelector(".boss-food-toggle");
+    if (food) {
+      food.before(footer);
+      footer.append(food);
+    }
+    for (const button of panel.querySelectorAll(".boss-run,.boss-leave,.boss-deliver"))
+      footer.append(button);
+    const nodes = { drag, reset, details, summary, label };
+    bossPanelNodes.set(panel, nodes);
+    if (bossFloatingPosition) positionBossPanel(panel, bossFloatingPosition);
+    return nodes;
+  }
+  const bossPanelStyle = document.createElement("style");
+  bossPanelStyle.textContent = `
+html.dvi-insights:not(.m-on) .boss-stack {
+  width: min(344px, calc(100vw - 16px));
+}
+html.dvi-insights .boss-banner {
+  position: relative;
+  z-index: 1;
+  padding: 8px 10px;
+  border-radius: 2px;
+  max-height: calc(100dvh - 80px);
+  overflow: auto;
+  pointer-events: auto;
+}
+html.dvi-insights .boss-banner.dvi-boss-floating {
+  position: fixed !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  width: min(344px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  z-index: 120;
+}
+html.dvi-insights .boss-banner-row {
+  grid-template-columns: 18px minmax(0, 1fr) auto 20px 20px;
+  gap: 3px 5px;
+  align-items: center;
+  margin: 0;
+}
+html.dvi-insights .boss-banner .boss-banner-row > .boss-name {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 15px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.dvi-insights .boss-banner .boss-banner-row > .boss-fears {
+  grid-column: 2/-1;
+  grid-row: 2;
+  font-size: 10px;
+  white-space: normal;
+}
+html.dvi-insights .boss-banner .boss-banner-row > .boss-time {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 10px;
+}
+html.dvi-insights .boss-banner .boss-banner-row > .boss-frac {
+  grid-column: 2/-1;
+  grid-row: 3;
+  font-size: 10px;
+  margin-bottom: 3px;
+}
+html.dvi-insights .boss-banner .boss-banner-row > .boss-x {
+  grid-column: 5;
+  grid-row: 1;
+  padding: 0;
+  width: 20px;
+  min-height: 20px;
+  margin: 0;
+}
+html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset) {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font: 400 17px/1 var(--sans);
+  min-height: 24px;
+}
+.dvi-boss-drag {
+  grid-column: 1;
+  grid-row: 1/3;
+  cursor: grab;
+  touch-action: none;
+}
+.dvi-boss-drag:active {
+  cursor: grabbing;
+}
+.dvi-boss-reset {
+  grid-column: 4;
+  grid-row: 1;
+  cursor: pointer;
+}
+html.dvi-insights .boss-bar {
+  height: 5px;
+  border-radius: 0;
+  margin: 2px 0 5px;
+}
+.dvi-boss-ranking-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  margin-bottom: 3px;
+}
+html.dvi-insights .boss-top:not([hidden]) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 8px;
+}
+html.dvi-insights .boss-top-row {
+  position: relative;
+  isolation: isolate;
+  grid-template-columns: 29px minmax(0, 1fr) auto;
+  min-height: 24px;
+  padding: 3px 4px;
+  gap: 5px;
+  font-size: 11px;
+}
+html.dvi-insights .boss-top-row:before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 38px;
+  right: 4px;
+  bottom: 1px;
+  height: 2px;
+  background: var(--edge);
+  opacity: 0.45;
+}
+html.dvi-insights .boss-top-row:after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 38px;
+  bottom: 1px;
+  width: calc((100% - 42px) * var(--dvi-boss-ratio, 0));
+  height: 2px;
+  background: var(--brass);
+}
+html.dvi-insights .boss-top-row > b {
+  text-align: center;
+  font-size: 11px;
+}
+html.dvi-insights .boss-top-row > i {
+  font: 400 14px/1.1 var(--sans);
+  color: var(--ink);
+  white-space: nowrap;
+}
+html.dvi-insights .boss-top-row[data-dvi-rank="1"] {
+  grid-column: 1/-1;
+  min-height: 44px;
+  border-bottom: 1px solid var(--edge);
+}
+html.dvi-insights .boss-top-row[data-dvi-rank="1"] > i {
+  font-size: 24px;
+  color: var(--brass);
+}
+html.dvi-insights .boss-top-row[data-dvi-rank="1"] .dvi-boss-name {
+  font-size: 14px;
+  color: var(--ink);
+}
+html.dvi-insights .boss-top-row[data-dvi-rank="1"] > b {
+  width: 29px;
+  align-self: center;
+  font: 500 27px/1 var(--mono);
+  letter-spacing: -1px;
+  color: var(--brass) !important;
+  border-bottom: 2px solid var(--brass);
+  padding-bottom: 5px;
+}
+html.dvi-insights .boss-top-row:is([data-dvi-rank="2"], [data-dvi-rank="3"]) > b {
+  width: 23px;
+  font: 400 18px/1.2 var(--mono);
+  border-bottom: 1px solid currentColor;
+  color: var(--ink-muted) !important;
+}
+html.dvi-insights .boss-top-row[data-dvi-rank="2"] > b {
+  color: color-mix(in srgb, var(--ink) 55%, #8c9bb0) !important;
+}
+html.dvi-insights .boss-top-row[data-dvi-rank="3"] > b {
+  color: color-mix(in srgb, var(--brass) 65%, var(--ink)) !important;
+}
+html.dvi-insights .boss-top-row:not([data-dvi-rank="1"]):not(.boss-you) {
+  grid-template-columns: 23px minmax(0, 1fr) auto;
+  gap: 4px;
+}
+html.dvi-insights .boss-top-row:not([data-dvi-rank="1"]):not(.boss-you) > b {
+  grid-row: 1;
+}
+html.dvi-insights .boss-top-row:not([data-dvi-rank="1"]):not(.boss-you) > i {
+  grid-column: 3;
+  font-size: 13px;
+}
+.dvi-boss-lead {
+  font-size: 10px;
+  color: var(--brass);
+  padding-left: 6px;
+}
+html.dvi-insights .boss-top-row[data-dvi-rank="1"] .dvi-boss-lead {
+  display: block;
+  padding-left: 0;
+  margin-top: 2px;
+}
+html.dvi-insights .boss-top-row.boss-you {
+  margin-top: 4px;
+  padding: 4px;
+  grid-template-columns: minmax(29px, max-content) minmax(0, 1fr) auto;
+  border-radius: 0;
+  min-height: 28px;
+}
+html.dvi-insights .boss-banner .boss-group {
+  position: static;
+  display: inline-block;
+  margin: 0;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 10px;
+}
+html.dvi-insights .boss-banner .boss-group[hidden] {
+  display: none;
+}
+html.dvi-insights .boss-banner .dvi-boss-ranking-label {
+  align-items: center;
+}
+html.dvi-insights .boss-banner .dvi-boss-ranking-label > span:nth-child(2) {
+  margin-left: auto;
+  font-size: 9px;
+}
+html.dvi-insights .dvi-boss-tactics {
+  margin: 4px 0;
+  font-size: 10px;
+}
+html.dvi-insights .dvi-boss-tactics > summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+  padding: 3px 0;
+  font-size: 10px;
+}
+html.dvi-insights .dvi-boss-tactics .boss-pace {
+  font-size: 11px;
+  margin: 4px 0;
+}
+html.dvi-insights .boss-banner .dvi-boss-footer {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  margin-top: 4px;
+}
+html.dvi-insights
+  .boss-banner
+  .dvi-boss-footer
+  > :is(.boss-leave, .boss-run, .boss-deliver, .boss-food-toggle) {
+  flex: 1;
+  margin: 0;
+  min-height: 29px;
+  font-size: 11px;
+  padding: 3px 6px;
+  width: auto;
+}
+html.dvi-insights .boss-banner .boss-food {
+  font-size: 11px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+html.dvi-insights .boss-banner :is(.boss-food-name, .boss-food-note, .boss-food-bank) {
+  flex-basis: 100%;
+  min-width: 0;
+}
+html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+@media (max-width: 400px) {
+  html.dvi-insights .boss-banner-row {
+    gap: 3px;
+  }
+  html.dvi-insights .boss-name {
+    font-size: 13px;
+  }
+  html.dvi-insights .boss-top-row[data-dvi-rank="1"] > i {
+    font-size: 22px;
+  }
+}
+`;
+  function polishBossPanel() {
+    for (const panel of document.querySelectorAll(".boss-banner")) {
+      if (!bossPanelStyle.isConnected) document.documentElement.append(bossPanelStyle);
+      const nodes = bossPanelNodes.get(panel) || bindBossPanel(panel);
+      if (!nodes) continue;
+      if (nodes.anchor && !nodes.anchor.isConnected) {
+        panel.remove();
+        continue;
+      }
+      const zh = i18n.language === "zh";
+      if (nodes.language !== i18n.language) {
+        nodes.language = i18n.language;
+        setNativeText(nodes.drag, "⠿");
+        nodes.drag.setAttribute(
+          "aria-label",
+          zh ? "拖动首领窗口；方向键移动" : "Move boss window; use arrow keys",
+        );
+        nodes.drag.title = zh
+          ? "拖动 · 方向键移动 · Shift 加速"
+          : "Drag · Arrow keys move · Shift for larger steps";
+        nodes.reset.title = zh ? "恢复默认位置" : "Reset position";
+        nodes.reset.setAttribute("aria-label", nodes.reset.title);
+      }
+      const paceValues = [...panel.querySelectorAll(".boss-pace:not(.boss-odds) i")]
+        .slice(0, 2)
+        .map((n) => n.textContent.trim());
+      setNativeText(
+        nodes.summary,
+        paceValues.length === 2
+          ? (zh ? "你 " : "You ") +
+              paceValues[0] +
+              "/s · " +
+              (zh ? "全团 " : "Raid ") +
+              paceValues[1] +
+              "/s"
+          : zh
+            ? "战况 · 攻速 / 命中"
+            : "Combat · DPS / hit chance",
+      );
+      setNativeText(nodes.label.children[0], zh ? "伤害贡献" : "DAMAGE RANKING");
+      setNativeText(nodes.label.children[1], zh ? "条长相对榜首" : "Bars relative to #1");
+      const rows = [...panel.querySelectorAll(".boss-top-row")],
+        entries = rows
+          .map((row) => {
+            const damage = row.querySelector("i");
+            if (!damage) return null;
+            let record = bossDamageRecords.get(damage);
+            if (!record || record.display !== damage.textContent) {
+              record = {
+                raw: damage.textContent,
+                value: bossDamageValue(damage.textContent),
+                display: damage.textContent,
+              };
+              bossDamageRecords.set(damage, record);
+            }
+            return { row, damage, record };
+          })
+          .filter(Boolean),
+        leader = entries.find((x) => x.row.querySelector("b")?.textContent.trim() === "1")?.record
+          .value;
+      const first = entries.find((x) => x.row.querySelector("b")?.textContent.trim() === "1"),
+        second = entries.find((x) => x.row.querySelector("b")?.textContent.trim() === "2");
+      if (first && second?.record.value > 0) {
+        let lead = first.row.querySelector(".dvi-boss-lead");
+        if (!lead) {
+          lead = document.createElement("small");
+          lead.className = "dvi-boss-lead";
+          first.row.querySelector(".dvi-boss-name")?.append(lead);
+        }
+        if (lead)
+          setNativeText(
+            lead,
+            (zh ? "领先 ≈" : "Lead ≈") +
+              Math.max(0, (leader / second.record.value - 1) * 100).toFixed(1) +
+              "%",
+          );
+      } else first?.row.querySelector(".dvi-boss-lead")?.remove();
+      for (const { row, damage, record } of entries) {
+        const rank = row.querySelector("b")?.textContent.trim() || "";
+        if (row.dataset.dviRank !== rank) row.dataset.dviRank = rank;
+        if (record.value === null) continue;
+        const display = fmt(record.value);
+        setNativeText(damage, display);
+        record.display = display;
+        const ratio = leader > 0 ? Math.min(1, record.value / leader) : 0;
+        row.style.setProperty("--dvi-boss-ratio", String(ratio));
+        const title =
+          record.raw +
+          " · " +
+          (zh ? "相对榜首 ≈" : "Relative to #1: ≈") +
+          (ratio * 100).toFixed(1) +
+          "%";
+        if (record.title !== title) {
+          damage.title = title;
+          record.title = title;
+        }
+      }
+      if (panel.classList.contains("dvi-boss-floating")) {
+        const rect = panel.getBoundingClientRect();
+        positionBossPanel(panel, { x: rect.left, y: rect.top });
+      }
+    }
+  }
+  window.addEventListener("resize", () => {
+    for (const panel of document.querySelectorAll(".dvi-boss-floating")) {
+      const rect = panel.getBoundingClientRect();
+      positionBossPanel(panel, { x: rect.left, y: rect.top });
+    }
+  });
 
   // ---- src/guild-presentation-ui.js ----
   /* Local presentations of values already rendered by the native guild pages. */
@@ -36643,15 +37166,14 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     }
     return restores;
   }
-  function battleSignature(p) {
-    const start = p.lastTick || 0,
-      end = start + 6000;
-    // Renewing a buff already covering this hour does not change this forecast.
-    // Potion quality transitions within the hour remain part of the signature.
-    const coverage = ["fed", "rooted", "blessing"].map((kind) =>
-      Math.max(0, Math.min(6000, (p.brews?.[kind] || 0) - start)),
+
+  function battleConfiguration(p) {
+    const tick = p.lastTick || 0;
+    const buffs = ["fed", "rooted", "blessing"].map((kind) => (p.brews?.[kind] || 0) > tick);
+    const strength = globalThis.DVICombat.kinds.map((kind) =>
+      (p.brews?.[kind] || 0) > tick ? model.brewTier(p, kind, tick) + 1 : 0,
     );
-    const potions = globalThis.DVICombat.potionFlow(model, p, start, end);
+    const activeWindows = store.state.windows.filter((w) => tick >= w.fromTick && tick <= w.toTick);
     return JSON.stringify([
       p.id,
       Object.fromEntries(
@@ -36665,13 +37187,25 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       p.masteries,
       p.house,
       p.houseFurniture,
-      coverage,
-      potions,
+      buffs,
+      strength,
       p.guildBonus,
       p.eatAt,
       globalThis.DVICombat.selectedFood(model, p),
-      store.state.windows,
+      activeWindows,
+      model.rotation(tick),
     ]);
+  }
+  function battleSignature(p) {
+    const start = p.lastTick || 0,
+      end = start + 6000;
+    // Renewing a buff already covering this hour does not change this forecast.
+    // Potion quality transitions within the hour remain part of the signature.
+    const coverage = ["fed", "rooted", "blessing"].map((kind) =>
+      Math.max(0, Math.min(6000, (p.brews?.[kind] || 0) - start)),
+    );
+    const potions = globalThis.DVICombat.potionFlow(model, p, start, end);
+    return JSON.stringify([battleConfiguration(p), coverage, potions, store.state.windows]);
   }
   function syncBattleRows() {
     const p = store.state.player;
@@ -36680,7 +37214,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       battlePlayerId = p.id;
       battleCache.clear();
     }
-    const signature = battleSignature(p);
+    const signature = battleSignature(p),
+      configuration = battleConfiguration(p);
     for (const list of document.querySelectorAll("[data-routes]")) {
       const rows = list.querySelectorAll(".route[data-zone]");
       if (!rows.length) continue;
@@ -36710,10 +37245,14 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           row.insertAdjacentElement("afterend", record.box);
         record.box.hidden = row.disabled;
         const entry = battleCache.get(monster.id),
-          valid = entry?.signature === signature;
-        setNativeText(record.box.querySelector(".dvi-native-action"), "");
+          valid = entry?.signature === signature,
+          sameConfig = entry?.configuration === configuration;
+        setNativeText(
+          record.box.querySelector(".dvi-native-action"),
+          sameConfig && entry?.pending && entry.result ? t("更新中…") : "",
+        );
         const summary = record.box.querySelector("[data-battle-profit]");
-        if (valid && entry.result) {
+        if (sameConfig && entry.result) {
           const result = entry.result,
             profit = globalThis.DVIPlannerCore.dailyProfits(
               result.hour,
@@ -36764,24 +37303,29 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           const detail = record.box.querySelector("[data-battle-detail]");
           if (detail.innerHTML) detail.innerHTML = "";
         }
+        // A rolling one-hour horizon changes on every tick near buff expiry.
+        // Refresh it once per minute, while real stat/strength changes bypass the
+        // interval. Keep the last compatible snapshot visible during the worker.
         if (
           !battlePending &&
           !row.disabled &&
           visible(row) &&
-          (!valid || Date.now() - entry.at > 60000)
+          (!sameConfig || Date.now() - entry.at >= 60000)
         ) {
           battlePending = true;
           const player = playerCopy(p),
             current = {
               signature,
+              configuration,
               at: Date.now(),
-              player: valid && entry.result ? entry.player : player,
-              result: valid ? entry.result : undefined,
+              pending: true,
+              player: sameConfig && entry.result ? entry.player : player,
+              result: sameConfig ? entry.result : undefined,
             };
           battleCache.set(monster.id, current);
           localInsight("battle", {
             player,
-            windows: store.state.windows,
+            windows: JSON.parse(JSON.stringify(store.state.windows)),
             monsterId: monster.id,
             samples: 16,
           })
@@ -36791,11 +37335,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
                 current.player = player;
               },
               () => {
-                current.result = null;
                 current.error = true;
               },
             )
             .finally(() => {
+              current.pending = false;
               battlePending = false;
               scheduleNative();
             });
@@ -37034,6 +37578,17 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     nativeQueue = [],
     nativeCache = new Map();
   const nativeLists = new WeakMap();
+  const nativeResultMarkup = new WeakMap();
+  // Tooltip titles and disclosure attributes change in the live DOM. Compare the
+  // source markup instead, so routine scans keep the hovered element connected.
+  function updateNativeResult(container, html) {
+    const previous = nativeResultMarkup.get(container);
+    if (previous?.html === html && previous.firstChild === container.firstChild) return;
+    const open = Array.from(container.querySelectorAll("details")).map((x) => x.open);
+    container.innerHTML = html;
+    container.querySelectorAll("details").forEach((x, i) => (x.open = !!open[i]));
+    nativeResultMarkup.set(container, { html, firstChild: container.firstChild });
+  }
   const nativeListIds = (list) =>
     Array.from(list.querySelectorAll(".route[data-job],.route[data-zone]"), (row) =>
       row.dataset.job !== undefined ? "job:" + row.dataset.job : "zone:" + row.dataset.zone,
@@ -37476,6 +38031,16 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       },
     );
     return `${r.farming ? `<p class="dvi-warning">${t("单田估算，未计多田与跑路")}</p>` : ""}<p class="dvi-plan-result" title="${escape(timing)}">${t("约 {count} 次 · {time}", { count: fmt(Math.ceil(r.plan.attempts)), time: duration(r.plan.seconds) })}</p>
+  <details class="dvi-plan-timing"><summary>${t("时间明细")}<span class="dvi-native-action" aria-hidden="true"></span></summary><div class="dvi-native-breakdown">${[
+    ["工作时间", "workTicks"],
+    ["移动时间", "walkTicks"],
+    ["存取时间", "bankTicks"],
+    ["被抓耗时", "stunTicks"],
+  ]
+    .map(([label, key]) => `<span>${t(label)}</span><span>${duration(r.plan[key] * 0.6)}</span>`)
+    .join(
+      "",
+    )}</div><p class="dvi-note">${t("95% 尝试预算 {attempts} 次", { attempts: fmt(Math.ceil(r.plan.attemptsP95)) })}</p></details>
   ${r.materials.length ? `<table><thead><tr>${["材料", "总需", "需补"].map((x) => `<th>${t(x)}</th>`).join("")}</tr></thead><tbody>${r.materials.map((m) => `<tr title="${escape(t("已有 {owned}；95% 需补 {missing}", { owned: fmt(m.owned), missing: fmt(m.shortageP95) }))}"><td>${escape(itemName(m.id))}</td><td>${fmt(Math.ceil(m.mean))}</td><td>${fmt(m.shortage)}</td></tr>`).join("")}</tbody></table>` : `<p class="dvi-note">${t("无需材料")}</p>`}
   <details class="dvi-native-more"><summary aria-label="${t("收益明细")}"><span class="dvi-native-action" aria-hidden="true"></span></summary>${nativeProfitHtml(profit, r.hour, options)}</details>${r.farming ? nativeFarmHtml() : ""}`;
   }
@@ -37541,17 +38106,9 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       .querySelector("input")
       .setAttribute("aria-label", t("{name}目标等级", { name: nameOf(record.job.name) }));
     const container = record.box.querySelector("[data-native-result]");
-    if (
-      cached?.plan &&
-      cached.plan.targetLevel === Number(record.box.querySelector("input").value)
-    ) {
-      const html = nativePlanHtml(cached.plan, cached.planOptions);
-      if (container.innerHTML !== html) {
-        const open = Array.from(container.querySelectorAll("details")).map((x) => x.open);
-        container.innerHTML = html;
-        container.querySelectorAll("details").forEach((x, i) => (x.open = !!open[i]));
-      }
-    } else if (cached?.planError) {
+    if (cached?.plan && cached.plan.targetLevel === Number(record.box.querySelector("input").value))
+      updateNativeResult(container, nativePlanHtml(cached.plan, cached.planOptions));
+    else if (cached?.planError) {
       if (container.textContent !== errorText(cached.planError))
         container.textContent = errorText(cached.planError);
     } else if (
