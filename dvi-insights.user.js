@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.28
+// @version      0.4.29
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -2507,6 +2507,16 @@ SOFTWARE.
       阵亡风险: "Death risk",
       "连续作战预估；未计找怪、跑路和补货耗时。":
         "Continuous combat estimate; excludes searching, travel and restocking time.",
+      "预计日利 {value}": "Projected profit {value}",
+      "预计总经验/小时：各战斗技能合计，含跑路、补给和回血耗时。":
+        "Projected total XP/hour across combat skills, including travel, restocking and recovery time.",
+      接下来一小时的时间分配: "Time over the next hour",
+      补给与回血: "Supply & healing",
+      停战后闲置: "Idle after stopping",
+      "按当前血量、位置、食物库存和增益剩余时间，模拟接下来一小时。":
+        "Simulates the next hour using current HP, position, food stocks and remaining buffs.",
+      "日利和成本按这一小时的产出与消耗折算到一天，实际可能变化。":
+        "Daily profit and costs project this hour’s output and consumption over a day. Actual results may change.",
       "续 24h": "Add 24h",
       饱食: "Well fed",
       饱腹: "Well fed",
@@ -33989,20 +33999,21 @@ html.dvi-insights .market-window .dvi-market-sort:focus-visible {
 .dvi-insights .market-window .dvi-market-valued {
   position: relative;
 }
+.dvi-value-quantity-probe {
+  display: none !important;
+}
 .dvi-insights .market-window .dvi-market-value {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 2px !important;
+  left: 2px !important;
+  right: auto !important;
+  bottom: auto !important;
   max-width: calc(100% - 4px);
   padding: 0;
   border-radius: 0;
-  background: none;
-  color: var(--ink-muted);
-  font: 500 10px var(--mono);
-  font-variant-numeric: tabular-nums;
+  background: none !important;
   white-space: nowrap;
   pointer-events: none;
-  text-shadow: none;
 }
 html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort[aria-pressed="true"] {
   border-color: #d3a05f;
@@ -34016,30 +34027,19 @@ html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort[aria-pressed="true"]
 }
 .dvi-insights .dvi-bank-value {
   position: absolute;
-  top: 2px;
-  left: 3px;
+  top: 2px !important;
+  left: 3px !important;
+  right: auto !important;
+  bottom: auto !important;
   max-width: calc(100% - 6px);
   border-radius: 0;
   padding: 0;
-  background: none;
-  color: var(--ink);
-  font: 500 var(--fs-2xs, 10px) var(--mono);
-  font-variant-numeric: tabular-nums;
+  background: none !important;
   pointer-events: none;
-  text-shadow: none;
   white-space: nowrap;
 }
-.dvi-insights [data-bank-grid] .slot.barred > .dvi-bank-value {
-  color: var(--rust);
-}
-.dvi-insights [data-bank-grid] .slot[data-item]:hover > .dvi-bank-value {
-  color: var(--brass);
-}
-.dvi-insights [data-bank-window][data-away="true"] .slot[data-item]:hover > .dvi-bank-value {
-  color: var(--ink);
-}
 .dvi-insights [data-bank-grid] .dvi-bank-valued:has(> b.plus) > .dvi-bank-value {
-  top: 16px;
+  top: 16px !important;
 }
 .dvi-insights [data-fields] .field-list {
   display: grid;
@@ -36914,6 +36914,48 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     battleCache = new Map();
   let battlePending = false,
     battlePlayerId = null;
+  // Keep native markup (including nested death warnings) intact. A sibling uses
+  // its grid slot, so native refreshes cannot overwrite the completed estimate.
+  function syncBattleXp(row, entry) {
+    const native = row.querySelector(".route-meta:not(.dvi-battle-xp)");
+    let xp = row.querySelector(".dvi-battle-xp");
+    const ready =
+      !!native &&
+      !row.disabled &&
+      !entry?.error &&
+      Number.isFinite(entry?.result?.hour?.xp) &&
+      !native.querySelector(".danger");
+    if (ready && !xp) {
+      xp = document.createElement("span");
+      xp.className = "route-meta dvi-battle-xp";
+      xp.dataset.noI18n = "";
+      native.insertAdjacentElement("afterend", xp);
+    }
+    if (row.hasAttribute("data-dvi-battle-xp") !== ready)
+      row.toggleAttribute("data-dvi-battle-xp", ready);
+    if (xp) {
+      if (xp.hidden === ready) xp.hidden = !ready;
+      if (ready) {
+        setNativeText(xp, "≈ " + fmt(entry.result.hour.xp) + " XP/h");
+        xp.title =
+          (entry.pending ? t("更新中…") + "\n" : "") +
+          t("预计总经验/小时：各战斗技能合计，含跑路、补给和回血耗时。");
+      }
+    }
+  }
+  function syncBattleMetaChanges(changes) {
+    const rows = new Set();
+    for (const change of changes) {
+      const target = change.target.nodeType === 3 ? change.target.parentElement : change.target;
+      const native = target?.closest?.(".route-meta:not(.dvi-battle-xp)");
+      const row = native?.closest(".route[data-zone]");
+      if (row) rows.add(row);
+    }
+    for (const row of rows) {
+      const zone = GAME_DATA.world.zones.find((z) => z.id === Number(row.dataset.zone));
+      if (zone) syncBattleXp(row, battleCache.get(zone.monsterId));
+    }
+  }
   function remountBattleRows() {
     const restores = [];
     for (const list of document.querySelectorAll("[data-routes]")) {
@@ -37035,8 +37077,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         const entry = battleCache.get(monster.id),
           valid = entry?.signature === signature,
           sameConfig = entry?.configuration === configuration;
-        // Never replace the game's XP/death warning: native refreshes and our
-        // route estimate have different units, widths and simulation scopes.
+        syncBattleXp(row, entry);
         setNativeText(record.box.querySelector(".dvi-native-action"), "");
         record.box.setAttribute?.("aria-busy", String(!!entry?.pending));
         const summary = record.box.querySelector("[data-battle-profit]");
@@ -37049,14 +37090,20 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
               Date.now(),
               GAME_DATA,
             );
-          setNativeText(summary, (result.deaths ? t("阵亡风险") + " · " : "") + profitText(profit));
+          setNativeText(
+            summary,
+            (result.deaths ? t("阵亡风险") + " · " : "") +
+              t("预计日利 {value}", { value: profitText(profit) }),
+          );
           summary.title =
             (entry.error
               ? t("预测暂不可用") + "\n"
               : !sameConfig || entry.pending
                 ? t("更新中…") + "\n"
                 : "") +
-            t("当前位置起算 1h；按库存及增益到期模拟，日利为折算值。") +
+            t("按当前血量、位置、食物库存和增益剩余时间，模拟接下来一小时。") +
+            "\n" +
+            t("日利和成本按这一小时的产出与消耗折算到一天，实际可能变化。") +
             "\n" +
             profitHint(profit);
           const html = battleDetail(result, entry.player?.ironman);
@@ -37137,27 +37184,37 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         : (cost.estimated.length ? "≈ " : "") + fmt(cost.total) + " " + t("金币/d");
     };
     const time = (key) => (result?.time ? duration(result.time[key] * 0.6) : "—");
-    const rows = [
-      ["路线经验", result ? "≈ " + fmt(result.hour.xp) + " XP/h" : "—"],
+    const costs = [
       ["食物成本", price(result?.hour.food)],
       ["药水成本", price(result?.hour.potions)],
+    ];
+    const times = [
       ["战斗时间", time("combat")],
       ["移动时间", time("travel")],
       [
-        "补给与恢复",
+        "补给与回血",
         result?.time
           ? duration((result.time.bank + result.time.recovery + result.time.transition) * 0.6)
           : "—",
       ],
-      ["停工时间", time("stopped")],
+      ["停战后闲置", time("stopped")],
     ];
-    return (
+    const grid = (rows) =>
       '<div class="dvi-native-breakdown">' +
       rows
         .map(([label, value]) => "<span>" + t(label) + "</span><span>" + value + "</span>")
         .join("") +
-      '</div><p class="dvi-note">' +
-      t("当前位置起算 1h；按库存及增益到期模拟，日利为折算值。") +
+      "</div>";
+    return (
+      grid(costs) +
+      '<p class="dvi-battle-caption">' +
+      t("接下来一小时的时间分配") +
+      "</p>" +
+      grid(times) +
+      '<p class="dvi-note">' +
+      t("按当前血量、位置、食物库存和增益剩余时间，模拟接下来一小时。") +
+      "<br>" +
+      t("日利和成本按这一小时的产出与消耗折算到一天，实际可能变化。") +
       "</p>"
     );
   }
@@ -37168,6 +37225,55 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   const marketValueViews = new WeakMap();
   const inventoryValueWindows = new WeakSet();
   const fieldHelpState = new WeakMap();
+  let valueQuantityProbe = null;
+  function nativeValueQuantity() {
+    const quantity = document.querySelector(
+      "[data-bank-grid] .slot[data-item]:not(.barred):not(.chosen):not(:hover)>b:not(.plus):not(.dvi-bank-value)",
+    );
+    if (quantity) return quantity;
+    if (!valueQuantityProbe?.isConnected) {
+      // The market's catalogue has no count. Measure the same native bank count
+      // selectors under #app, without placing a visible or interactive control.
+      valueQuantityProbe = document.createElement("div");
+      valueQuantityProbe.className = "bank-window dvi-value-quantity-probe";
+      valueQuantityProbe.hidden = true;
+      valueQuantityProbe.setAttribute("aria-hidden", "true");
+      valueQuantityProbe.innerHTML =
+        '<div class="bank-grid"><span class="slot"><b></b></span></div>';
+      (document.querySelector("#app") || document.body).append(valueQuantityProbe);
+    }
+    return valueQuantityProbe.querySelector("b");
+  }
+  function syncValueTypography(slot, label) {
+    // Enhancement badges and our price must not be mistaken for the quantity.
+    const quantity =
+      slot.querySelector(
+        ":scope>b:not(.plus):not(.dvi-bank-value):not(.dvi-market-value),:scope>.market-tile-held",
+      ) || nativeValueQuantity();
+    const style = getComputedStyle(quantity);
+    for (const property of [
+      "font-family",
+      "font-size",
+      "font-style",
+      "font-weight",
+      "font-stretch",
+      "line-height",
+      "letter-spacing",
+      "font-variant-numeric",
+      "color",
+      "text-shadow",
+      "-webkit-text-stroke-width",
+      "-webkit-text-stroke-color",
+    ]) {
+      const value = style.getPropertyValue(property);
+      if (
+        value &&
+        (label.style.getPropertyValue(property) !== value ||
+          label.style.getPropertyPriority(property) !== "important")
+      )
+        label.style.setProperty(property, value, "important");
+    }
+  }
   // Resolve the current grid at click time: native redraws may replace it.
   function bindValueSortingReset(window, selector, views, refresh) {
     if (inventoryValueWindows.has(window)) return;
@@ -37264,7 +37370,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         if (!slot.classList.contains("dvi-bank-valued")) slot.classList.add("dvi-bank-valued");
         let label = slot.querySelector(".dvi-bank-value");
         if (!label) {
-          label = document.createElement("span");
+          label = document.createElement("b");
           label.className = "dvi-bank-value";
           label.dataset.noI18n = "";
           slot.append(label);
@@ -37272,6 +37378,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         setNativeText(label, fmt(value, 2));
         const title = t("整堆估值");
         if (label.title !== title) label.title = title;
+        syncValueTypography(slot, label);
       }
       const ranks = globalThis.DVIInventory.ranks(entries);
       for (const entry of entries) {
@@ -37349,12 +37456,13 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         if (!slot.classList.contains("dvi-market-valued")) slot.classList.add("dvi-market-valued");
         let label = slot.querySelector(".dvi-market-value");
         if (!label) {
-          label = document.createElement("span");
+          label = document.createElement("b");
           label.className = "dvi-market-value";
           label.dataset.noI18n = "";
           slot.append(label);
         }
         setNativeText(label, fmt(value, 2));
+        syncValueTypography(slot, label);
       }
       const ranks = globalThis.DVIInventory.ranks(entries);
       for (const entry of entries) {
@@ -37523,6 +37631,24 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.route[data-dvi-battle-xp] > .route-meta:not(.dvi-battle-xp) {
+  display: none !important;
+}
+.route > .dvi-battle-xp {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.route > .dvi-battle-xp[hidden] {
+  display: none !important;
+}
+.dvi-battle-caption {
+  margin: 8px 0 2px;
+  color: var(--ink-faint, #876640);
+  font-size: var(--fs-2xs, 10px);
 }
 
 .dvi-native-combat {
@@ -38161,6 +38287,9 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (!nativeTimer) nativeTimer = setTimeout(scanNative, 80);
   }
   const nativeMutations = new MutationObserver((changes) => {
+    // Native XP/death messages may update without a full row redraw. Adjust only
+    // their visibility in this microtask; never restart a worker for a DOM update.
+    syncBattleMetaChanges(changes);
     if (changes.some((change) => change.target.matches?.("[data-fields]"))) polishFields();
     if (changes.some((change) => change.target.matches?.("[data-bank-grid]"))) syncInventory();
     if (changes.some((change) => change.target.matches?.("[data-market-list]")))
@@ -38202,8 +38331,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (
       changes.some(
         (change) =>
-          !change.target.closest?.(
-            ".dvi-native-work,.dvi-native-prices,.tip[data-tip],.route-meta",
+          !(change.target.nodeType === 3 ? change.target.parentElement : change.target)?.closest?.(
+            ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta",
           ) && !(change.type === "attributes" && change.attributeName === "style"),
       )
     )
@@ -38228,8 +38357,14 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   nativeMutations.observe(document, {
     subtree: true,
     childList: true,
+    characterData: true,
     attributes: true,
     attributeFilter: ["hidden", "aria-pressed", "data-item", "disabled", "lang"],
+  });
+  const inventoryThemeMutations = new MutationObserver(scheduleNative);
+  inventoryThemeMutations.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class", "style", "data-theme"],
   });
   let nativePlayerId = null;
   store.subscribe(() => {
@@ -38253,6 +38388,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (e.persisted) return;
     window.removeEventListener("storage", localeStorageChanged);
     nativeMutations.disconnect();
+    inventoryThemeMutations.disconnect();
     nativeWorker?.terminate();
     clearTimeout(nativeTimeout);
     clearTimeout(nativeTimer);
