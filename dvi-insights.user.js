@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.29
+// @version      0.4.30
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -36971,7 +36971,12 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         replaced = true;
       }
       const old = nativeLists.get(list);
-      if (replaced && old?.ids === nativeListIds(list)) restores.push([list, old.scrollTop]);
+      if (
+        replaced &&
+        !list.hasAttribute?.("data-dvi-scroll-guard") &&
+        old?.ids === nativeListIds(list)
+      )
+        restores.push([list, old.scrollTop]);
     }
     return restores;
   }
@@ -37530,6 +37535,40 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     Array.from(list.querySelectorAll(".route[data-job],.route[data-zone]"), (row) =>
       row.dataset.job !== undefined ? "job:" + row.dataset.job : "zone:" + row.dataset.zone,
     ).join(",");
+  // Keep the scroll range through a native innerHTML replacement. A CSS spacer
+  // exists only while every attached profit row is absent, even if the client
+  // forces layout before our mutation observer runs. No stale scrollTop replay.
+  function syncBattleScrollGuard(list) {
+    if (
+      !list.querySelector(".route[data-zone]") ||
+      typeof CSS === "undefined" ||
+      !CSS.supports("selector(:has(*))")
+    ) {
+      list.removeAttribute("data-dvi-scroll-guard");
+      list.style.removeProperty("--dvi-scroll-extra");
+      return;
+    }
+    // Our rows use border-box and zero margins. Used CSS heights keep fractional
+    // pixels without rounding offsetHeight or applying the app's zoom twice.
+    const rows = Array.from(list.children)
+      .filter((node) => node.classList.contains("dvi-battle-work"))
+      .map((node) => getComputedStyle(node))
+      .filter((style) => style.display !== "none");
+    const style = getComputedStyle(list),
+      gap =
+        style.display === "flex" && style.flexDirection === "column"
+          ? parseFloat(style.rowGap) || 0
+          : 0;
+    const height =
+      rows.reduce((sum, row) => sum + (parseFloat(row.height) || 0), 0) +
+      Math.max(0, rows.length - 1) * gap;
+    const extra = height.toFixed(2) + "px";
+    if (list.style.getPropertyValue("--dvi-scroll-extra") !== extra)
+      list.style.setProperty("--dvi-scroll-extra", extra);
+    if (height > 0 && !list.hasAttribute("data-dvi-scroll-guard"))
+      list.setAttribute("data-dvi-scroll-guard", "");
+    if (height === 0) list.removeAttribute("data-dvi-scroll-guard");
+  }
   const nativeItemNames = new Map();
   for (const item of GAME_DATA.items) {
     nativeItemNames.set(item.name, item.id);
@@ -37558,6 +37597,17 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     hoveredItem = null;
   const nativeStyle = document.createElement("style");
   nativeStyle.textContent = `
+[data-routes][data-dvi-scroll-guard] {
+  overflow-anchor: none;
+}
+[data-routes][data-dvi-scroll-guard]:has(> .route[data-zone]):not(:has(> .dvi-battle-work))::after {
+  content: "";
+  display: block;
+  grid-column: 1/-1;
+  flex-shrink: 0;
+  height: var(--dvi-scroll-extra, 0px);
+  pointer-events: none;
+}
 .dvi-native-simulator {
   flex-shrink: 0;
   text-decoration: none;
@@ -38218,12 +38268,14 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         t("战斗始终扣除食物与有效药水成本。"),
       );
     }
-    for (const list of document.querySelectorAll("[data-routes]"))
+    for (const list of document.querySelectorAll("[data-routes]")) {
+      syncBattleScrollGuard(list);
       nativeLists.set(list, {
         ids: nativeListIds(list),
         scrollTop: list.scrollTop,
         settings: list.querySelector(".dvi-native-settings"),
       });
+    }
     renderCurrentActivity();
     syncNativeTip();
     const menu = document.querySelector("[data-item-menu]:not([hidden])");
@@ -38262,6 +38314,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   function trackNativeScroll(e) {
     const list = e.target;
     if (!list.matches?.("[data-routes]")) return;
+    if (list.hasAttribute("data-dvi-scroll-guard")) syncBattleScrollGuard(list);
     const old = nativeLists.get(list);
     if (
       old?.ids === nativeListIds(list) &&
@@ -38349,6 +38402,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   document.addEventListener("pointermove", trackHover, { capture: true, passive: true });
   document.addEventListener("focusin", trackHover, { capture: true, passive: true });
   document.addEventListener("scroll", trackNativeScroll, { capture: true, passive: true });
+  function trackNativeDisclosure(e) {
+    const list = e.target.closest?.("[data-routes]");
+    if (list && list.hasAttribute("data-dvi-scroll-guard")) syncBattleScrollGuard(list);
+  }
+  document.addEventListener("toggle", trackNativeDisclosure, true);
   document.addEventListener("pointerdown", rememberNativeSelection, {
     capture: true,
     passive: true,
@@ -38396,6 +38454,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     document.removeEventListener("pointermove", trackHover, true);
     document.removeEventListener("focusin", trackHover, true);
     document.removeEventListener("scroll", trackNativeScroll, true);
+    document.removeEventListener("toggle", trackNativeDisclosure, true);
     document.removeEventListener("pointerdown", rememberNativeSelection, true);
     document.removeEventListener("keydown", rememberNativeSelection, true);
   });

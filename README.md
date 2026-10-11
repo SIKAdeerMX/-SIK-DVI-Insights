@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.29
+# [SIK] DVI Insights 0.4.30
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -12,6 +12,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示金色光晕。普通战斗补充 EPH、食物续航；药水默认收成一行，点击展开时长。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格。饱食与扎根直接显示续 24 小时最省钱的食物、品质及日成本，名称后直接显示续一天的购买数量，不附单位。
 - 选怪主行统一显示一小时路线预计总经验（各战斗技能合计，含跑路、补给和回血）。首次等待或失败时显示原生经验，原生阵亡警告优先；下方显示折算日利，展开查看食物与药水成本，以及一小时内战斗、移动、补给回血和停战后闲置的时间。日利与成本并非全天保证值。首领伤害窗保持之前的排行与战况布局，保留个人一行和长名次对齐。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
+- 战斗列表刷新时保留浏览位置和已展开明细，减少滚动回跳，兼顾手机窄屏。
 - 物品提示补充求购、挂售和商人价格；买入缺价时可参考已接收的公开历史成交与一天内的报价缓存。
 - 仓库和市场“我的物品”的整堆估值按税后求购和商人价计算；一个按钮按价值排序，重复点击保持排序，仓库锁定物品保持原位。市场同类物品按各品质分别计价后汇总；仓库按钮和数量操作区统一棕金样式。
 - 农田采用紧凑状态格；公会用升级箭头、进度百分比和缺口表达升级与成员名额；贡献使用 K/M/B 和同列比例条，日志采用时间线，公会列表保留原生图标并显示序号与名额使用情况。公会仓库操作保留。
@@ -39,6 +40,7 @@ Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-s
 - The active task shows daily income, expected income before consumption costs, and expected profit. Daily income gains a golden glow when it exceeds expected income. Normal combat also includes EPH and food endurance; potion durations expand on click.
 - The buff sheet aligns names, timelines and remaining durations, retaining inactive grey icons. Potions show a per-bottle price for the currently active quality. Well fed and Well rooted show the cheapest food, its quality and daily budget inline; the quantity for adding 24 hours appears next to the food name, without a unit.
 - Monster rows show projected total XP across combat skills from a one-hour route simulation, including travel, restocking and healing. Native XP provides a fallback while waiting or after an error; native death warnings take priority. Details show projected food/potion costs and time spent fighting, travelling, resupplying/healing or idle after stopping. Daily profit and costs are projections, not guarantees. Boss windows retain the previous ranking and combat layout, with your own row and aligned long ranks. Food controls fold by default, and Join/Show pills use consistent buttons. Native boss-start announcements trigger six seconds of full-screen fireworks, dismissible with Esc without blocking pointer input.
+- Combat-list refreshes retain your scroll position and expanded details, reducing scroll jumps on narrow mobile layouts.
 - Item tooltips show buy offers, sell listings and merchant prices. Received public trade history and cached asks from the last day can help estimate missing purchase prices.
 - Bank slots and the market's My items view calculate stack values using bids after tax and vendor prices. Sort by value keeps its order on repeated clicks; locked bank items stay in place. Grouped market tiles add values priced separately for each quality. Bank buttons and quantity controls use the same brown and gold style.
 - Compact farming tiles and guild pages with level arrows, progress percentages, remaining XP/points, compact contribution values with comparison bars, and an event timeline. Guild lists retain their native icons and show visible positions and capacity meters. Warehouse operations remain native.
