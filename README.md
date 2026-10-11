@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.26
+# [SIK] DVI Insights 0.4.28
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -11,7 +11,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 工作列表显示 XP/h 和期望日利，点击“升级计算”查看目标等级的工作次数、耗时与材料缺口；收支只用箭头展开。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示金色光晕。普通战斗补充 EPH、食物续航；药水默认收成一行，点击展开时长。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格。饱食与扎根直接显示续 24 小时最省钱的食物、品质及日成本，名称后直接显示续一天的购买数量，不附单位。
-- 选怪列表显示连续单怪期望日利和 XP/h，另列食物、药水成本。首领伤害窗保持之前的排行与战况布局，保留个人一行和长名次对齐。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
+- 选怪列表保留原生 XP/h 与阵亡警告，补充一小时路线模拟折算日利；展开明细列出路线 XP/h、食物与药水成本，以及战斗、移动、补给恢复和停工时间。首领伤害窗保持之前的排行与战况布局，保留个人一行和长名次对齐。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
 - 物品提示补充求购、挂售和商人价格；买入缺价时可参考已接收的公开历史成交与一天内的报价缓存。
 - 仓库和市场“我的物品”的整堆估值按税后求购和商人价计算；一个按钮按价值排序，重复点击保持排序，仓库锁定物品保持原位。市场同类物品按各品质分别计价后汇总；仓库按钮和数量操作区统一棕金样式。
 - 农田采用紧凑状态格；公会用升级箭头、进度百分比和缺口表达升级与成员名额；贡献使用 K/M/B 和同列比例条，日志采用时间线，公会列表保留原生图标并显示序号与名额使用情况。公会仓库操作保留。
@@ -25,7 +25,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 在 Tampermonkey 中安装脚本后刷新游戏。已有测试版用户请用新版全部内容覆盖旧脚本，不同时运行两份。离线净收益需要安装后留下离线前快照；缺价或消耗记录不全时保留产值，不把未知成本当成零。
 
-脚本进行被动读取和本地计算，不增加游戏请求，不自动工作、进食、喝药、交易或修改队列。市场价格随已收到的数据更新；`≈` 表示估价。食物比较全部品质，按额外续一天的整数购买数量计算，不扣已有时长。种植预测目前采用单田模型；当前普通战斗使用实测速率与概率期望，选怪列表为固定当前等级的连续单怪比较，已计食物、药水成本，未计找怪、跑路与补货耗时。首领战收益和强化目标尚未支持。
+脚本进行被动读取和本地计算，不增加游戏请求，不自动工作、进食、喝药、交易或修改队列。市场价格随已收到的数据更新；`≈` 表示估价。食物比较全部品质，按额外续一天的整数购买数量计算，不扣已有时长。种植预测目前采用单田模型；当前普通战斗使用实测速率与概率期望，选怪列表从当前位置与当前血量起算一小时，使用真实食物库存、携带量、补给与泉水路线，计算增益到期和经验升级。按 16 个固定模拟种子取平均，以概率期望计价掉落；折算日利是该小时流量的 24 倍投影，不保证能持续一天。未来任务奖励、活动箱、坐骑掉落与房屋升级未预测；动态家园路线暂不支持。首领战收益和强化目标尚未支持。
 
 作者 SIKAer，MIT 开源。这是社区工具，与 Deep Vein Idle 官方没有隶属关系。游戏名称、机制数据及原有界面素材的权利归各自权利人。隐私与本地缓存说明见随附 [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)。
 
@@ -38,12 +38,12 @@ Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-s
 - Work rows show XP/h and estimated daily profit. Open Level calculator to plan attempts, time and materials for a target level; financial breakdowns expand with a chevron.
 - The active task shows daily income, expected income before consumption costs, and expected profit. Daily income gains a golden glow when it exceeds expected income. Normal combat also includes EPH and food endurance; potion durations expand on click.
 - The buff sheet aligns names, timelines and remaining durations, retaining inactive grey icons. Potions show a per-bottle price for the currently active quality. Well fed and Well rooted show the cheapest food, its quality and daily budget inline; the quantity for adding 24 hours appears next to the food name, without a unit.
-- Monster rows show continuous single-monster profit and XP/h estimates, with food and potion costs. Boss windows retain the previous ranking and combat layout, with your own row and aligned long ranks. Food controls fold by default, and Join/Show pills use consistent buttons. Native boss-start announcements trigger six seconds of full-screen fireworks, dismissible with Esc without blocking pointer input.
+- Monster rows retain native XP/death warnings and add projected profit from a one-hour route simulation. Details show route XP, food/potion costs and combat, travel, supply/recovery and stopped time. Boss windows retain the previous ranking and combat layout, with your own row and aligned long ranks. Food controls fold by default, and Join/Show pills use consistent buttons. Native boss-start announcements trigger six seconds of full-screen fireworks, dismissible with Esc without blocking pointer input.
 - Item tooltips show buy offers, sell listings and merchant prices. Received public trade history and cached asks from the last day can help estimate missing purchase prices.
 - Bank slots and the market's My items view calculate stack values using bids after tax and vendor prices. Sort by value keeps its order on repeated clicks; locked bank items stay in place. Grouped market tiles add values priced separately for each quality. Bank buttons and quantity controls use the same brown and gold style.
 - Compact farming tiles and guild pages with level arrows, progress percentages, remaining XP/points, compact contribution values with comparison bars, and an event timeline. Guild lists retain their native icons and show visible positions and capacity meters. Warehouse operations remain native.
 - Guild pages retain the previous native buttons, level emblem, notice paper and reward shelf. Notices, rules and recruitment default to reading mode. Native Save acknowledgement closes editing; drafts stay only in page memory. Vein Colossus, Frost Leviathan and Ember Wyrm each have Chinese/English name artwork in mineral, frost and ember themes, with three brief sparkles and no plaque. Damage rankings support three-digit and longer ranks. Native Minecraft XP orb art is embedded; provisions use the current food and native Vein Elixir icon.
-- Bank and market My items hide estimates by default. Sort by value reveals stack values in the upper left with up to two decimal places, matching the font, size and color of the corresponding native quantity and keeping its position; other buttons or native sorting restore the native order and quantity display.
+- Bank and market My items hide estimates by default. Sort by value reveals stack values in the upper left with up to two decimal places, as plain numbers without a background, matching the font, size and color of the corresponding native quantity and keeping its position; other buttons or native sorting restore the native order and quantity display.
 - Away summaries value item drops and coins, deducting materials, food and potion costs when a matching pre-away snapshot is available.
 - Automatically follows the game’s English / Chinese language setting and light / dark theme.
 - Refines typography, numbers, buttons and tooltips with lighter text weights. Fixes crafting category layouts and the dark task panel while retaining native progress colors. Plain text tooltips follow the theme; farming tiles omit duplicate status tips.
@@ -52,7 +52,7 @@ Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-s
 
 Install with Tampermonkey, then reload the game. If updating a test version, replace its entire contents rather than running both copies. Offline net accounting needs a snapshot captured after installation. Missing costs are not treated as zero.
 
-The script passively reads already-received data and performs calculations locally. It does not make extra game requests, automate gameplay or modify task queues. Prices depend on received quotes; `≈` marks estimates. Food recommendations compare all rarities using whole-item purchase budgets for an additional day, without subtracting existing buff time. Farming uses a single-field model. Active combat uses measured rates and expected loot; monster comparisons hold current levels fixed and include food and potion costs, but exclude searching, travel and restocking time. Boss income and enhancing plans are not supported.
+The script passively reads already-received data and performs calculations locally. It does not make extra game requests, automate gameplay or modify task queues. Prices depend on received quotes; `≈` marks estimates. Food recommendations compare all rarities using whole-item purchase budgets for an additional day, without subtracting existing buff time. Farming uses a single-field model. Active combat uses measured rates and expected loot; Monster-list simulations start from current position and HP, use finite food stocks and carrying policies, travel to banks/fountains, account for buff expiry and XP level-ups, and average 16 deterministic samples. Loot is valued by probability expectation. Daily profit projects the next hour’s flows by 24; it does not guarantee day-long supplies or performance. Quest rewards, seasonal boxes, mount drops and future room upgrades are excluded; dynamic Home routes are unsupported. Boss income and enhancing plans are not supported.
 
 By SIKAer, licensed under MIT. An independent community tool, not affiliated with Deep Vein Idle. Game names, mechanism data and original interface assets remain the property of their respective owners. See [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md) for local storage details.
 

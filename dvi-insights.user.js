@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.26
+// @version      0.4.28
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -352,8 +352,27 @@ SOFTWARE.
           .filter((p) => walkable(p.x, p.y));
         return points[id === 0 ? 0 : hash(id, site.x, site.y) % points.length] || null;
       }
-      function path(ax, ay, bx, by) {
-        const key = [ax, ay, bx, by].join(",");
+      function path(ax, ay, bx, by, nativeCombat = false) {
+        const steps = nativeCombat
+          ? [
+              [0, -1],
+              [1, -1],
+              [1, 0],
+              [1, 1],
+              [0, 1],
+              [-1, 1],
+              [-1, 0],
+              [-1, -1],
+            ]
+          : neighbors;
+        const heuristic = nativeCombat
+          ? (ax, ay, bx, by) => {
+              const x = Math.abs(ax - bx),
+                y = Math.abs(ay - by);
+              return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
+            }
+          : octile;
+        const key = [ax, ay, bx, by, nativeCombat].join(",");
         if (paths.has(key)) return paths.get(key);
         if (!walkable(ax, ay) || !walkable(bx, by)) return null;
         const width = map.width,
@@ -361,13 +380,14 @@ SOFTWARE.
           goal = by * width + bx,
           n = width * map.height;
         const g = new Float64Array(n).fill(Infinity),
-          prev = new Int32Array(n).fill(-1);
+          prev = new Int32Array(n).fill(-1),
+          closed = nativeCombat ? new Uint8Array(n) : null;
         const heap = new Heap((a, b) => a.f - b.f || b.g - a.g || a.id - b.id);
         g[start] = 0;
-        heap.push({ id: start, g: 0, f: octile(ax, ay, bx, by) });
+        heap.push({ id: start, g: 0, f: heuristic(ax, ay, bx, by) });
         while (heap.q.length) {
           const u = heap.pop();
-          if (u.g !== g[u.id]) continue;
+          if (closed ? closed[u.id] : u.g !== g[u.id]) continue;
           if (u.id === goal) {
             const out = [];
             for (let v = goal; v !== start; v = prev[v])
@@ -377,18 +397,19 @@ SOFTWARE.
             paths.set(key, out);
             return out;
           }
+          if (closed) closed[u.id] = 1;
           const x = u.id % width,
             y = Math.floor(u.id / width);
-          for (const [dx, dy] of neighbors) {
+          for (const [dx, dy] of steps) {
             const nx = x + dx,
               ny = y + dy;
             if (!canStep(x, y, nx, ny)) continue;
             const id = ny * width + nx,
-              ng = u.g + (dx && dy ? Math.SQRT2 : 1);
-            if (ng < g[id]) {
+              ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
+            if (!closed?.[id] && ng < g[id]) {
               g[id] = ng;
               prev[id] = u.id;
-              heap.push({ id, g: ng, f: ng + octile(nx, ny, bx, by) });
+              heap.push({ id, g: ng, f: ng + heuristic(nx, ny, bx, by) });
             }
           }
         }
@@ -2143,198 +2164,6 @@ SOFTWARE.
     return { bestDaily, potionPrice };
   });
 
-  // ---- src/battle-forecast.js ----
-  /* Independent continuous single-monster comparison, not a route simulator. */
-  (function (root, factory) {
-    if (typeof module === "object" && module.exports)
-      module.exports = factory(require("./core.js"), require("./combat.js"));
-    else root.DVIBattleForecast = factory(root.DVIPlannerCore, root.DVICombat);
-  })(typeof globalThis !== "undefined" ? globalThis : this, function (core, combat) {
-    "use strict";
-    const gearMaps = new WeakMap();
-    function buildStats(model, p) {
-      const facts = model.data;
-      let gear = gearMaps.get(model);
-      if (!gear) {
-        gear = new Map(facts.gear.map((x) => [x.itemId, x]));
-        gearMaps.set(model, gear);
-      }
-      const weapon = gear.get((p.equipment?.weapon || 0) % 10000);
-      const style = weapon?.magic ? "magic" : weapon?.ranged ? "ranged" : "melee";
-      const sums = { accuracy: 0, strength: 0, defence: 0 };
-      for (const slot of facts.combat.gearSlots) {
-        const id = p.equipment?.[slot],
-          g = gear.get((id || 0) % 10000);
-        if (!g) continue;
-        for (const stat of Object.keys(sums))
-          sums[stat] +=
-            Math.round(
-              (g[stat] || 0) * (1 + facts.constants.toolEnhance * Math.floor(id / 10000)),
-            ) * (stat === "defence" || !g.style || g.style === style ? 1 : -1);
-      }
-      const roomDamage = facts.rooms.reduce(
-        (n, r) =>
-          n +
-          (p.houseFurniture?.[r.id] !== undefined &&
-          r.bonus.kind === "dmg" &&
-          r.bonus.skill === style
-            ? Math.min(0.5, (p.house?.[r.id] || 0) * 0.01 * (r.rate ?? 1))
-            : 0),
-        1,
-      );
-      const divisor =
-        style === "magic"
-          ? 4.5
-          : weapon?.twoHanded
-            ? 6
-            : style === "ranged" && weapon?.speed === 5
-              ? 5
-              : 8;
-      const hit = 1 + Math.floor((model.level(p.skills[style] || 0) + sums.strength) / divisor);
-      return (tick) => {
-        const mult =
-          (1 +
-            0.1 * model.brew(p, "warrior", tick) +
-            ((p.brews?.fed || 0) > tick ? facts.food.damage : 0)) *
-          roomDamage *
-          model.master(p, "maxhit");
-        return {
-          style,
-          accuracy: Math.round(
-            (10 +
-              model.level(p.skills[style] || 0) +
-              sums.accuracy +
-              Math.round(10 * model.brew(p, "warrior", tick))) *
-              model.master(p, "accuracy"),
-          ),
-          defence: 10 + model.level(p.skills.defence || 0) + sums.defence,
-          maxHit: mult > 1 ? Math.ceil(hit * mult) : hit,
-          maxHp: Math.floor(model.level(p.skills.hitpoints || 0) * model.master(p, "hp")),
-          speed: p.equipment?.weapon == null ? 5 : weapon?.speed || 4,
-          attackStep: Math.round(1000 * (1 + 0.2 * model.brew(p, "haste", tick))),
-        };
-      };
-    }
-    function stats(model, p, tick = p.lastTick) {
-      return buildStats(model, p)(tick);
-    }
-    function killXp(model, p, monster, tick, windows, style = stats(model, p, tick).style) {
-      const base =
-          model.xpMultiplier(p, { skill: "combat", inputs: [{}] }, tick, windows) +
-          model.home(p, "combatXp"),
-        third = Math.max(1, Math.floor(monster.xp / 3));
-      return {
-        [style]: Math.round(monster.xp * (base + model.home(p, "skillXp", style))),
-        defence: Math.round(third * (base + model.home(p, "skillXp", "defence"))),
-        hitpoints: Math.round(third * base),
-      };
-    }
-    function forecast(model, options) {
-      const monster = model.data.combat.monsters.find((x) => x.id === options.monsterId);
-      if (!monster) throw new Error("Unknown monster");
-      const source = options.player,
-        samples = Math.max(1, Math.min(32, Math.floor(options.samples || 16))),
-        ticks = 6000;
-      const hour = { ticks, outputs: {}, inputs: {}, xp: 0, bySkill: {}, food: {} },
-        add = (out, id, n) => {
-          out[id] = (out[id] || 0) + n;
-        };
-      let deaths = 0,
-        kills = 0;
-      for (let sample = 0; sample < samples; sample++) {
-        const p = JSON.parse(JSON.stringify(source)),
-          random = core.rng(core.hash(monster.id, sample, 9047));
-        const getStats = buildStats(model, p);
-        let hp = getStats(p.lastTick).maxHp,
-          foe = monster.hp,
-          attackClock = 0,
-          foeClock = 0;
-        const foodId = combat.selectedFood(model, p),
-          food = model.item(foodId),
-          duration = model.data.food.variants.find((x) => x.id === foodId);
-        for (let step = 1; step <= ticks; step++) {
-          const tick = source.lastTick + step,
-            s = getStats(tick);
-          let acted = false;
-          attackClock += s.attackStep;
-          foeClock++;
-          if (attackClock >= s.speed * 1000) {
-            attackClock -= s.speed * 1000;
-            acted = true;
-            if (
-              random() <
-              s.accuracy / (s.accuracy + 10 + monster.defence * (s.style === "magic" ? 0.5 : 1))
-            ) {
-              const old = foe;
-              foe = Math.max(0, foe - 1 - Math.floor(random() * s.maxHit));
-              for (const [skill, total] of Object.entries(
-                killXp(model, p, monster, tick, options.windows || [], s.style),
-              ))
-                add(
-                  hour.bySkill,
-                  skill,
-                  (Math.round((total * old) / monster.hp) -
-                    Math.round((total * foe) / monster.hp)) /
-                    samples,
-                );
-            }
-            if (foe === 0) {
-              kills += 1 / samples;
-              for (const [id, n] of Object.entries(
-                combat.loot(model, p, monster, tick, options.windows || []),
-              ))
-                add(hour.outputs, id, n / samples);
-              foe = monster.hp;
-              foeClock = 0;
-              // Killing ends this monster's turn; the next encounter starts next tick.
-              continue;
-            }
-          }
-          if (foeClock >= monster.speed) {
-            foeClock = 0;
-            acted = true;
-            if (random() < (10 + monster.attack) / (10 + monster.attack + s.defence)) {
-              const raw = 1 + Math.floor(random() * monster.maxHit);
-              hp -= Math.max(
-                1,
-                Math.floor(
-                  raw * ((p.brews?.rooted || 0) > tick ? 1 - model.data.food.reduction : 1),
-                ),
-              );
-            }
-          }
-          if (hp <= 0) {
-            deaths += 1 / samples;
-            break;
-          }
-          if (acted && food?.heals > 0 && hp <= s.maxHp * (p.eatAt ?? 0.5)) {
-            hp = Math.min(
-              s.maxHp,
-              hp +
-                Math.floor(
-                  food.heals *
-                    (1 + 0.025 * (p.perks?.meals || 0) + 0.25 * model.brew(p, "nourish", tick)),
-                ),
-            );
-            add(hour.inputs, foodId, 1 / samples);
-            add(hour.food, foodId, 1 / samples);
-            if (duration) {
-              p.brews ||= {};
-              for (const key of ["fed", "rooted"])
-                if (duration[key + "Ticks"])
-                  p.brews[key] = Math.max(tick, p.brews[key] || 0) + duration[key + "Ticks"];
-            }
-          }
-        }
-      }
-      const potions = combat.potionFlow(model, source, source.lastTick, source.lastTick + ticks);
-      for (const [id, n] of Object.entries(potions)) add(hour.inputs, id, n);
-      hour.xp = Object.values(hour.bySkill).reduce((a, b) => a + b, 0);
-      return { hour, kills, deaths, samples, monsterId: monster.id, continuous: true };
-    }
-    return { stats, killXp, forecast };
-  });
-
   // ---- src/activity.js ----
   /* Current-action actual output ledger; no game operations or inventory writes. */
   (function (root, factory) {
@@ -2667,6 +2496,14 @@ SOFTWARE.
       疾行药剂: "Swift",
       滋养药剂: "Nourish",
       急速药剂: "Haste",
+      路线经验: "Route XP",
+      战斗时间: "Combat time",
+      补给与恢复: "Supply & recovery",
+      停工时间: "Stopped time",
+      "当前位置起算 1h；按库存及增益到期模拟，日利为折算值。":
+        "Next hour from your position, using current stocks and buff expiry. Daily profit is a projection.",
+      等待角色血量与位置数据: "Waiting for HP and position data",
+      连续作战经验: "Continuous combat XP",
       阵亡风险: "Death risk",
       "连续作战预估；未计找怪、跑路和补货耗时。":
         "Continuous combat estimate; excludes searching, travel and restocking time.",
@@ -18495,8 +18332,27 @@ SOFTWARE.
             .filter((p) => walkable(p.x, p.y));
           return points[id === 0 ? 0 : hash(id, site.x, site.y) % points.length] || null;
         }
-        function path(ax, ay, bx, by) {
-          const key = [ax, ay, bx, by].join(",");
+        function path(ax, ay, bx, by, nativeCombat = false) {
+          const steps = nativeCombat
+            ? [
+                [0, -1],
+                [1, -1],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [-1, 1],
+                [-1, 0],
+                [-1, -1],
+              ]
+            : neighbors;
+          const heuristic = nativeCombat
+            ? (ax, ay, bx, by) => {
+                const x = Math.abs(ax - bx),
+                  y = Math.abs(ay - by);
+                return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
+              }
+            : octile;
+          const key = [ax, ay, bx, by, nativeCombat].join(",");
           if (paths.has(key)) return paths.get(key);
           if (!walkable(ax, ay) || !walkable(bx, by)) return null;
           const width = map.width,
@@ -18504,13 +18360,14 @@ SOFTWARE.
             goal = by * width + bx,
             n = width * map.height;
           const g = new Float64Array(n).fill(Infinity),
-            prev = new Int32Array(n).fill(-1);
+            prev = new Int32Array(n).fill(-1),
+            closed = nativeCombat ? new Uint8Array(n) : null;
           const heap = new Heap((a, b) => a.f - b.f || b.g - a.g || a.id - b.id);
           g[start] = 0;
-          heap.push({ id: start, g: 0, f: octile(ax, ay, bx, by) });
+          heap.push({ id: start, g: 0, f: heuristic(ax, ay, bx, by) });
           while (heap.q.length) {
             const u = heap.pop();
-            if (u.g !== g[u.id]) continue;
+            if (closed ? closed[u.id] : u.g !== g[u.id]) continue;
             if (u.id === goal) {
               const out = [];
               for (let v = goal; v !== start; v = prev[v])
@@ -18520,18 +18377,19 @@ SOFTWARE.
               paths.set(key, out);
               return out;
             }
+            if (closed) closed[u.id] = 1;
             const x = u.id % width,
               y = Math.floor(u.id / width);
-            for (const [dx, dy] of neighbors) {
+            for (const [dx, dy] of steps) {
               const nx = x + dx,
                 ny = y + dy;
               if (!canStep(x, y, nx, ny)) continue;
               const id = ny * width + nx,
-                ng = u.g + (dx && dy ? Math.SQRT2 : 1);
-              if (ng < g[id]) {
+                ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
+              if (!closed?.[id] && ng < g[id]) {
                 g[id] = ng;
                 prev[id] = u.id;
-                heap.push({ id, g: ng, f: ng + octile(nx, ny, bx, by) });
+                heap.push({ id, g: ng, f: ng + heuristic(nx, ny, bx, by) });
               }
             }
           }
@@ -19700,8 +19558,27 @@ SOFTWARE.
             .filter((p) => walkable(p.x, p.y));
           return points[id === 0 ? 0 : hash(id, site.x, site.y) % points.length] || null;
         }
-        function path(ax, ay, bx, by) {
-          const key = [ax, ay, bx, by].join(",");
+        function path(ax, ay, bx, by, nativeCombat = false) {
+          const steps = nativeCombat
+            ? [
+                [0, -1],
+                [1, -1],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [-1, 1],
+                [-1, 0],
+                [-1, -1],
+              ]
+            : neighbors;
+          const heuristic = nativeCombat
+            ? (ax, ay, bx, by) => {
+                const x = Math.abs(ax - bx),
+                  y = Math.abs(ay - by);
+                return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
+              }
+            : octile;
+          const key = [ax, ay, bx, by, nativeCombat].join(",");
           if (paths.has(key)) return paths.get(key);
           if (!walkable(ax, ay) || !walkable(bx, by)) return null;
           const width = map.width,
@@ -19709,13 +19586,14 @@ SOFTWARE.
             goal = by * width + bx,
             n = width * map.height;
           const g = new Float64Array(n).fill(Infinity),
-            prev = new Int32Array(n).fill(-1);
+            prev = new Int32Array(n).fill(-1),
+            closed = nativeCombat ? new Uint8Array(n) : null;
           const heap = new Heap((a, b) => a.f - b.f || b.g - a.g || a.id - b.id);
           g[start] = 0;
-          heap.push({ id: start, g: 0, f: octile(ax, ay, bx, by) });
+          heap.push({ id: start, g: 0, f: heuristic(ax, ay, bx, by) });
           while (heap.q.length) {
             const u = heap.pop();
-            if (u.g !== g[u.id]) continue;
+            if (closed ? closed[u.id] : u.g !== g[u.id]) continue;
             if (u.id === goal) {
               const out = [];
               for (let v = goal; v !== start; v = prev[v])
@@ -19725,18 +19603,19 @@ SOFTWARE.
               paths.set(key, out);
               return out;
             }
+            if (closed) closed[u.id] = 1;
             const x = u.id % width,
               y = Math.floor(u.id / width);
-            for (const [dx, dy] of neighbors) {
+            for (const [dx, dy] of steps) {
               const nx = x + dx,
                 ny = y + dy;
               if (!canStep(x, y, nx, ny)) continue;
               const id = ny * width + nx,
-                ng = u.g + (dx && dy ? Math.SQRT2 : 1);
-              if (ng < g[id]) {
+                ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
+              if (!closed?.[id] && ng < g[id]) {
                 g[id] = ng;
                 prev[id] = u.id;
-                heap.push({ id, g: ng, f: ng + octile(nx, ny, bx, by) });
+                heap.push({ id, g: ng, f: ng + heuristic(nx, ny, bx, by) });
               }
             }
           }
@@ -20930,7 +20809,7 @@ SOFTWARE.
       return { create, loot, potionFlow, inventory, selectedFood, kinds };
     });
 
-    /* Independent continuous single-monster comparison, not a route simulator. */
+    /* Passive route forecasts: audited native timing with independent market valuation. */
     (function (root, factory) {
       if (typeof module === "object" && module.exports)
         module.exports = factory(require("./core.js"), require("./combat.js"));
@@ -21015,110 +20894,511 @@ SOFTWARE.
           hitpoints: Math.round(third * base),
         };
       }
-      function forecast(model, options) {
-        const monster = model.data.combat.monsters.find((x) => x.id === options.monsterId);
+      // Independently implemented from the audited public client 1.0.2247.
+      // Same combat/route transitions; expected loot is valued separately from
+      // sampled inventory drops, so a lucky rare drop cannot dominate the ranking.
+      function mix(x) {
+        x = (x ^ (x >>> 16)) >>> 0;
+        x = Math.imul(x, 2246822507) >>> 0;
+        x = (x ^ (x >>> 13)) >>> 0;
+        x = Math.imul(x, 3266489909) >>> 0;
+        return (x ^ (x >>> 16)) >>> 0;
+      }
+      function runRoute(model, options) {
+        const p = JSON.parse(JSON.stringify(options.player)),
+          facts = model.data;
+        const zone = facts.world.zones.find(
+          (z) =>
+            z.id ===
+            (options.zoneId ??
+              facts.world.zones.find((z) => z.monsterId === options.monsterId)?.id),
+        );
+        const monster = zone && facts.combat.monsters.find((m) => m.id === zone.monsterId);
         if (!monster) throw new Error("Unknown monster");
-        const source = options.player,
-          samples = Math.max(1, Math.min(32, Math.floor(options.samples || 16))),
-          ticks = 6000;
-        const hour = { ticks, outputs: {}, inputs: {}, xp: 0, bySkill: {}, food: {} },
-          add = (out, id, n) => {
-            out[id] = (out[id] || 0) + n;
-          };
-        let deaths = 0,
-          kills = 0;
-        for (let sample = 0; sample < samples; sample++) {
-          const p = JSON.parse(JSON.stringify(source)),
-            random = core.rng(core.hash(monster.id, sample, 9047));
-          const getStats = buildStats(model, p);
-          let hp = getStats(p.lastTick).maxHp,
-            foe = monster.hp,
-            attackClock = 0,
+        if (!Number.isInteger(p.x) || !Number.isInteger(p.y) || !Number.isFinite(p.hp))
+          throw new Error("等待角色血量与位置数据");
+        if (
+          facts.world.regions.some(
+            (r) =>
+              r.name === "Home" &&
+              p.x >= r.x &&
+              p.y >= r.y &&
+              p.x < r.x + r.width &&
+              p.y < r.y + r.height,
+          )
+        )
+          throw new Error("动态家园路线尚未校准；请返回主地图后计算完整时间");
+        const start = p.lastTick,
+          ticks = Math.max(1, Math.min(6000, Math.floor(options.ticks || 6000))),
+          seed = options.seed ?? 1337;
+        p.pack ||= [];
+        p.bank ||= {};
+        p.overflow ||= {};
+        p.brews ||= {};
+        p.skills ||= {};
+        p.perks ||= {};
+        p.equipment ||= {};
+        p.foodMaxTier ??= 0;
+        p.foodPerTrip ??= 20;
+        p.eatAt ??= 0.5;
+        const r = {
+          ticks,
+          outputs: {},
+          inputs: {},
+          bySkill: {},
+          food: {},
+          kills: 0,
+          deaths: 0,
+          workTicks: 0,
+          walkTicks: 0,
+          bankTicks: 0,
+          drinkTicks: 0,
+          idleTicks: 0,
+          stoppedTicks: 0,
+          trips: 0,
+          stop: null,
+        };
+        const add = (out, id, n) => {
+          if (n) out[id] = (out[id] || 0) + n;
+        };
+        let getStats = buildStats(model, p),
+          phase = "toWork",
+          activity = "idle",
+          route = null,
+          pathIndex = 0,
+          stride = 0,
+          strideSpeed = 1000,
+          attackClock = 0,
+          foeClock = 0,
+          foeHp = 0,
+          drinkClock = 0,
+          killRoll = p.rollIndex?.kill || 0;
+        const cap = () => facts.constants.packSlots + (p.perks.pockets || 0);
+        const eligible = (id) =>
+          (model.item(id)?.heals || 0) > 0 &&
+          (model.tier(id) <= p.foodMaxTier || id === p.foodItemId);
+        const packFood = () =>
+          p.foodItemId > 0 && p.pack.some((s) => s.itemId === p.foodItemId && s.qty > 0)
+            ? p.foodItemId
+            : (p.pack.find((s) => s.qty > 0 && eligible(s.itemId))?.itemId ?? null);
+        const bankFoods = () => {
+          const ids = Object.keys(p.bank)
+            .map(Number)
+            .filter((id) => p.bank[id] > 0 && eligible(id))
+            .sort(
+              (a, b) =>
+                (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
+                a - b,
+            );
+          if (p.foodItemId > 0 && p.bank[p.foodItemId] > 0) {
+            const i = ids.indexOf(p.foodItemId);
+            if (i >= 0) ids.splice(i, 1);
+            ids.unshift(p.foodItemId);
+          }
+          return ids;
+        };
+        const bankFood = () => bankFoods()[0] ?? null;
+        const danger = () =>
+          p.hp <= 0
+            ? "dead"
+            : p.eatAt > 0 &&
+                (p.hp <= getStats(p.lastTick).maxHp * p.eatAt ||
+                  p.hp <= getStats(p.lastTick).maxHp / 3) &&
+                packFood() === null &&
+                bankFood() !== null
+              ? "restock"
+              : p.hp <= getStats(p.lastTick).maxHp / 3 && (p.eatAt <= 0 || packFood() === null)
+                ? "fountain"
+                : null;
+        const stop = (reason) => {
+          r.stop = reason;
+          activity = "stopped";
+        };
+        const inZone = () =>
+          p.x >= zone.x && p.y >= zone.y && p.x < zone.x + zone.width && p.y < zone.y + zone.height;
+        const near = (site) => Math.abs(p.x - site.x) <= 1 && Math.abs(p.y - site.y) <= 1;
+        function walk(point) {
+          if (!point) {
+            stop("unreachable");
+            return;
+          }
+          route = model.path(p.x, p.y, point.x, point.y, true);
+          pathIndex = 0;
+          if (!route) {
+            stop("unreachable");
+            return;
+          }
+          if (!route.length) {
+            activity = "idle";
+            return;
+          }
+          stride = 0;
+          strideSpeed = Math.round(
+            (1000 + Math.round((model.tool(p.equipment.mount)?.bonus || 0) * 1000)) *
+              (1 + 0.2 * model.brew(p, "swift", p.lastTick)) *
+              model.master(p, "move"),
+          );
+          activity = "walking";
+        }
+        function eat() {
+          const s = getStats(p.lastTick);
+          if (p.eatAt <= 0 || p.hp <= 0 || p.hp > s.maxHp * p.eatAt) return false;
+          const id = packFood();
+          if (id === null) return false;
+          const at = p.pack.findIndex((x) => x.itemId === id);
+          if (--p.pack[at].qty <= 0) p.pack.splice(at, 1);
+          p.hp = Math.min(
+            s.maxHp,
+            p.hp +
+              Math.floor(
+                model.item(id).heals *
+                  (1 + 0.025 * (p.perks.meals || 0) + 0.25 * model.brew(p, "nourish", p.lastTick)),
+              ),
+          );
+          add(r.food, id, 1);
+          add(r.inputs, id, 1);
+          const food = facts.food.variants.find((x) => x.id === id);
+          for (const key of ["fed", "rooted"])
+            if (food?.[key + "Ticks"])
+              p.brews[key] = Math.max(p.lastTick, p.brews[key] || 0) + food[key + "Ticks"];
+          return true;
+        }
+        function put(id, qty) {
+          if (model.item(id)?.stackable) {
+            const s = p.pack.find((x) => x.itemId === id);
+            if (s) {
+              s.qty += qty;
+              return;
+            }
+            if (p.pack.length < cap()) {
+              p.pack.push({ itemId: id, qty });
+              return;
+            }
+          } else if (p.pack.length + qty <= cap()) {
+            for (let i = 0; i < qty; i++) p.pack.push({ itemId: id, qty: 1 });
+            return;
+          }
+          add(p.bank, id, qty); // Native combat loot falls straight into the bank if it does not fit.
+        }
+        function bank() {
+          const slots =
+            75 +
+            (p.bankSlotsBought || 0) +
+            facts.rooms
+              .filter((x) => x.bonus.kind === "bankSlots")
+              .reduce((n, x) => n + Math.floor((p.house?.[x.id] || 0) / 2), 0);
+          const fits = (id) =>
+            p.unlimitedBank ||
+            (p.brews.blessing || 0) > p.lastTick ||
+            p.bank[id] > 0 ||
+            Object.values(p.bank).filter((n) => n > 0).length < slots;
+          for (const [id, n] of Object.entries(p.overflow))
+            if (n > 0 && fits(id)) {
+              add(p.bank, id, n);
+              delete p.overflow[id];
+            }
+          p.pack = p.pack.filter((s) => {
+            if (fits(s.itemId)) {
+              add(p.bank, s.itemId, s.qty);
+              return false;
+            }
+            if (
+              p.overflow[s.itemId] > 0 ||
+              Object.values(p.overflow).filter((n) => n > 0).length < 10
+            ) {
+              add(p.overflow, s.itemId, s.qty);
+              return false;
+            }
+            return true;
+          });
+          if (p.pack.length) {
+            stop("storageFull");
+            return;
+          }
+          const target =
+            p.foodPerTrip === -1
+              ? cap()
+              : p.foodPerTrip === -2
+                ? Math.max(1, cap() - 1)
+                : Math.max(0, p.foodPerTrip);
+          let taken = 0;
+          for (const id of bankFoods()) {
+            const n = Math.max(0, Math.min(target - taken, p.bank[id], cap() - p.pack.length));
+            if (!n) continue;
+            p.bank[id] -= n;
+            if (!p.bank[id]) delete p.bank[id];
+            for (let i = 0; i < n; i++) p.pack.push({ itemId: id, qty: 1 });
+            taken += n;
+            if (taken >= target) break;
+          }
+          // 1.0.2247 eats before leaving the bank, up to 64 attempts.
+          for (let i = 0; i < 64; i++) {
+            const old = p.hp;
+            eat();
+            if (p.hp === old) break;
+          }
+          r.trips++;
+          activity = "idle";
+        }
+        const roll = (salt, tick) => mix(core.hash(seed ^ salt, p.id, tick)) / 4294967296;
+        const secret = (salt, index) =>
+          mix(core.hash(mix(core.hash(seed, salt, 625341585)), p.id, index));
+        function killed() {
+          r.kills++;
+          killRoll++;
+          for (const [id, n] of Object.entries(
+            combat.loot(model, p, monster, p.lastTick, options.windows || []),
+          ))
+            add(r.outputs, id, n);
+          const probs = model.rarityProbabilities(
+              p,
+              { skill: "combat", inputs: [] },
+              p.lastTick,
+              options.windows || [],
+            ),
+            u = secret(1146244944, killRoll) / 4294967296;
+          if (secret(1212761157, killRoll) / 4294967296 < (monster.dropChance ?? 1)) {
+            let tier = 0,
+              total = 0;
+            for (let i = 4; i >= 1; i--) {
+              total += probs[i];
+              if (u < total) {
+                tier = i;
+                break;
+              }
+            }
+            put(monster.drop + tier * 1000, 1);
+          }
+          const loot = combat.loot(model, p, monster, p.lastTick, options.windows || []);
+          if (
+            monster.bonus &&
+            secret(1380012613, killRoll) / 4294967296 < (loot[monster.bonus.itemId] || 0)
+          )
+            put(monster.bonus.itemId, 1);
+          if (
+            secret(1448036676, killRoll) / 4294967296 <
+            Math.min(0.2, 0.08 + monster.level * 0.0013)
+          )
+            put(facts.combat.shardId, 1 + Math.floor(monster.level / 30));
+          if (secret(1346720801, killRoll) / 4294967296 < facts.combat.petChance)
+            put(facts.combat.pets[monster.id], 1);
+          foeHp = 0;
+          foeClock = 0;
+        }
+        function fight() {
+          if (foeHp <= 0) {
+            foeHp = monster.hp;
             foeClock = 0;
-          const foodId = combat.selectedFood(model, p),
-            food = model.item(foodId),
-            duration = model.data.food.variants.find((x) => x.id === foodId);
-          for (let step = 1; step <= ticks; step++) {
-            const tick = source.lastTick + step,
-              s = getStats(tick);
-            let acted = false;
-            attackClock += s.attackStep;
-            foeClock++;
-            if (attackClock >= s.speed * 1000) {
-              attackClock -= s.speed * 1000;
-              acted = true;
-              if (
-                random() <
-                s.accuracy / (s.accuracy + 10 + monster.defence * (s.style === "magic" ? 0.5 : 1))
-              ) {
-                const old = foe;
-                foe = Math.max(0, foe - 1 - Math.floor(random() * s.maxHit));
-                for (const [skill, total] of Object.entries(
-                  killXp(model, p, monster, tick, options.windows || [], s.style),
-                ))
-                  add(
-                    hour.bySkill,
-                    skill,
-                    (Math.round((total * old) / monster.hp) -
-                      Math.round((total * foe) / monster.hp)) /
-                      samples,
-                  );
+            attackClock = 0;
+          }
+          const s = getStats(p.lastTick);
+          let acted = false;
+          attackClock += s.attackStep;
+          if (attackClock >= s.speed * 1000) {
+            attackClock -= s.speed * 1000;
+            acted = true;
+            if (
+              roll(1398230599, p.lastTick) <
+              s.accuracy / (s.accuracy + 10 + monster.defence * (s.style === "magic" ? 0.5 : 1))
+            ) {
+              const old = foeHp;
+              foeHp = Math.max(0, foeHp - 1 - Math.floor(roll(1145915201, p.lastTick) * s.maxHit));
+              let leveled = false;
+              for (const [skill, total] of Object.entries(
+                killXp(model, p, monster, p.lastTick, options.windows || [], s.style),
+              )) {
+                const xp =
+                    Math.round((total * (monster.hp - foeHp)) / monster.hp) -
+                    Math.round((total * (monster.hp - old)) / monster.hp),
+                  before = model.level(p.skills[skill] || 0);
+                p.skills[skill] = (p.skills[skill] || 0) + xp;
+                add(r.bySkill, skill, xp);
+                if (model.level(p.skills[skill]) > before) leveled = true;
               }
-              if (foe === 0) {
-                kills += 1 / samples;
-                for (const [id, n] of Object.entries(
-                  combat.loot(model, p, monster, tick, options.windows || []),
-                ))
-                  add(hour.outputs, id, n / samples);
-                foe = monster.hp;
-                foeClock = 0;
-                // Killing ends this monster's turn; the next encounter starts next tick.
-                continue;
-              }
-            }
-            if (foeClock >= monster.speed) {
-              foeClock = 0;
-              acted = true;
-              if (random() < (10 + monster.attack) / (10 + monster.attack + s.defence)) {
-                const raw = 1 + Math.floor(random() * monster.maxHit);
-                hp -= Math.max(
-                  1,
-                  Math.floor(
-                    raw * ((p.brews?.rooted || 0) > tick ? 1 - model.data.food.reduction : 1),
-                  ),
-                );
-              }
-            }
-            if (hp <= 0) {
-              deaths += 1 / samples;
-              break;
-            }
-            if (acted && food?.heals > 0 && hp <= s.maxHp * (p.eatAt ?? 0.5)) {
-              hp = Math.min(
-                s.maxHp,
-                hp +
-                  Math.floor(
-                    food.heals *
-                      (1 + 0.025 * (p.perks?.meals || 0) + 0.25 * model.brew(p, "nourish", tick)),
-                  ),
-              );
-              add(hour.inputs, foodId, 1 / samples);
-              add(hour.food, foodId, 1 / samples);
-              if (duration) {
-                p.brews ||= {};
-                for (const key of ["fed", "rooted"])
-                  if (duration[key + "Ticks"])
-                    p.brews[key] = Math.max(tick, p.brews[key] || 0) + duration[key + "Ticks"];
+              if (leveled) getStats = buildStats(model, p);
+              if (foeHp === 0) {
+                killed();
+                return;
               }
             }
           }
+          if (++foeClock >= monster.speed) {
+            foeClock = 0;
+            acted = true;
+            if (
+              roll(1179600211, p.lastTick) <
+              (10 + monster.attack) / (10 + monster.attack + getStats(p.lastTick).defence)
+            ) {
+              const raw = 1 + Math.floor(roll(1179600196, p.lastTick) * monster.maxHit);
+              p.hp = Math.max(
+                0,
+                p.hp -
+                  Math.max(
+                    1,
+                    Math.floor(
+                      raw * ((p.brews.rooted || 0) > p.lastTick ? 1 - facts.food.reduction : 1),
+                    ),
+                  ),
+              );
+            }
+          }
+          if (acted) eat();
         }
-        const potions = combat.potionFlow(model, source, source.lastTick, source.lastTick + ticks);
-        for (const [id, n] of Object.entries(potions)) add(hour.inputs, id, n);
-        hour.xp = Object.values(hour.bySkill).reduce((a, b) => a + b, 0);
-        return { hour, kills, deaths, samples, monsterId: monster.id, continuous: true };
+        if (p.eatAt > 0 && packFood() === null && bankFood() !== null) phase = "toBank";
+        for (let step = 1; step <= ticks; step++) {
+          p.lastTick = start + step;
+          if (p.lastTick % 100 === 0 && p.hp > 0 && activity !== "working")
+            p.hp = Math.min(getStats(p.lastTick).maxHp, p.hp + 1);
+          if (activity === "stopped") r.stoppedTicks++;
+          else if (activity === "walking") {
+            r.walkTicks++;
+            stride += strideSpeed;
+            while (stride >= 1000 && pathIndex < route.length) {
+              stride -= 1000;
+              Object.assign(p, route[pathIndex++]);
+            }
+            if (pathIndex >= route.length) activity = "idle";
+          } else if (activity === "working") {
+            r.workTicks++;
+            fight();
+            if (danger() !== null) activity = "idle";
+          } else if (activity === "banking") {
+            r.bankTicks++;
+            bank();
+          } else if (activity === "drinking") {
+            r.drinkTicks++;
+            const max = getStats(p.lastTick).maxHp;
+            if (p.hp >= max || (p.eatAt > 0 && (packFood() !== null || bankFood() !== null))) {
+              drinkClock = 0;
+              activity = "idle";
+            } else if (++drinkClock >= 8 - (p.perks.rest || 0)) {
+              drinkClock = 0;
+              p.hp++;
+              if (p.hp >= max) activity = "idle";
+            }
+          } else {
+            r.idleTicks++;
+            if (phase === "toWork") {
+              if (inZone()) phase = "working";
+              else
+                walk({
+                  x: zone.x + 2 + (core.hash(p.id, zone.id, 1) % Math.max(1, zone.width - 4)),
+                  y: zone.y + 2 + (core.hash(p.id, zone.id, 2) % Math.max(1, zone.height - 4)),
+                });
+            } else if (phase === "working") {
+              const why = danger();
+              if (why === "dead") {
+                r.deaths++;
+                stop("died");
+              } else if (why === "restock") phase = "toBank";
+              else if (why === "fountain") phase = "toFountain";
+              else if (!inZone()) phase = "toWork";
+              else activity = "working";
+            } else if (phase === "toBank") {
+              const b = model.nearestBank(p);
+              if (!b) stop("unreachable");
+              else if (near(b)) {
+                phase = "banking";
+                activity = "banking";
+              } else walk(model.adjacent(b));
+            } else if (phase === "toFountain") {
+              const distance = (s) => {
+                const x = Math.abs(p.x - s.x),
+                  y = Math.abs(p.y - s.y);
+                return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
+              };
+              const f = facts.world.sites
+                .filter((s) => s.kind === "fountain")
+                .sort((a, b) => distance(a) - distance(b) || a.id - b.id)[0];
+              if (!f) stop("unreachable");
+              else if (near(f)) {
+                phase = "drinking";
+                activity = "drinking";
+                drinkClock = 0;
+                attackClock = 0;
+              } else walk(model.adjacent(f, p.id));
+            } else phase = "toWork";
+          }
+          if (options.onTick)
+            options.onTick({
+              tick: p.lastTick,
+              x: p.x,
+              y: p.y,
+              hp: p.hp,
+              activity,
+              phase,
+              kills: r.kills,
+              food: { ...r.food },
+              skills: { ...p.skills },
+            });
+        }
+        const potion = combat.potionFlow(model, options.player, start, start + ticks);
+        for (const [id, n] of Object.entries(potion)) add(r.inputs, id, n);
+        r.xp = Object.values(r.bySkill).reduce((n, x) => n + x, 0);
+        r.potions = potion;
+        return r;
       }
-      return { stats, killXp, forecast };
+      function forecast(model, options) {
+        const samples = Math.max(1, Math.min(32, Math.floor(options.samples || 16))),
+          hour = {
+            ticks: 6000,
+            outputs: {},
+            inputs: {},
+            xp: 0,
+            bySkill: {},
+            food: {},
+            potions: {},
+          };
+        const time = { combat: 0, travel: 0, bank: 0, recovery: 0, transition: 0, stopped: 0 },
+          stops = {};
+        let kills = 0,
+          deaths = 0,
+          trips = 0,
+          minKills = Infinity,
+          maxKills = 0;
+        for (let sample = 0; sample < samples; sample++) {
+          const r = runRoute(model, {
+            ...options,
+            ticks: 6000,
+            onTick: undefined,
+            seed: options.seed ?? core.hash(1337, sample, 9047),
+          });
+          for (const key of ["outputs", "inputs", "bySkill", "food", "potions"])
+            for (const [id, n] of Object.entries(r[key]))
+              hour[key][id] = (hour[key][id] || 0) + n / samples;
+          for (const [key, field] of Object.entries({
+            combat: "workTicks",
+            travel: "walkTicks",
+            bank: "bankTicks",
+            recovery: "drinkTicks",
+            transition: "idleTicks",
+            stopped: "stoppedTicks",
+          }))
+            time[key] += r[field] / samples;
+          kills += r.kills / samples;
+          deaths += r.deaths / samples;
+          trips += r.trips / samples;
+          minKills = Math.min(minKills, r.kills);
+          maxKills = Math.max(maxKills, r.kills);
+          if (r.stop) stops[r.stop] = (stops[r.stop] || 0) + 1;
+        }
+        hour.xp = Object.values(hour.bySkill).reduce((a, b) => a + b, 0);
+        return {
+          hour,
+          kills,
+          deaths,
+          samples,
+          trips,
+          time,
+          stops,
+          killRange: [minKills, maxKills],
+          monsterId: options.monsterId,
+          continuous: false,
+          clientVersion: factsVersion(model),
+        };
+      }
+      const factsVersion = (model) => model.data.version;
+      return { stats, killXp, runRoute, forecast };
     });
 
     let model;
@@ -32039,6 +32319,12 @@ SOFTWARE.
     const keys = [
       "id",
       "lastTick",
+      "hp",
+      "ironman",
+      "bankSlotsBought",
+      "unlimitedBank",
+      "overflow",
+      "rollIndex",
       "skills",
       "equipment",
       "perks",
@@ -33708,9 +33994,9 @@ html.dvi-insights .market-window .dvi-market-sort:focus-visible {
   top: 2px;
   left: 2px;
   max-width: calc(100% - 4px);
-  padding: 1px 3px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  padding: 0;
+  border-radius: 0;
+  background: none;
   color: var(--ink-muted);
   font: 500 10px var(--mono);
   font-variant-numeric: tabular-nums;
@@ -33733,9 +34019,9 @@ html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort[aria-pressed="true"]
   top: 2px;
   left: 3px;
   max-width: calc(100% - 6px);
-  border-radius: 2px;
-  padding: 0 2px;
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border-radius: 0;
+  padding: 0;
+  background: none;
   color: var(--ink);
   font: 500 var(--fs-2xs, 10px) var(--mono);
   font-variant-numeric: tabular-nums;
@@ -36623,7 +36909,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   });
 
   // ---- src/battle-ui.js ----
-  /* Compact ideal-combat comparisons on normal monster rows only. */
+  /* Compact route-aware combat comparisons on normal monster rows only. */
   const battleLists = new WeakMap(),
     battleCache = new Map();
   let battlePending = false,
@@ -36672,7 +36958,13 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       strength,
       p.guildBonus,
       p.eatAt,
-      globalThis.DVICombat.selectedFood(model, p),
+      p.foodPerTrip,
+      p.foodMaxTier,
+      p.foodItemId,
+      p.homeBank,
+      p.ironman,
+      p.bankSlotsBought,
+      p.unlimitedBank,
       activeWindows,
       model.rotation(tick),
     ]);
@@ -36686,7 +36978,22 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       Math.max(0, Math.min(6000, (p.brews?.[kind] || 0) - start)),
     );
     const potions = globalThis.DVICombat.potionFlow(model, p, start, end);
-    return JSON.stringify([battleConfiguration(p), coverage, potions, store.state.windows]);
+    const stock = globalThis.DVICombat.inventory?.(p) || p.bank || {};
+    const foods = Object.entries(stock)
+      .filter(([id, n]) => n > 0 && (model.item?.(Number(id))?.heals || 0) > 0)
+      .sort((a, b) => Number(a[0]) - Number(b[0]));
+    return JSON.stringify([
+      battleConfiguration(p),
+      coverage,
+      potions,
+      store.state.windows,
+      p.x,
+      p.y,
+      p.hp,
+      foods,
+      p.pack,
+      p.overflow,
+    ]);
   }
   function syncBattleRows() {
     const p = store.state.player;
@@ -36712,7 +37019,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         let record = records.get(zone.id);
         if (!record) {
           const box = document.createElement("div");
-          box.className = "dvi-native-work";
+          box.className = "dvi-native-work dvi-battle-work";
           box.dataset.noI18n = "";
           box.innerHTML =
             '<details><summary><span data-battle-profit></span><span class="dvi-native-action"></span></summary><div data-battle-detail></div></details>';
@@ -36728,65 +37035,43 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         const entry = battleCache.get(monster.id),
           valid = entry?.signature === signature,
           sameConfig = entry?.configuration === configuration;
-        setNativeText(
-          record.box.querySelector(".dvi-native-action"),
-          sameConfig && entry?.pending && entry.result ? t("更新中…") : "",
-        );
+        // Never replace the game's XP/death warning: native refreshes and our
+        // route estimate have different units, widths and simulation scopes.
+        setNativeText(record.box.querySelector(".dvi-native-action"), "");
+        record.box.setAttribute?.("aria-busy", String(!!entry?.pending));
         const summary = record.box.querySelector("[data-battle-profit]");
-        if (sameConfig && entry.result) {
+        if (entry?.result) {
           const result = entry.result,
             profit = globalThis.DVIPlannerCore.dailyProfits(
               result.hour,
-              store.state.books,
-              store.state.taxBp,
+              entry.player?.ironman ? {} : store.state.books,
+              entry.player?.ironman ? 0 : store.state.taxBp,
               Date.now(),
               GAME_DATA,
             );
           setNativeText(summary, (result.deaths ? t("阵亡风险") + " · " : "") + profitText(profit));
-          summary.title = t("连续作战预估；未计找怪、跑路和补货耗时。") + "\n" + profitHint(profit);
-          const meta = row.querySelector(".route-meta");
-          if (meta && !meta.classList.contains("danger")) {
-            setNativeText(meta, "≈ " + fmt(result.hour.xp) + " XP/h");
-            meta.title = t("连续作战预估；未计找怪、跑路和补货耗时。");
-          }
-          const food = globalThis.DVIPlannerCore.valueFlows(
-            result.hour.food,
-            store.state.books,
-            "buy",
-            0,
-            Date.now(),
-            GAME_DATA,
-          );
-          const potion = globalThis.DVIPlannerCore.valueFlows(
-            globalThis.DVICombat.potionFlow(
-              model,
-              entry.player,
-              entry.player.lastTick,
-              entry.player.lastTick + 6000,
-            ),
-            store.state.books,
-            "buy",
-            0,
-            Date.now(),
-            GAME_DATA,
-          );
-          const html = `<div class="dvi-native-breakdown"><span>${t("食物成本")}</span><span>${food.total === null ? "—" : (food.estimated.length ? "≈ " : "") + fmt(food.total * 24) + " " + t("金币/d")}</span><span>${t("药水成本")}</span><span>${potion.total === null ? "—" : (potion.estimated.length ? "≈ " : "") + fmt(potion.total * 24) + " " + t("金币/d")}</span></div><p class="dvi-note">${t("连续作战预估；未计找怪、跑路和补货耗时。")}</p>`;
+          summary.title =
+            (entry.error
+              ? t("预测暂不可用") + "\n"
+              : !sameConfig || entry.pending
+                ? t("更新中…") + "\n"
+                : "") +
+            t("当前位置起算 1h；按库存及增益到期模拟，日利为折算值。") +
+            "\n" +
+            profitHint(profit);
+          const html = battleDetail(result, entry.player?.ironman);
           const detail = record.box.querySelector("[data-battle-detail]");
           if (detail.innerHTML !== html) detail.innerHTML = html;
         } else {
           setNativeText(summary, valid && entry.error ? t("预测暂不可用") : t("计算中…"));
-          summary.removeAttribute?.("title");
-          const meta = row.querySelector(".route-meta");
-          if (meta && !meta.classList.contains("danger")) {
-            setNativeText(meta, valid && entry.error ? "—" : t("计算中…"));
-            meta.removeAttribute?.("title");
-          }
-          const detail = record.box.querySelector("[data-battle-detail]");
-          if (detail.innerHTML) detail.innerHTML = "";
+          summary.title = entry?.error ? errorText(entry.error) : "";
+          const detail = record.box.querySelector("[data-battle-detail]"),
+            html = battleDetail(null);
+          if (detail.innerHTML !== html) detail.innerHTML = html;
         }
         // A rolling one-hour horizon changes on every tick near buff expiry.
         // Refresh it once per minute, while real stat/strength changes bypass the
-        // interval. Keep the last compatible snapshot visible during the worker.
+        // interval. Keep the last completed snapshot visible during the worker.
         if (
           !battlePending &&
           !row.disabled &&
@@ -36800,14 +37085,15 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
               configuration,
               at: Date.now(),
               pending: true,
-              player: sameConfig && entry.result ? entry.player : player,
-              result: sameConfig ? entry.result : undefined,
+              player: entry?.result ? entry.player : player,
+              result: entry?.result,
             };
           battleCache.set(monster.id, current);
           localInsight("battle", {
             player,
             windows: JSON.parse(JSON.stringify(store.state.windows)),
             monsterId: monster.id,
+            zoneId: zone.id,
             samples: 16,
           })
             .then(
@@ -36815,8 +37101,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
                 current.result = result;
                 current.player = player;
               },
-              () => {
-                current.error = true;
+              (error) => {
+                current.error = error.message || String(error);
               },
             )
             .finally(() => {
@@ -36833,6 +37119,47 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           records.delete(id);
         }
     }
+  }
+
+  function battleDetail(result, ironman = false) {
+    const price = (flow) => {
+      if (!result) return "—";
+      const cost = globalThis.DVIPlannerCore.valueFlows(
+        Object.fromEntries(Object.entries(flow || {}).map(([id, n]) => [id, n * 24])),
+        ironman ? {} : store.state.books,
+        "buy",
+        0,
+        Date.now(),
+        GAME_DATA,
+      );
+      return cost.total === null
+        ? "—"
+        : (cost.estimated.length ? "≈ " : "") + fmt(cost.total) + " " + t("金币/d");
+    };
+    const time = (key) => (result?.time ? duration(result.time[key] * 0.6) : "—");
+    const rows = [
+      ["路线经验", result ? "≈ " + fmt(result.hour.xp) + " XP/h" : "—"],
+      ["食物成本", price(result?.hour.food)],
+      ["药水成本", price(result?.hour.potions)],
+      ["战斗时间", time("combat")],
+      ["移动时间", time("travel")],
+      [
+        "补给与恢复",
+        result?.time
+          ? duration((result.time.bank + result.time.recovery + result.time.transition) * 0.6)
+          : "—",
+      ],
+      ["停工时间", time("stopped")],
+    ];
+    return (
+      '<div class="dvi-native-breakdown">' +
+      rows
+        .map(([label, value]) => "<span>" + t(label) + "</span><span>" + value + "</span>")
+        .join("") +
+      '</div><p class="dvi-note">' +
+      t("当前位置起算 1h；按库存及增益到期模拟，日利为折算值。") +
+      "</p>"
+    );
   }
 
   // ---- src/inventory-ui.js ----
@@ -37179,6 +37506,25 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   -webkit-user-select: none;
   user-select: none;
 }
+/* Combat summaries keep one line across pending/completed/changed settings. */
+.dvi-battle-work > details > summary > [data-battle-profit] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dvi-battle-work > details > summary > .dvi-native-action {
+  flex: none;
+}
+.dvi-battle-work .dvi-native-breakdown {
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+}
+.dvi-battle-work .dvi-native-breakdown > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dvi-native-combat {
   padding: 0 10px 5px;
   border-top: 1px solid var(--edge, #b89763);
@@ -37819,12 +38165,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (changes.some((change) => change.target.matches?.("[data-bank-grid]"))) syncInventory();
     if (changes.some((change) => change.target.matches?.("[data-market-list]")))
       syncMarketInventory();
-    if (
-      changes.some(
-        (change) => change.type === "childList" && change.target.matches?.(".route-meta"),
-      )
-    )
-      syncBattleRows();
     if (changes.some((change) => change.target.matches?.("[data-boss-top],.boss-top")))
       polishBossRows();
     if (
@@ -37862,8 +38202,9 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (
       changes.some(
         (change) =>
-          !change.target.closest?.(".dvi-native-work,.dvi-native-prices,.tip[data-tip]") &&
-          !(change.type === "attributes" && change.attributeName === "style"),
+          !change.target.closest?.(
+            ".dvi-native-work,.dvi-native-prices,.tip[data-tip],.route-meta",
+          ) && !(change.type === "attributes" && change.attributeName === "style"),
       )
     )
       scheduleNative();
