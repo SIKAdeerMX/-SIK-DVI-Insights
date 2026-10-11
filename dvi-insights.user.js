@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.30
+// @version      0.4.31
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -2230,7 +2230,8 @@ SOFTWARE.
             // Stall coins are deterministic and counted from completed attempts below.
             if (e.itemId === 200) continue;
             add(eventOutputs, e.itemId, e.qty ?? 1);
-          } else if (e.kind === "box") add(eventOutputs, model.data.constants.dropBoxItem, 1);
+          } else if (e.kind === "box")
+            add(eventOutputs, e.itemId ?? model.data.constants.dropBoxItem, 1);
           else if (e.kind === "killed" && !job) add(eventOutputs, 200, e.coins);
           else if (["bonus", "pet", "mount", "voidshard"].includes(e.kind))
             add(eventOutputs, e.itemId, e.kind === "voidshard" ? e.qty : 1);
@@ -2582,6 +2583,9 @@ SOFTWARE.
       待报价: "Price unavailable",
       缺买价: "Purchase price missing",
       估价: "Estimate",
+      材料估价: "Material value",
+      补齐成本: "Restock cost",
+      新版本待核对: "New version unchecked",
       产物收入: "Output income",
       材料成本: "Material cost",
       药水成本: "Potion cost",
@@ -5704,6 +5708,7 @@ SOFTWARE.
       { id: 394, name: "Meteoric greatsword", stackable: false, value: 3461 },
       { id: 395, name: "Colossus greatsword", stackable: false, value: 12704 },
       { id: 396, name: "Golden Week gift box", stackable: true, value: 25 },
+      { id: 397, name: "Moon box", stackable: true, value: 25 },
       { id: 400, name: "Pebble golem", stackable: false, value: 0 },
       { id: 401, name: "Baby kraken", stackable: false, value: 0 },
       { id: 402, name: "Acorn squirrel", stackable: false, value: 0 },
@@ -13581,6 +13586,7 @@ SOFTWARE.
       394: 1384,
       395: 5081,
       396: 10,
+      397: 10,
       400: null,
       401: null,
       402: null,
@@ -17721,17 +17727,6 @@ SOFTWARE.
         { id: 4175, fedTicks: 144000, rootedTicks: 30000 },
       ],
     },
-    version: {
-      version: "1.0.2247",
-      env: "live",
-      commit: "3f4d2be7",
-      branch: "professions",
-      subject: "Changelog 1.0.1185: faster loading and smoother crowds",
-      committedAt: "2026-10-11T06:29:31+02:00",
-      dirty: true,
-      builtAt: "2026-10-11T04:36:05.161Z",
-    },
-    clientAsset: "index-Dv9cdUtd.js",
     labels: {
       Copper: "铜矿",
       Tin: "锡矿",
@@ -18002,6 +17997,7 @@ SOFTWARE.
       "Wyrm ember": "巨龙余烬",
       "Protection scroll": "保护卷轴",
       "Golden Week gift box": "金秋礼盒",
+      "Moon box": "满月礼盒",
       "Pebble golem": "小石魔像",
       "Baby kraken": "小海妖",
       "Acorn squirrel": "橡果松鼠",
@@ -18032,7 +18028,18 @@ SOFTWARE.
       "Vein of gems": "宝石矿脉",
       "Hoard of gems": "宝石堆",
     },
-    sourceSha256: "36a359b70adc95df9019e48b63290373e7cd8393cef8b52a17b524d299ab6a22",
+    version: {
+      version: "1.0.2331",
+      env: "live",
+      commit: "0329395b",
+      branch: "professions",
+      subject: "Merge branch 'night-fixes' into professions",
+      committedAt: "2026-10-11T12:19:45+02:00",
+      dirty: true,
+      builtAt: "2026-10-11T10:41:17.597Z",
+    },
+    clientAsset: "index-C6UxPVvd.js",
+    sourceSha256: "cfec2d6184f4d1b649c87731d06f8ed095655de6ad0da6689c9c67dc6f969b9b",
   };
 
   // ---- Local forecast worker ----
@@ -20904,7 +20911,7 @@ SOFTWARE.
           hitpoints: Math.round(third * base),
         };
       }
-      // Independently implemented from the audited public client 1.0.2247.
+      // Independently implemented from the audited public client 1.0.2331.
       // Same combat/route transitions; expected loot is valued separately from
       // sampled inventory drops, so a lucky rare drop cannot dominate the ranking.
       function mix(x) {
@@ -21141,7 +21148,7 @@ SOFTWARE.
             taken += n;
             if (taken >= target) break;
           }
-          // 1.0.2247 eats before leaving the bank, up to 64 attempts.
+          // 1.0.2331 eats before leaving the bank, up to 64 attempts.
           for (let i = 0; i < 64; i++) {
             const old = p.hp;
             eat();
@@ -37844,6 +37851,15 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   color: var(--ink-faint, #876640);
   font-size: 10px;
 }
+.dvi-native-work .dvi-materials th small {
+  display: block;
+  font: inherit;
+}
+.dvi-native-work .dvi-materials tfoot td {
+  color: var(--ink, #3d2612);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 .dvi-native-work .dvi-note {
   font-size: var(--fs-2xs, 10px);
   line-height: 1.5;
@@ -38041,6 +38057,28 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     renderNative(task.record);
     pumpNative();
   }
+  function nativeMaterialHtml(materials) {
+    const books = store.state.books,
+      now = Date.now(),
+      core = globalThis.DVIPlannerCore;
+    const price = (flow) => core.valueFlows(flow, books, "buy", 0, now, GAME_DATA);
+    const cost = (value) =>
+      value.total === null
+        ? t("待报价")
+        : `${value.estimated.length ? "≈ " : ""}${fmt(value.total)} ${t("金币")}`;
+    const needed = {},
+      missing = {};
+    const rows = materials
+      .map((m) => {
+        const qty = Math.ceil(m.mean),
+          shortage = m.shortage;
+        needed[m.id] = (needed[m.id] || 0) + qty;
+        missing[m.id] = (missing[m.id] || 0) + shortage;
+        return `<tr title="${escape(t("已有 {owned}；95% 需补 {missing}", { owned: fmt(m.owned), missing: fmt(m.shortageP95) }))}"><td>${escape(itemName(m.id))}</td><td>${fmt(qty)}<small>${cost(price({ [m.id]: qty }))}</small></td><td>${fmt(shortage)}<small>${cost(price({ [m.id]: shortage }))}</small></td></tr>`;
+      })
+      .join("");
+    return `<table class="dvi-materials"><thead><tr><th>${t("材料")}</th><th>${t("总需")}<small>${t("估价")}</small></th><th>${t("需补")}<small>${t("成本")}</small></th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="2">${t("材料估价")}</td><td>${cost(price(needed))}</td></tr><tr><td colspan="2">${t("补齐成本")}</td><td>${cost(price(missing))}</td></tr></tfoot></table>`;
+  }
   function nativePlanHtml(result, options) {
     const r = result,
       profit = hourProfit(r, options);
@@ -38065,7 +38103,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     .join(
       "",
     )}</div><p class="dvi-note">${t("95% 尝试预算 {attempts} 次", { attempts: fmt(Math.ceil(r.plan.attemptsP95)) })}</p></details>
-  ${r.materials.length ? `<table><thead><tr>${["材料", "总需", "需补"].map((x) => `<th>${t(x)}</th>`).join("")}</tr></thead><tbody>${r.materials.map((m) => `<tr title="${escape(t("已有 {owned}；95% 需补 {missing}", { owned: fmt(m.owned), missing: fmt(m.shortageP95) }))}"><td>${escape(itemName(m.id))}</td><td>${fmt(Math.ceil(m.mean))}</td><td>${fmt(m.shortage)}</td></tr>`).join("")}</tbody></table>` : `<p class="dvi-note">${t("无需材料")}</p>`}
+  ${r.materials.length ? nativeMaterialHtml(r.materials) : `<p class="dvi-note">${t("无需材料")}</p>`}
   <details class="dvi-native-more"><summary aria-label="${t("收益明细")}"><span class="dvi-native-action" aria-hidden="true"></span></summary>${nativeProfitHtml(profit, r.hour, options)}</details>${r.farming ? nativeFarmHtml() : ""}`;
   }
   function nativeProfitHtml(profit, hour, options) {
@@ -38119,7 +38157,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     const asset = Array.from(document.scripts)
       .map((s) => s.src.match(/index-[A-Za-z0-9_-]+\.js/)?.[0])
       .find(Boolean);
-    if (asset && asset !== GAME_DATA.clientAsset) text += " · " + t("客户端已更新，规则待校验");
+    if (asset && asset !== GAME_DATA.clientAsset) text += " · " + t("新版本待核对");
     if (summary.textContent !== text) summary.textContent = text;
     record.box.hidden = !!record.row.disabled;
     setNativeText(record.box.querySelector(".dvi-native-action"), t("升级计算"));
