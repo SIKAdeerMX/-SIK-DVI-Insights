@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.22
+// @version      0.4.25
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -33705,26 +33705,18 @@ html.dvi-insights .market-window .dvi-market-sort:focus-visible {
 }
 .dvi-insights .market-window .dvi-market-value {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
+  top: 2px;
+  left: 2px;
   max-width: calc(100% - 4px);
   padding: 1px 3px;
   border-radius: 2px;
   background: color-mix(in srgb, var(--panel) 88%, transparent);
   color: var(--ink-muted);
-  font: 400 11px/1.3 var(--sans);
+  font: 500 10px var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
   text-shadow: none;
-}
-.dvi-insights .market-window .market-row.dvi-market-valued {
-  padding-right: 74px;
-}
-.dvi-insights .market-window .market-row > .dvi-market-value {
-  top: 50%;
-  bottom: auto;
-  transform: translateY(-50%);
 }
 html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort[aria-pressed="true"] {
   border-color: #d3a05f;
@@ -33736,27 +33728,32 @@ html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort[aria-pressed="true"]
 .dvi-insights [data-bank-grid] .dvi-bank-valued {
   position: relative;
 }
-.dvi-insights [data-bank-grid] .dvi-bank-valued > b:not(.plus) {
-  top: 1px;
-  bottom: auto;
-  right: 3px;
-}
 .dvi-insights .dvi-bank-value {
   position: absolute;
-  bottom: 2px;
-  right: 3px;
+  top: 2px;
+  left: 3px;
   max-width: calc(100% - 6px);
   border-radius: 2px;
   padding: 0 2px;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
-  color: var(--ink-muted);
-  font-size: 11px;
-  line-height: 1.3;
-  font-weight: 400;
+  color: var(--ink);
+  font: 500 var(--fs-2xs, 10px) var(--mono);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   text-shadow: none;
   white-space: nowrap;
+}
+.dvi-insights [data-bank-grid] .slot.barred > .dvi-bank-value {
+  color: var(--rust);
+}
+.dvi-insights [data-bank-grid] .slot[data-item]:hover > .dvi-bank-value {
+  color: var(--brass);
+}
+.dvi-insights [data-bank-window][data-away="true"] .slot[data-item]:hover > .dvi-bank-value {
+  color: var(--ink);
+}
+.dvi-insights [data-bank-grid] .dvi-bank-valued:has(> b.plus) > .dvi-bank-value {
+  top: 16px;
 }
 .dvi-insights [data-fields] .field-list {
   display: grid;
@@ -37358,7 +37355,37 @@ html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
   /* Enhance only the player's bank grid. Original slots and handlers stay in place. */
   const bankViews = new WeakMap();
   const marketValueViews = new WeakMap();
+  const inventoryValueWindows = new WeakSet();
   const fieldHelpState = new WeakMap();
+  // Resolve the current grid at click time: native redraws may replace it.
+  function bindValueSortingReset(window, selector, views, refresh) {
+    if (inventoryValueWindows.has(window)) return;
+    inventoryValueWindows.add(window);
+    const reset = () => {
+      const view = views.get(window.querySelector(selector));
+      if (!view?.sorted) return;
+      view.sorted = false;
+      refresh();
+    };
+    window.addEventListener(
+      "click",
+      (e) => {
+        const control = e.target.closest?.(
+          'button,[role="button"],input[type="button"],input[type="submit"],select',
+        );
+        const view = views.get(window.querySelector(selector));
+        if (control && control !== view?.button) reset();
+      },
+      true,
+    );
+    window.addEventListener(
+      "change",
+      (e) => {
+        if (e.target.matches?.('select,input[type="checkbox"],input[type="radio"]')) reset();
+      },
+      true,
+    );
+  }
   function syncInventory() {
     const p = store.state.player;
     if (!p) return;
@@ -37386,15 +37413,8 @@ html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
         };
         grid.addEventListener("pointerdown", stopDrag, true);
         grid.addEventListener("dragstart", stopDrag, true);
-        window.querySelector("[data-bank-arrange]")?.addEventListener(
-          "click",
-          () => {
-            view.sorted = false;
-            syncInventory();
-          },
-          true,
-        );
       }
+      bindValueSortingReset(window, "[data-bank-grid]", bankViews, syncInventory);
       const anchor = window.querySelector("[data-bank-arrange]");
       if (anchor && !view.button.isConnected) anchor.insertAdjacentElement("afterend", view.button);
       setNativeText(view.button, t("价值排序"));
@@ -37425,7 +37445,11 @@ html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
           value,
           locked: p.bankLocked?.includes(id) || !slot.matches(".slot[data-item]"),
         });
-        if (!slot.matches(".slot[data-item]")) continue;
+        if (!view.sorted || !slot.matches(".slot[data-item]")) {
+          slot.querySelector(".dvi-bank-value")?.remove();
+          slot.classList.remove("dvi-bank-valued");
+          continue;
+        }
         if (!slot.classList.contains("dvi-bank-valued")) slot.classList.add("dvi-bank-valued");
         let label = slot.querySelector(".dvi-bank-value");
         if (!label) {
@@ -37434,7 +37458,7 @@ html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
           label.dataset.noI18n = "";
           slot.append(label);
         }
-        setNativeText(label, fmt(value));
+        setNativeText(label, fmt(value, 2));
         const title = t("整堆估值");
         if (label.title !== title) label.title = title;
       }
@@ -37478,15 +37502,9 @@ html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
           view.sorted = true;
           syncMarketInventory();
         });
-        window.querySelector("[data-market-sort]")?.addEventListener(
-          "change",
-          () => {
-            view.sorted = false;
-            syncMarketInventory();
-          },
-          true,
-        );
       }
+      bindValueSortingReset(window, "[data-market-list]", marketValueViews, syncMarketInventory);
+      if (!own) view.sorted = false;
       if (view.button.parentElement !== tools) tools.append(view.button);
       view.button.hidden = !own;
       setNativeText(view.button, t("价值排序"));
@@ -37512,7 +37530,7 @@ html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
               p.ironman,
             );
         entries.push({ index, slot, value, locked: !item });
-        if (!own || !item) {
+        if (!own || !view.sorted || !item) {
           slot.querySelector(".dvi-market-value")?.remove();
           slot.classList.remove("dvi-market-valued");
           continue;
@@ -37525,7 +37543,7 @@ html.dvi-insights :is(.dvi-boss-drag, .dvi-boss-reset):focus-visible {
           label.dataset.noI18n = "";
           slot.append(label);
         }
-        setNativeText(label, fmt(value));
+        setNativeText(label, fmt(value, 2));
       }
       const ranks = globalThis.DVIInventory.ranks(entries);
       for (const entry of entries) {
