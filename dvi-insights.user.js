@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.32
+// @version      0.4.33
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -91,12 +91,17 @@ SOFTWARE.
     }
     function rng(seed) {
       let x = seed >>> 0;
-      return () => {
-        x += 0x6d2b79f5;
+      const random = () => {
+        x = (x + 0x6d2b79f5) >>> 0;
         let t = Math.imul(x ^ (x >>> 15), 1 | x);
         t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
       };
+      random.getState = () => x;
+      random.setState = (value) => {
+        x = value >>> 0;
+      };
+      return random;
     }
     class Heap {
       constructor(compare) {
@@ -631,7 +636,10 @@ SOFTWARE.
         const ins = inputs(j, rarity);
         if (!options.finiteStock)
           for (const x of ins) p.bank[x.itemId] = Math.max(p.bank[x.itemId] || 0, 1e9);
-        const target = data.xpTable[options.targetLevel],
+        const onFull = options.onFull ?? p.route?.onFull ?? "bank",
+          discarding = !ins.length && onFull === "drop";
+        const gathered = new Set([j.output.itemId, ...(j.bonus ? [j.bonus.itemId] : [])].map(base));
+        const target = options.targetLevel == null ? Infinity : data.xpTable[options.targetLevel],
           deadline =
             mode === "hour"
               ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
@@ -678,15 +686,25 @@ SOFTWARE.
           }
           return false;
         }
-        const matching = p.route?.jobId === j.id && p.workRarity === rarity;
+        const matching =
+          p.route?.jobId === j.id &&
+          p.workRarity === rarity &&
+          (p.route.onFull ?? "bank") === onFull;
         if (mode !== "hour" && p.skills[j.skill] >= target) return r;
-        let phase = matching ? p.route.phase : canWork(p, j, rarity) ? "toWork" : "toBank";
+        let phase = matching
+          ? p.route.phase
+          : canWork(p, j, rarity) &&
+              !(discarding && p.pack.some((x) => !gathered.has(base(x.itemId))))
+            ? "toWork"
+            : "toBank";
         let alreadyWorking = matching && p.activity === "working" && phase === "working";
         const near = (s) => Math.abs(p.x - s.x) <= 1 && Math.abs(p.y - s.y) <= 1;
         function advance(ticks, kind) {
-          const used = Math.min(ticks, deadline - p.lastTick);
+          const used = Math.min(ticks, deadline - p.lastTick),
+            before = p.lastTick;
           p.lastTick += used;
           r[kind] += used;
+          if (options.onAdvance) options.onAdvance(p, before, p.lastTick, r);
           return used === ticks;
         }
         function travel(destination, id) {
@@ -716,6 +734,7 @@ SOFTWARE.
           if (advance(ticks, "walkTicks")) Object.assign(p, p.path.at(-1));
         }
         while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
+          if (options.stopWhen?.(p, r)) break;
           if (r.attempts >= (options.maxAttempts || 150000))
             throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
           if (phase === "toWork") {
@@ -742,6 +761,21 @@ SOFTWARE.
               r.stop = "storageFull";
               break;
             }
+            if (options.finiteStock) {
+              const slots =
+                75 + (p.bankSlotsBought || 0) + Math.floor((p.house?.storeroom || 0) / 2);
+              for (const [id, n] of Object.entries(p.overflow || {}))
+                if (
+                  n > 0 &&
+                  (p.unlimitedBank ||
+                    (p.brews?.blessing || 0) > p.lastTick ||
+                    p.bank[id] > 0 ||
+                    Object.values(p.bank).filter((n) => n > 0).length < slots)
+                ) {
+                  add(p.bank, id, n);
+                  delete p.overflow[id];
+                }
+            }
             if (ins.length && !withdraw(p, j, rarity)) {
               if (options.finiteStock) {
                 r.stop = "materials";
@@ -756,6 +790,14 @@ SOFTWARE.
           }
           if (!canWork(p, j, rarity)) {
             if (!advance(1, "bankTicks")) break;
+            if (discarding) {
+              const previous = p.pack.length;
+              p.pack = p.pack.filter((x) => !gathered.has(base(x.itemId)));
+              if (p.pack.length < previous) {
+                alreadyWorking = true;
+                continue;
+              }
+            }
             phase = "toBank";
             alreadyWorking = false;
             continue;
@@ -774,6 +816,11 @@ SOFTWARE.
             probability === 1
               ? 1
               : Math.floor(Math.log(1 - random()) / Math.log(1 - probability)) + 1;
+          const boundary = options.nextBoundary?.(p);
+          if (Number.isFinite(boundary) && boundary > p.lastTick && wait > boundary - p.lastTick) {
+            if (!advance(boundary - p.lastTick, "workTicks")) break;
+            continue;
+          }
           if (!advance(wait, "workTicks")) break;
           r.attempts++;
           for (const x of ins) {
@@ -789,6 +836,7 @@ SOFTWARE.
               r.caught++;
               p.stunUntil = p.lastTick + j.caught.stunTicks;
             }
+            if (options.onAttempt) options.onAttempt(p, j, r, !j.caught);
             continue;
           }
           r.successes++;
@@ -801,6 +849,7 @@ SOFTWARE.
             gain = xp(p, j, p.lastTick, options.windows, rt);
           p.skills[j.skill] += gain;
           r.xp += gain;
+          if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
           if (options.onCollected && output !== c.coins)
             options.onCollected(p, output, j.output.qty);
           // Price every rarity by its conditional expectation, including very rare tiers
@@ -835,10 +884,16 @@ SOFTWARE.
                   probs[t] * j.bonus.chance,
                 );
             if (random() < j.bonus.chance) {
-              put(p, id, 1);
-              if (options.onCollected && !seeds.has(j.bonus.itemId)) options.onCollected(p, id, 1);
+              const stored = put(p, id, 1);
+              if (
+                options.onCollected &&
+                stored &&
+                (!seeds.has(j.bonus.itemId) || options.recordSeeds)
+              )
+                options.onCollected(p, id, 1);
             }
           }
+          if (options.onAttempt) options.onAttempt(p, j, r, true);
         }
         r.ticks = p.lastTick - startTick;
         if (options.returnPlayer) r.endPlayer = p;
@@ -2619,7 +2674,7 @@ SOFTWARE.
       高于预期: "Above expected",
       "药水 {n}种": "{n} potions",
       "最短 {time}": "Next {time}",
-      当前强度剩余时间: "Time left at the current strength",
+      当前品质剩余时间: "Current rarity time left",
       单田预估: "Single-field estimate",
       "{tier} {name} · 当前 {current} · 总计 {total}":
         "{tier} {name} · Current {current} · Total {total}",
@@ -18229,12 +18284,17 @@ SOFTWARE.
       }
       function rng(seed) {
         let x = seed >>> 0;
-        return () => {
-          x += 0x6d2b79f5;
+        const random = () => {
+          x = (x + 0x6d2b79f5) >>> 0;
           let t = Math.imul(x ^ (x >>> 15), 1 | x);
           t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
           return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
         };
+        random.getState = () => x;
+        random.setState = (value) => {
+          x = value >>> 0;
+        };
+        return random;
       }
       class Heap {
         constructor(compare) {
@@ -18770,7 +18830,12 @@ SOFTWARE.
           const ins = inputs(j, rarity);
           if (!options.finiteStock)
             for (const x of ins) p.bank[x.itemId] = Math.max(p.bank[x.itemId] || 0, 1e9);
-          const target = data.xpTable[options.targetLevel],
+          const onFull = options.onFull ?? p.route?.onFull ?? "bank",
+            discarding = !ins.length && onFull === "drop";
+          const gathered = new Set(
+            [j.output.itemId, ...(j.bonus ? [j.bonus.itemId] : [])].map(base),
+          );
+          const target = options.targetLevel == null ? Infinity : data.xpTable[options.targetLevel],
             deadline =
               mode === "hour"
                 ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
@@ -18817,15 +18882,25 @@ SOFTWARE.
             }
             return false;
           }
-          const matching = p.route?.jobId === j.id && p.workRarity === rarity;
+          const matching =
+            p.route?.jobId === j.id &&
+            p.workRarity === rarity &&
+            (p.route.onFull ?? "bank") === onFull;
           if (mode !== "hour" && p.skills[j.skill] >= target) return r;
-          let phase = matching ? p.route.phase : canWork(p, j, rarity) ? "toWork" : "toBank";
+          let phase = matching
+            ? p.route.phase
+            : canWork(p, j, rarity) &&
+                !(discarding && p.pack.some((x) => !gathered.has(base(x.itemId))))
+              ? "toWork"
+              : "toBank";
           let alreadyWorking = matching && p.activity === "working" && phase === "working";
           const near = (s) => Math.abs(p.x - s.x) <= 1 && Math.abs(p.y - s.y) <= 1;
           function advance(ticks, kind) {
-            const used = Math.min(ticks, deadline - p.lastTick);
+            const used = Math.min(ticks, deadline - p.lastTick),
+              before = p.lastTick;
             p.lastTick += used;
             r[kind] += used;
+            if (options.onAdvance) options.onAdvance(p, before, p.lastTick, r);
             return used === ticks;
           }
           function travel(destination, id) {
@@ -18855,6 +18930,7 @@ SOFTWARE.
             if (advance(ticks, "walkTicks")) Object.assign(p, p.path.at(-1));
           }
           while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
+            if (options.stopWhen?.(p, r)) break;
             if (r.attempts >= (options.maxAttempts || 150000))
               throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
             if (phase === "toWork") {
@@ -18881,6 +18957,21 @@ SOFTWARE.
                 r.stop = "storageFull";
                 break;
               }
+              if (options.finiteStock) {
+                const slots =
+                  75 + (p.bankSlotsBought || 0) + Math.floor((p.house?.storeroom || 0) / 2);
+                for (const [id, n] of Object.entries(p.overflow || {}))
+                  if (
+                    n > 0 &&
+                    (p.unlimitedBank ||
+                      (p.brews?.blessing || 0) > p.lastTick ||
+                      p.bank[id] > 0 ||
+                      Object.values(p.bank).filter((n) => n > 0).length < slots)
+                  ) {
+                    add(p.bank, id, n);
+                    delete p.overflow[id];
+                  }
+              }
               if (ins.length && !withdraw(p, j, rarity)) {
                 if (options.finiteStock) {
                   r.stop = "materials";
@@ -18895,6 +18986,14 @@ SOFTWARE.
             }
             if (!canWork(p, j, rarity)) {
               if (!advance(1, "bankTicks")) break;
+              if (discarding) {
+                const previous = p.pack.length;
+                p.pack = p.pack.filter((x) => !gathered.has(base(x.itemId)));
+                if (p.pack.length < previous) {
+                  alreadyWorking = true;
+                  continue;
+                }
+              }
               phase = "toBank";
               alreadyWorking = false;
               continue;
@@ -18913,6 +19012,15 @@ SOFTWARE.
               probability === 1
                 ? 1
                 : Math.floor(Math.log(1 - random()) / Math.log(1 - probability)) + 1;
+            const boundary = options.nextBoundary?.(p);
+            if (
+              Number.isFinite(boundary) &&
+              boundary > p.lastTick &&
+              wait > boundary - p.lastTick
+            ) {
+              if (!advance(boundary - p.lastTick, "workTicks")) break;
+              continue;
+            }
             if (!advance(wait, "workTicks")) break;
             r.attempts++;
             for (const x of ins) {
@@ -18928,6 +19036,7 @@ SOFTWARE.
                 r.caught++;
                 p.stunUntil = p.lastTick + j.caught.stunTicks;
               }
+              if (options.onAttempt) options.onAttempt(p, j, r, !j.caught);
               continue;
             }
             r.successes++;
@@ -18940,6 +19049,7 @@ SOFTWARE.
               gain = xp(p, j, p.lastTick, options.windows, rt);
             p.skills[j.skill] += gain;
             r.xp += gain;
+            if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
             if (options.onCollected && output !== c.coins)
               options.onCollected(p, output, j.output.qty);
             // Price every rarity by its conditional expectation, including very rare tiers
@@ -18974,11 +19084,16 @@ SOFTWARE.
                     probs[t] * j.bonus.chance,
                   );
               if (random() < j.bonus.chance) {
-                put(p, id, 1);
-                if (options.onCollected && !seeds.has(j.bonus.itemId))
+                const stored = put(p, id, 1);
+                if (
+                  options.onCollected &&
+                  stored &&
+                  (!seeds.has(j.bonus.itemId) || options.recordSeeds)
+                )
                   options.onCollected(p, id, 1);
               }
             }
+            if (options.onAttempt) options.onAttempt(p, j, r, true);
           }
           r.ticks = p.lastTick - startTick;
           if (options.returnPlayer) r.endPlayer = p;
@@ -19528,12 +19643,17 @@ SOFTWARE.
       }
       function rng(seed) {
         let x = seed >>> 0;
-        return () => {
-          x += 0x6d2b79f5;
+        const random = () => {
+          x = (x + 0x6d2b79f5) >>> 0;
           let t = Math.imul(x ^ (x >>> 15), 1 | x);
           t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
           return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
         };
+        random.getState = () => x;
+        random.setState = (value) => {
+          x = value >>> 0;
+        };
+        return random;
       }
       class Heap {
         constructor(compare) {
@@ -20069,7 +20189,12 @@ SOFTWARE.
           const ins = inputs(j, rarity);
           if (!options.finiteStock)
             for (const x of ins) p.bank[x.itemId] = Math.max(p.bank[x.itemId] || 0, 1e9);
-          const target = data.xpTable[options.targetLevel],
+          const onFull = options.onFull ?? p.route?.onFull ?? "bank",
+            discarding = !ins.length && onFull === "drop";
+          const gathered = new Set(
+            [j.output.itemId, ...(j.bonus ? [j.bonus.itemId] : [])].map(base),
+          );
+          const target = options.targetLevel == null ? Infinity : data.xpTable[options.targetLevel],
             deadline =
               mode === "hour"
                 ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
@@ -20116,15 +20241,25 @@ SOFTWARE.
             }
             return false;
           }
-          const matching = p.route?.jobId === j.id && p.workRarity === rarity;
+          const matching =
+            p.route?.jobId === j.id &&
+            p.workRarity === rarity &&
+            (p.route.onFull ?? "bank") === onFull;
           if (mode !== "hour" && p.skills[j.skill] >= target) return r;
-          let phase = matching ? p.route.phase : canWork(p, j, rarity) ? "toWork" : "toBank";
+          let phase = matching
+            ? p.route.phase
+            : canWork(p, j, rarity) &&
+                !(discarding && p.pack.some((x) => !gathered.has(base(x.itemId))))
+              ? "toWork"
+              : "toBank";
           let alreadyWorking = matching && p.activity === "working" && phase === "working";
           const near = (s) => Math.abs(p.x - s.x) <= 1 && Math.abs(p.y - s.y) <= 1;
           function advance(ticks, kind) {
-            const used = Math.min(ticks, deadline - p.lastTick);
+            const used = Math.min(ticks, deadline - p.lastTick),
+              before = p.lastTick;
             p.lastTick += used;
             r[kind] += used;
+            if (options.onAdvance) options.onAdvance(p, before, p.lastTick, r);
             return used === ticks;
           }
           function travel(destination, id) {
@@ -20154,6 +20289,7 @@ SOFTWARE.
             if (advance(ticks, "walkTicks")) Object.assign(p, p.path.at(-1));
           }
           while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
+            if (options.stopWhen?.(p, r)) break;
             if (r.attempts >= (options.maxAttempts || 150000))
               throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
             if (phase === "toWork") {
@@ -20180,6 +20316,21 @@ SOFTWARE.
                 r.stop = "storageFull";
                 break;
               }
+              if (options.finiteStock) {
+                const slots =
+                  75 + (p.bankSlotsBought || 0) + Math.floor((p.house?.storeroom || 0) / 2);
+                for (const [id, n] of Object.entries(p.overflow || {}))
+                  if (
+                    n > 0 &&
+                    (p.unlimitedBank ||
+                      (p.brews?.blessing || 0) > p.lastTick ||
+                      p.bank[id] > 0 ||
+                      Object.values(p.bank).filter((n) => n > 0).length < slots)
+                  ) {
+                    add(p.bank, id, n);
+                    delete p.overflow[id];
+                  }
+              }
               if (ins.length && !withdraw(p, j, rarity)) {
                 if (options.finiteStock) {
                   r.stop = "materials";
@@ -20194,6 +20345,14 @@ SOFTWARE.
             }
             if (!canWork(p, j, rarity)) {
               if (!advance(1, "bankTicks")) break;
+              if (discarding) {
+                const previous = p.pack.length;
+                p.pack = p.pack.filter((x) => !gathered.has(base(x.itemId)));
+                if (p.pack.length < previous) {
+                  alreadyWorking = true;
+                  continue;
+                }
+              }
               phase = "toBank";
               alreadyWorking = false;
               continue;
@@ -20212,6 +20371,15 @@ SOFTWARE.
               probability === 1
                 ? 1
                 : Math.floor(Math.log(1 - random()) / Math.log(1 - probability)) + 1;
+            const boundary = options.nextBoundary?.(p);
+            if (
+              Number.isFinite(boundary) &&
+              boundary > p.lastTick &&
+              wait > boundary - p.lastTick
+            ) {
+              if (!advance(boundary - p.lastTick, "workTicks")) break;
+              continue;
+            }
             if (!advance(wait, "workTicks")) break;
             r.attempts++;
             for (const x of ins) {
@@ -20227,6 +20395,7 @@ SOFTWARE.
                 r.caught++;
                 p.stunUntil = p.lastTick + j.caught.stunTicks;
               }
+              if (options.onAttempt) options.onAttempt(p, j, r, !j.caught);
               continue;
             }
             r.successes++;
@@ -20239,6 +20408,7 @@ SOFTWARE.
               gain = xp(p, j, p.lastTick, options.windows, rt);
             p.skills[j.skill] += gain;
             r.xp += gain;
+            if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
             if (options.onCollected && output !== c.coins)
               options.onCollected(p, output, j.output.qty);
             // Price every rarity by its conditional expectation, including very rare tiers
@@ -20273,11 +20443,16 @@ SOFTWARE.
                     probs[t] * j.bonus.chance,
                   );
               if (random() < j.bonus.chance) {
-                put(p, id, 1);
-                if (options.onCollected && !seeds.has(j.bonus.itemId))
+                const stored = put(p, id, 1);
+                if (
+                  options.onCollected &&
+                  stored &&
+                  (!seeds.has(j.bonus.itemId) || options.recordSeeds)
+                )
                   options.onCollected(p, id, 1);
               }
             }
+            if (options.onAttempt) options.onAttempt(p, j, r, true);
           }
           r.ticks = p.lastTick - startTick;
           if (options.returnPlayer) r.endPlayer = p;
@@ -21471,6 +21646,15 @@ SOFTWARE.
         function killed() {
           r.kills++;
           killRoll++;
+          if (options.recordCoins) {
+            const range = monster.gold[1] - monster.gold[0] + 1;
+            p.coins =
+              (p.coins || 0) +
+              Math.floor(
+                (monster.gold[0] + (secret(1280266068, killRoll) % range)) *
+                  (1 + facts.combat.abyssalCoins * model.brew(p, "abyssal", p.lastTick)),
+              );
+          }
           for (const [id, n] of Object.entries(
             combat.loot(model, p, monster, p.lastTick, options.windows || []),
           ))
@@ -21572,6 +21756,8 @@ SOFTWARE.
         if (p.eatAt > 0 && packFood() === null && bankFood() !== null) phase = "toBank";
         for (let step = 1; step <= ticks; step++) {
           p.lastTick = start + step;
+          if (options.onAdvance?.(p, p.lastTick - 1, p.lastTick, r))
+            getStats = buildStats(model, p);
           if (p.lastTick % 100 === 0 && p.hp > 0 && activity !== "working")
             p.hp = Math.min(getStats(p.lastTick).maxHp, p.hp + 1);
           if (activity === "stopped") r.stoppedTicks++;
@@ -21647,6 +21833,7 @@ SOFTWARE.
               } else walk(model.adjacent(f, p.id));
             } else phase = "toWork";
           }
+          if (options.onTickEnd) options.onTickEnd(p, r);
           if (options.onTick)
             options.onTick({
               tick: p.lastTick,
@@ -21659,7 +21846,9 @@ SOFTWARE.
               food: { ...r.food },
               skills: { ...p.skills },
             });
+          if (options.stopWhen?.(p, r) || (options.stopOnStop && r.stop)) break;
         }
+        r.ticks = p.lastTick - start;
         const potion =
           options.includePotions === false
             ? {}
@@ -32000,7 +32189,7 @@ SOFTWARE.
       }),
     );
     const brewSummary = brewPanel.querySelector("summary"),
-      brewTitle = t("当前强度剩余时间");
+      brewTitle = t("当前品质剩余时间");
     if (brewSummary.title !== brewTitle) brewSummary.title = brewTitle;
     const brewHtml = combatPotionHtml(report.potions);
     const brewLine = combatBox.querySelector("[data-combat-brews]");
@@ -37362,8 +37551,22 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     const n = selected ? Number(selected.dataset.rarity) : store.state.player?.workRarity || 0;
     return Number.isInteger(n) && n >= 0 && n <= 4 ? n : 0;
   }
+  function nativeOnFull(job) {
+    if (job.inputs.length || job.grow !== undefined) return "bank";
+    const checkbox = document.querySelector("[data-full-drop]");
+    return checkbox
+      ? checkbox.checked
+        ? "drop"
+        : "bank"
+      : store.state.player?.route?.onFull === "drop"
+        ? "drop"
+        : "bank";
+  }
+  function nativeCalculationKey(jobId, rarity, onFull) {
+    return `${jobId}:${rarity}:${onFull}`;
+  }
   function nativeKey(record) {
-    return `${record.job.id}:${nativeRarity(record.job)}`;
+    return nativeCalculationKey(record.job.id, nativeRarity(record.job), nativeOnFull(record.job));
   }
   function visible(element) {
     const r = element.getBoundingClientRect();
@@ -37376,6 +37579,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       windows: JSON.parse(JSON.stringify(store.state.windows)),
       jobId: record.job.id,
       rarity: nativeRarity(record.job),
+      onFull: nativeOnFull(record.job),
       targetLevel: Number(record.box.querySelector("input").value),
       samples: full ? 32 : 8,
       hourOnly: !full,
@@ -37405,7 +37609,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       return;
     }
     task.options = nativeOptions(task.record, task.full);
-    task.key = `${task.options.jobId}:${task.options.rarity}`;
+    task.key = nativeCalculationKey(task.options.jobId, task.options.rarity, task.options.onFull);
     nativeActive = task;
     try {
       if (!nativeWorker) {
@@ -37513,6 +37717,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   <details class="dvi-native-more"><summary aria-label="${t("收益明细")}"><span class="dvi-native-action" aria-hidden="true"></span></summary>${nativeProfitHtml(profit, r.hour, options)}</details>${r.farming ? nativeFarmHtml() : ""}`;
   }
   function nativeProfitHtml(profit, hour, options) {
+    if (options.onFull === "drop") return `<p class="dvi-note">${t("丢弃产物 · 暂不估算日利")}</p>`;
     const flow = preferences.potionCost ? potionFlow(hour.ticks, options) : {};
     const potionCost = profit.cost.details.reduce(
       (n, d) => n + (d.value || 0) * Math.min(1, ((flow[d.id] || 0) * 24) / (d.qty || 1)),
@@ -37551,8 +37756,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     else if (!store.state.player) text = t("等待角色数据");
     else if (cached?.result) {
       const p = hourProfit(cached.result, cached.options);
-      text = `${p.immediateProfit === null ? t("日利") + " " : ""}${profitText(p)}${cached.result.farming ? " · " + t("单田参考") : ""}`;
-      summary.title = profitHint(p);
+      text =
+        cached.options.onFull === "drop"
+          ? t("丢弃产物 · 暂不估算日利")
+          : `${p.immediateProfit === null ? t("日利") + " " : ""}${profitText(p)}${cached.result.farming ? " · " + t("单田参考") : ""}`;
+      summary.title = cached.options.onFull === "drop" ? "" : profitHint(p);
       const rate = record.row.querySelector(".route-meta");
       if (rate && !cached.result.farming) {
         const value = `≈ ${fmt(cached.result.hour.xp)} XP/h`;
@@ -37845,6 +38053,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   }
   document.addEventListener("pointermove", trackHover, { capture: true, passive: true });
   document.addEventListener("focusin", trackHover, { capture: true, passive: true });
+  function trackGatherMode(e) {
+    if (e.target.matches?.("[data-full-drop]")) scheduleNative();
+  }
+  document.addEventListener("change", trackGatherMode);
   document.addEventListener("scroll", trackNativeScroll, { capture: true, passive: true });
   function trackNativeDisclosure(e) {
     const list = e.target.closest?.("[data-routes]");
@@ -37901,5 +38113,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     document.removeEventListener("toggle", trackNativeDisclosure, true);
     document.removeEventListener("pointerdown", rememberNativeSelection, true);
     document.removeEventListener("keydown", rememberNativeSelection, true);
+    document.removeEventListener("change", trackGatherMode);
   });
 })();
