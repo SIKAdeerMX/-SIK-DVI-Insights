@@ -4,7 +4,7 @@ Author: SIKAer · License: MIT
 
 The sidebar includes a link to Alice Combat Simulator at `https://dvi-lab.pages.dev/`. It opens only when clicked, in a new tab without a referrer or character data in the URL. Opening the link does not export a character configuration.
 
-[SIK] DVI Insights runs locally on `deepveinidle.com` and its `www` host. It observes objects the game has already parsed, calculates in local workers, and adds information to existing panels. It does not send additional game requests, operate game controls, collect analytics, or upload data. It has no external dependencies or external update URLs; its userscript permission is `@grant none`.
+[SIK] DVI Insights runs locally on `deepveinidle.com` and its `www` host. It observes objects the game has already parsed, with a passive listener on already received WebSocket text when the parser hook is bypassed, calculates in local workers, and adds information to existing panels. It does not send additional game requests, operate game controls, collect analytics, or upload data. It has no external dependencies or external update URLs; its userscript permission is `@grant none`.
 
 The running script uses the current character's HP, current map position, inventory, XP, equipment, active bonuses, task counters, received market quotes, and settlement amounts for calculation. These are held in page memory. Chat, credentials, cookies, payment information, and private messages are not used by the calculators or written to its caches. The parser wrapper returns the original result without changing it and preserves the original parser's errors and reviver behavior.
 
