@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.33
+# [SIK] DVI Insights 0.4.34
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -10,6 +10,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 - 工作列表显示 XP/h 和期望日利，点击“升级计算”查看目标等级的工作次数、耗时与材料缺口；材料表补充逐项估价、材料总估价和补齐成本，按买价与订单深度计算；收支只用箭头展开。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
+- 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示金色光晕。普通战斗补充 EPH、食物续航；药水默认收成一行，点击展开时长。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。饱食与扎根直接显示续 24 小时最省钱的食物、品质及日成本，名称后直接显示续一天的购买数量，不附单位。
 - 选怪主行统一显示一小时路线预计总经验（各战斗技能合计，含跑路、补给和回血）。首次等待或失败时显示原生经验，原生阵亡警告优先；下方显示折算日利，展开查看食物与药水成本，以及一小时内战斗、移动、补给回血和停战后闲置的时间。日利与成本并非全天保证值。首领伤害窗保持之前的排行与战况布局，保留个人一行和长名次对齐。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
@@ -40,6 +41,7 @@ Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-s
 
 - Work rows show XP/h and estimated daily profit. Open Level calculator to plan attempts, time and materials for a target level. Material tables include per-item estimates, total material value and the cost to cover shortages, using purchase prices and order depth; financial breakdowns expand with a chevron.
 - Gathering XP and level-time estimates follow the current discard setting and account for fewer bank trips. Discard and bank modes use separate caches; discarded outputs are excluded from sale income.
+- Crafting supports Best first, selecting complete recipes from owned stock and filling shortages with Normal materials. Concurrent enhancement keeps the main action income and XP visible, with a separate enhancement status line.
 - The active task shows daily income, expected income before consumption costs, and expected profit. Daily income gains a golden glow when it exceeds expected income. Normal combat also includes EPH and food endurance; potion durations expand on click.
 - The buff sheet aligns names, timelines and remaining durations, retaining inactive grey icons. Potions show a per-bottle price for the currently active quality and label the duration as remaining time for that quality. Well fed and Well rooted show the cheapest food, its quality and daily budget inline; the quantity for adding 24 hours appears next to the food name, without a unit.
 - Monster rows show projected total XP across combat skills from a one-hour route simulation, including travel, restocking and healing. Native XP provides a fallback while waiting or after an error; native death warnings take priority. Details show projected food/potion costs and time spent fighting, travelling, resupplying/healing or idle after stopping. Daily profit and costs are projections, not guarantees. Boss windows retain the previous ranking and combat layout, with your own row and aligned long ranks. Food controls fold by default, and Join/Show pills use consistent buttons. Native boss-start announcements trigger six seconds of full-screen fireworks, dismissible with Esc without blocking pointer input.
