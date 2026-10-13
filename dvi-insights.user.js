@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.36
+// @version      0.4.37
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -1782,6 +1782,7 @@ SOFTWARE.
                     coins: e.coins,
                     jobId: e.jobId,
                     monsterId: e.monsterId,
+                    ...(e.order === true ? { order: true } : {}),
                   }));
                 if (events.length)
                   for (const listener of batchListeners) {
@@ -2449,6 +2450,7 @@ SOFTWARE.
         r.questId ?? null,
         r.onFull ?? null,
         !!r.best,
+        !!r.order,
       ]);
     }
     function create(model) {
@@ -2489,6 +2491,7 @@ SOFTWARE.
         const job = p.route.zoneId == null ? model.jobs.get(p.route.jobId) : null;
         for (const e of batch.events) {
           if (e.kind === "produced") {
+            if (e.order === true) continue;
             if ((job && e.jobId !== job.id) || (!job && e.jobId !== 0)) continue;
             // Stall coins are deterministic and counted from completed attempts below.
             if (e.itemId === 200) continue;
@@ -2526,7 +2529,7 @@ SOFTWARE.
           }
           if (Number.isFinite(delta)) {
             attempts += delta;
-            if (job.grow === undefined) {
+            if (job.grow === undefined && !p.route.order) {
               for (const x of model.inputs(job, p.workRarity || 0))
                 add(inputs, x.itemId, x.qty * delta);
             }
@@ -2540,7 +2543,7 @@ SOFTWARE.
           }
           // Crafted/farmed output is simulated deterministically by the official
           // client. Random gathering/combat loot is counted from received batches.
-          if (job.inputs.length)
+          if (job.inputs.length && !p.route.order)
             for (const [item, n] of Object.entries(p.collections || {})) {
               const delta = n - (last.collections[item] || 0);
               if (delta > 0 && model.base(Number(item)) === job.output.itemId)
@@ -2578,6 +2581,7 @@ SOFTWARE.
           key,
           jobId: p.route?.zoneId == null ? p.route?.jobId : null,
           zone: p.route?.zoneId ?? null,
+          order: !!p.route?.order,
           seconds,
           ready: seconds >= 60,
           outputs: { ...outputs },
@@ -2913,6 +2917,7 @@ SOFTWARE.
       经验观测中: "Observing XP",
       本次观测实际经验除以总时长: "Observed XP divided by elapsed time",
       预测暂不可用: "Estimate unavailable",
+      代工订单收益暂不估算: "Commission income is not estimated yet",
       离线净收益: "Offline net income",
       离线产值: "Offline output value",
       掉落产值: "Loot value",
@@ -13637,7 +13642,7 @@ SOFTWARE.
           attack: 112,
           defence: 106,
           speed: 5,
-          xp: 2000,
+          xp: 2200,
           gold: [1509, 2802],
           bonus: { itemId: 216, chance: 0.0015 },
           drop: 250,
@@ -18553,10 +18558,7 @@ SOFTWARE.
         xp: 1900,
         from: [114],
         to: [350],
-        extra: [
-          { itemId: 44, qty: 3, perTier: true },
-          { itemId: 252, qty: 2, perTier: true },
-        ],
+        extra: [{ itemId: 252, qty: 2, perTier: true }],
       },
       {
         id: 272,
@@ -18566,10 +18568,7 @@ SOFTWARE.
         xp: 1350,
         from: [394],
         to: [395],
-        extra: [
-          { itemId: 44, qty: 2, perTier: true },
-          { itemId: 252, qty: 3, perTier: true },
-        ],
+        extra: [{ itemId: 252, qty: 3, perTier: true }],
       },
       {
         id: 273,
@@ -18579,10 +18578,7 @@ SOFTWARE.
         xp: 1900,
         from: [119],
         to: [351],
-        extra: [
-          { itemId: 44, qty: 3, perTier: true },
-          { itemId: 252, qty: 2, perTier: true },
-        ],
+        extra: [{ itemId: 252, qty: 2, perTier: true }],
       },
       {
         id: 274,
@@ -18592,10 +18588,7 @@ SOFTWARE.
         xp: 1250,
         from: [124],
         to: [352],
-        extra: [
-          { itemId: 44, qty: 2, perTier: true },
-          { itemId: 252, qty: 1, perTier: true },
-        ],
+        extra: [{ itemId: 252, qty: 1, perTier: true }],
       },
       {
         id: 275,
@@ -18605,10 +18598,7 @@ SOFTWARE.
         xp: 3100,
         from: [129],
         to: [353],
-        extra: [
-          { itemId: 44, qty: 5, perTier: true },
-          { itemId: 252, qty: 3, perTier: true },
-        ],
+        extra: [{ itemId: 252, qty: 3, perTier: true }],
       },
       {
         id: 276,
@@ -18618,10 +18608,7 @@ SOFTWARE.
         xp: 2500,
         from: [134],
         to: [354],
-        extra: [
-          { itemId: 44, qty: 4, perTier: true },
-          { itemId: 252, qty: 2, perTier: true },
-        ],
+        extra: [{ itemId: 252, qty: 2, perTier: true }],
       },
       {
         id: 277,
@@ -18996,17 +18983,17 @@ SOFTWARE.
       "The Chalk Steps": "白垩阶",
     },
     version: {
-      version: "1.0.2443",
+      version: "1.0.2574",
       env: "live",
-      commit: "99f61dbe",
+      commit: "a9133929",
       branch: "test-all",
-      subject: "Merge combat-balance into test-all: greatsword icon",
-      committedAt: "2026-10-12T21:51:08+02:00",
+      subject: "1.0.1188 changelog: smoother servers, and craft for each other (EN+ZH)",
+      committedAt: "2026-10-13T20:17:09+02:00",
       dirty: false,
-      builtAt: "2026-10-12T20:18:47.593Z",
+      builtAt: "2026-10-13T18:21:22.838Z",
     },
-    clientAsset: "index-B2257EY9.js",
-    sourceSha256: "36604ce12e1e9ab34998974f7b7354238e5e8b09e4a3ae579333f1959edbef24",
+    clientAsset: "index-DImgE4Er.js",
+    sourceSha256: "4dd57774fde5dd25052e24a41acbae9b05695a3525b7258c9101dffe60ae6de6",
   };
 
   // ---- Local forecast worker ----
@@ -26581,6 +26568,7 @@ SOFTWARE.
   }
   function actualIncomeHtml(actual, expectedIncome = null) {
     if (!actual) return "";
+    if (actual.order) return activityMetricHtml("每天收入", t("暂不计"), t("代工订单收益暂不估算"));
     if (!actual.ready) return activityMetricHtml("每天收入", t("观测中"));
     if (store.state.player?.route?.onFull === "drop" && actual.jobId != null)
       return activityMetricHtml("每天收入", t("暂不计"), t("当前设置：丢弃产物"));
@@ -26613,6 +26601,18 @@ SOFTWARE.
     );
   }
   function requestCurrentWork(actual) {
+    if (actual.order) {
+      currentWorkWorker?.terminate();
+      clearTimeout(currentWorkTimeout);
+      currentWorkWorker = null;
+      currentWorkEstimate = {
+        key: actual.key,
+        at: Date.now(),
+        busy: false,
+        error: "代工订单收益暂不估算",
+      };
+      return;
+    }
     if (
       currentWorkEstimate?.key === actual.key &&
       (currentWorkEstimate.busy || Date.now() - currentWorkEstimate.at < 30000)
@@ -26686,13 +26686,15 @@ SOFTWARE.
         entry?.key === actual.key && entry.result ? hourProfit(entry.result, entry.options) : null,
       summary = currentWorkBox.querySelector("[data-current-expect]");
     const discarding = store.state.player.route?.onFull === "drop";
-    let text = discarding
-      ? t("暂不计")
-      : profit
-        ? profitText(profit)
-        : entry.error
-          ? t("预测暂不可用")
-          : t("计算中…");
+    let text = actual.order
+      ? t("代工订单收益暂不估算")
+      : discarding
+        ? t("暂不计")
+        : profit
+          ? profitText(profit)
+          : entry.error
+            ? t("预测暂不可用")
+            : t("计算中…");
     setActivityValue(summary, text);
     summary.dataset.sign =
       !discarding && Number.isFinite(profit?.immediateProfit)
