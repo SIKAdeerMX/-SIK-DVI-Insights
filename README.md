@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.34
+# [SIK] DVI Insights 0.4.36
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -15,6 +15,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。饱食与扎根直接显示续 24 小时最省钱的食物、品质及日成本，名称后直接显示续一天的购买数量，不附单位。
 - 选怪主行统一显示一小时路线预计总经验（各战斗技能合计，含跑路、补给和回血）。首次等待或失败时显示原生经验，原生阵亡警告优先；下方显示折算日利，展开查看食物与药水成本，以及一小时内战斗、移动、补给回血和停战后闲置的时间。日利与成本并非全天保证值。首领伤害窗保持之前的排行与战况布局，保留个人一行和长名次对齐。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
 - 选怪展开区提供战斗升级计算，选择近战、远程、魔法、防御或生命技能及目标等级，按当前路线经验估算升级时间，包含移动、补给和回血。
+- 战斗期望收入包含按攻击机会与各品质概率计算的随机坐骑掉落；实际掉落收入单独记账。铁人账号按商人计价，普通账号保留买卖分价、税费和有限订单深度。
+- 手机市场优化输入框和触摸操作，减少 Safari 输入时自动放大及滑动物品时的重复估价刷新，保留滚动与双指缩放。
 - 战斗列表刷新时保留浏览位置和已展开明细，减少滚动回跳，兼顾手机窄屏。
 - 物品提示补充求购、挂售和商人价格；买入缺价时可参考已接收的公开历史成交与一天内的报价缓存。被动行情接收增加兜底，切到后台及时保存价格，收到成交价后刷新期望日利；缺价时列出具体物品。
 - 仓库和市场“我的物品”的整堆估值按税后求购和商人价计算；一个按钮按价值排序，重复点击保持排序，仓库锁定物品保持原位。市场同类物品按各品质分别计价后汇总；仓库按钮和数量操作区统一棕金样式。
@@ -29,7 +31,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 在 Tampermonkey 中安装脚本后刷新游戏。已有测试版用户请用新版全部内容覆盖旧脚本，不同时运行两份。离线净收益需要安装后留下离线前快照；缺价或消耗记录不全时保留产值，不把未知成本当成零。
 
-脚本进行被动读取和本地计算，不增加游戏请求，不自动工作、进食、喝药、交易或修改队列。市场价格随已收到的数据更新；`≈` 表示估价。食物比较全部品质，按额外续一天的整数购买数量计算，不扣已有时长。种植预测目前采用单田模型；当前普通战斗使用实测速率与概率期望，选怪列表从当前位置与当前血量起算一小时，使用真实食物库存、携带量、补给与泉水路线，计算增益到期和经验升级。按 16 个固定模拟种子取平均，以概率期望计价掉落；折算日利是该小时流量的 24 倍投影，不保证能持续一天。未来任务奖励、活动箱、坐骑掉落与房屋升级未预测；动态家园路线暂不支持。首领战收益和强化目标尚未支持。
+脚本进行被动读取和本地计算，不增加游戏请求，不自动工作、进食、喝药、交易或修改队列。市场价格随已收到的数据更新；`≈` 表示估价。食物比较全部品质，按额外续一天的整数购买数量计算，不扣已有时长。种植预测目前采用单田模型；当前普通战斗使用实测速率与概率期望，选怪列表从当前位置与当前血量起算一小时，使用真实食物库存、携带量、补给与泉水路线，计算增益到期和经验升级。按 16 个固定模拟种子取平均，以概率期望计价掉落；折算日利是该小时流量的 24 倍投影，不保证能持续一天。未来任务奖励、活动箱与房屋升级未预测；动态家园路线暂不支持。首领战收益和强化目标尚未支持。
 
 作者 SIKAer，MIT 开源。这是社区工具，与 Deep Vein Idle 官方没有隶属关系。游戏名称、机制数据及原有界面素材的权利归各自权利人。隐私与本地缓存说明见随附 [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)。
 
@@ -46,6 +48,8 @@ Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-s
 - The buff sheet aligns names, timelines and remaining durations, retaining inactive grey icons. Potions show a per-bottle price for the currently active quality and label the duration as remaining time for that quality. Well fed and Well rooted show the cheapest food, its quality and daily budget inline; the quantity for adding 24 hours appears next to the food name, without a unit.
 - Monster rows show projected total XP across combat skills from a one-hour route simulation, including travel, restocking and healing. Native XP provides a fallback while waiting or after an error; native death warnings take priority. Details show projected food/potion costs and time spent fighting, travelling, resupplying/healing or idle after stopping. Daily profit and costs are projections, not guarantees. Boss windows retain the previous ranking and combat layout, with your own row and aligned long ranks. Food controls fold by default, and Join/Show pills use consistent buttons. Native boss-start announcements trigger six seconds of full-screen fireworks, dismissible with Esc without blocking pointer input.
 - Expanded monster rows offer a combat level calculator for melee, ranged, magic, defense or health and a target level. Estimates use the current route's XP rates, including travel, restocking and healing.
+- Expected combat income includes random mount drops based on attack opportunities and quality probabilities; actual drops are accounted for separately. Ironman accounts use merchant valuation. Normal accounts retain separate buying/selling prices, tax and finite order depth.
+- Mobile market inputs and touch controls reduce Safari's automatic input zoom and repeated valuation refreshes while scrolling items, retaining scrolling and pinch zoom.
 - Combat-list refreshes retain your scroll position and expanded details, reducing scroll jumps on narrow mobile layouts.
 - Item tooltips show buy offers, sell listings and merchant prices. Received public trade history and cached asks from the last day can help estimate missing purchase prices. Passive market capture has a fallback, saves prices when the page moves to the background and refreshes expected profit when trade prices arrive; missing prices identify the specific items.
 - Bank slots and the market's My items view calculate stack values using bids after tax and vendor prices. Sort by value keeps its order on repeated clicks; locked bank items stay in place. Grouped market tiles add values priced separately for each quality. Bank buttons and quantity controls use the same brown and gold style.
@@ -60,7 +64,7 @@ Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-s
 
 Install with Tampermonkey, then reload the game. If updating a test version, replace its entire contents rather than running both copies. Offline net accounting needs a snapshot captured after installation. Missing costs are not treated as zero.
 
-The script passively reads already-received data and performs calculations locally. It does not make extra game requests, automate gameplay or modify task queues. Prices depend on received quotes; `≈` marks estimates. Food recommendations compare all rarities using whole-item purchase budgets for an additional day, without subtracting existing buff time. Farming uses a single-field model. Active combat uses measured rates and expected loot; Monster-list simulations start from current position and HP, use finite food stocks and carrying policies, travel to banks/fountains, account for buff expiry and XP level-ups, and average 16 deterministic samples. Loot is valued by probability expectation. Daily profit projects the next hour’s flows by 24; it does not guarantee day-long supplies or performance. Quest rewards, seasonal boxes, mount drops and future room upgrades are excluded; dynamic Home routes are unsupported. Boss income and enhancing plans are not supported.
+The script passively reads already-received data and performs calculations locally. It does not make extra game requests, automate gameplay or modify task queues. Prices depend on received quotes; `≈` marks estimates. Food recommendations compare all rarities using whole-item purchase budgets for an additional day, without subtracting existing buff time. Farming uses a single-field model. Active combat uses measured rates and expected loot; Monster-list simulations start from current position and HP, use finite food stocks and carrying policies, travel to banks/fountains, account for buff expiry and XP level-ups, and average 16 deterministic samples. Loot is valued by probability expectation. Daily profit projects the next hour’s flows by 24; it does not guarantee day-long supplies or performance. Quest rewards, seasonal boxes and future room upgrades are excluded; dynamic Home routes are unsupported. Boss income and enhancing plans are not supported.
 
 By SIKAer, licensed under MIT. An independent community tool, not affiliated with Deep Vein Idle. Game names, mechanism data and original interface assets remain the property of their respective owners. See [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md) for local storage details.
 

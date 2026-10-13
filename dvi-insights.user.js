@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.34
+// @version      0.4.36
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -2126,6 +2126,27 @@ SOFTWARE.
       add(out, facts.pets[monster.id], facts.petChance);
       return out;
     }
+    function mountLoot(model, p, opportunityTicks) {
+      const facts = model.data.combat.mountDrops,
+        out = {};
+      if (!facts || p.ironman || !(opportunityTicks > 0)) return out;
+      const id = p.equipment?.amulet || 0,
+        gear = model.data.gear.find((g) => g.itemId === id % 10000),
+        luck = (gear?.luck || 0) * (1 + model.data.constants.toolEnhance * Math.floor(id / 10000));
+      const cumulative = ["uncommon", "rare", "epic", "legendary"].map((k) =>
+        Math.min(1, facts.thresholds[k] * (1 + luck)),
+      );
+      const probabilities = [
+          1 - cumulative[0],
+          cumulative[0] - cumulative[1],
+          cumulative[1] - cumulative[2],
+          cumulative[2] - cumulative[3],
+          cumulative[3],
+        ],
+        chance = Math.min(1, opportunityTicks / facts.chanceTicks);
+      probabilities.forEach((n, tier) => add(out, facts.itemId + tier * 1000, n * chance));
+      return out;
+    }
     function create(model) {
       let previous = null,
         segments = [],
@@ -2158,6 +2179,7 @@ SOFTWARE.
           p.foodMaxTier,
           p.eatAt,
           p.foodPerTrip,
+          !!p.ironman,
         ]);
         if (key !== signature) {
           key = signature;
@@ -2168,6 +2190,7 @@ SOFTWARE.
             ...p,
             skills: { ...p.skills },
             equipment: { ...p.equipment },
+            rollIndex: { ...p.rollIndex },
             brews: { ...p.brews },
             brewTier: { ...p.brewTier },
             brewBuckets: JSON.parse(JSON.stringify(p.brewBuckets || {})),
@@ -2183,7 +2206,10 @@ SOFTWARE.
             Object.entries(previous.tally.monsters).some(
               ([id, n]) => (p.tally.monsters[id] || 0) < n,
             ) ||
-            (p.tally.eaten || 0) < (previous.tally.eaten || 0);
+            (p.tally.eaten || 0) < (previous.tally.eaten || 0) ||
+            (Number.isSafeInteger(p.rollIndex?.mount) &&
+              Number.isSafeInteger(previous.rollIndex?.mount) &&
+              p.rollIndex.mount < previous.rollIndex.mount);
           if (ticks < 0 || ticks > 200 || decreased) {
             reset("数据重同步，重新观测");
           } else if (ticks > 0) {
@@ -2198,6 +2224,18 @@ SOFTWARE.
               deaths: Math.max(0, (p.tally.deaths || 0) - (previous.tally.deaths || 0)),
               unknownFood: 0,
             };
+            if (
+              Number.isSafeInteger(previous.rollIndex?.mount) &&
+              Number.isSafeInteger(p.rollIndex?.mount)
+            ) {
+              const attacks = p.rollIndex.mount - previous.rollIndex.mount,
+                weapon = model.data.gear.find(
+                  (g) => g.itemId === (previous.equipment?.weapon || 0) % 10000,
+                ),
+                attackTicks = previous.equipment?.weapon == null ? 5 : weapon?.speed || 4;
+              for (const [id, n] of Object.entries(mountLoot(model, previous, attackTicks)))
+                add(segment.outputs, id, n * attacks);
+            }
             for (const monster of model.data.combat.monsters) {
               const kills =
                 (p.tally.monsters[monster.id] || 0) - (previous.tally.monsters[monster.id] || 0);
@@ -2333,7 +2371,7 @@ SOFTWARE.
         rate: rate > 0 ? rate : 0,
       };
     }
-    return { create, loot, potionFlow, inventory, selectedFood, kinds, levelEstimate };
+    return { create, loot, mountLoot, potionFlow, inventory, selectedFood, kinds, levelEstimate };
   });
 
   // ---- src/buffs.js ----
@@ -13786,6 +13824,11 @@ SOFTWARE.
         bankPreheal: true,
         bankPrehealLimit: 2000,
       },
+      mountDrops: {
+        itemId: 328,
+        chanceTicks: 300000,
+        thresholds: { legendary: 0.002, epic: 0.01, rare: 0.05, uncommon: 0.25 },
+      },
     },
     masteries: [
       {
@@ -21891,6 +21934,28 @@ SOFTWARE.
         add(out, facts.pets[monster.id], facts.petChance);
         return out;
       }
+      function mountLoot(model, p, opportunityTicks) {
+        const facts = model.data.combat.mountDrops,
+          out = {};
+        if (!facts || p.ironman || !(opportunityTicks > 0)) return out;
+        const id = p.equipment?.amulet || 0,
+          gear = model.data.gear.find((g) => g.itemId === id % 10000),
+          luck =
+            (gear?.luck || 0) * (1 + model.data.constants.toolEnhance * Math.floor(id / 10000));
+        const cumulative = ["uncommon", "rare", "epic", "legendary"].map((k) =>
+          Math.min(1, facts.thresholds[k] * (1 + luck)),
+        );
+        const probabilities = [
+            1 - cumulative[0],
+            cumulative[0] - cumulative[1],
+            cumulative[1] - cumulative[2],
+            cumulative[2] - cumulative[3],
+            cumulative[3],
+          ],
+          chance = Math.min(1, opportunityTicks / facts.chanceTicks);
+        probabilities.forEach((n, tier) => add(out, facts.itemId + tier * 1000, n * chance));
+        return out;
+      }
       function create(model) {
         let previous = null,
           segments = [],
@@ -21923,6 +21988,7 @@ SOFTWARE.
             p.foodMaxTier,
             p.eatAt,
             p.foodPerTrip,
+            !!p.ironman,
           ]);
           if (key !== signature) {
             key = signature;
@@ -21933,6 +21999,7 @@ SOFTWARE.
               ...p,
               skills: { ...p.skills },
               equipment: { ...p.equipment },
+              rollIndex: { ...p.rollIndex },
               brews: { ...p.brews },
               brewTier: { ...p.brewTier },
               brewBuckets: JSON.parse(JSON.stringify(p.brewBuckets || {})),
@@ -21948,7 +22015,10 @@ SOFTWARE.
               Object.entries(previous.tally.monsters).some(
                 ([id, n]) => (p.tally.monsters[id] || 0) < n,
               ) ||
-              (p.tally.eaten || 0) < (previous.tally.eaten || 0);
+              (p.tally.eaten || 0) < (previous.tally.eaten || 0) ||
+              (Number.isSafeInteger(p.rollIndex?.mount) &&
+                Number.isSafeInteger(previous.rollIndex?.mount) &&
+                p.rollIndex.mount < previous.rollIndex.mount);
             if (ticks < 0 || ticks > 200 || decreased) {
               reset("数据重同步，重新观测");
             } else if (ticks > 0) {
@@ -21963,6 +22033,18 @@ SOFTWARE.
                 deaths: Math.max(0, (p.tally.deaths || 0) - (previous.tally.deaths || 0)),
                 unknownFood: 0,
               };
+              if (
+                Number.isSafeInteger(previous.rollIndex?.mount) &&
+                Number.isSafeInteger(p.rollIndex?.mount)
+              ) {
+                const attacks = p.rollIndex.mount - previous.rollIndex.mount,
+                  weapon = model.data.gear.find(
+                    (g) => g.itemId === (previous.equipment?.weapon || 0) % 10000,
+                  ),
+                  attackTicks = previous.equipment?.weapon == null ? 5 : weapon?.speed || 4;
+                for (const [id, n] of Object.entries(mountLoot(model, previous, attackTicks)))
+                  add(segment.outputs, id, n * attacks);
+              }
               for (const monster of model.data.combat.monsters) {
                 const kills =
                   (p.tally.monsters[monster.id] || 0) - (previous.tally.monsters[monster.id] || 0);
@@ -22098,7 +22180,7 @@ SOFTWARE.
           rate: rate > 0 ? rate : 0,
         };
       }
-      return { create, loot, potionFlow, inventory, selectedFood, kinds, levelEstimate };
+      return { create, loot, mountLoot, potionFlow, inventory, selectedFood, kinds, levelEstimate };
     });
 
     /* Passive route forecasts: audited native timing with independent market valuation. */
@@ -22243,6 +22325,7 @@ SOFTWARE.
           bySkill: {},
           food: {},
           kills: 0,
+          attacks: 0,
           deaths: 0,
           workTicks: 0,
           walkTicks: 0,
@@ -22521,6 +22604,9 @@ SOFTWARE.
           if (attackClock >= s.speed * 1000) {
             attackClock -= s.speed * 1000;
             acted = true;
+            r.attacks++;
+            for (const [id, n] of Object.entries(combat.mountLoot(model, p, s.speed)))
+              add(r.outputs, id, n);
             if (
               roll(1398230599, p.lastTick) <
               s.accuracy /
@@ -26126,8 +26212,8 @@ SOFTWARE.
         hour.inputs[id] = (hour.inputs[id] || 0) + n;
     return globalThis.DVIPlannerCore.dailyProfits(
       hour,
-      store.state.books,
-      store.state.taxBp,
+      options.player?.ironman ? {} : store.state.books,
+      options.player?.ironman ? 0 : store.state.taxBp,
       Date.now(),
       GAME_DATA,
     );
@@ -26353,10 +26439,11 @@ SOFTWARE.
     refreshActionIncomeHeading(combatBox);
     setNativeText(combatBox.querySelector("[data-plan-net-label]"), t("期望日利"));
     const core = globalThis.DVIPlannerCore,
+      books = p.ironman ? {} : store.state.books,
       profit = core.dailyProfits(
         report.hour,
-        store.state.books,
-        store.state.taxBp,
+        books,
+        p.ironman ? 0 : store.state.taxBp,
         Date.now(),
         GAME_DATA,
       );
@@ -26365,21 +26452,14 @@ SOFTWARE.
     const foodInputs = Object.fromEntries(
       Object.entries(report.hour.food).map(([id, n]) => [id, n * 24]),
     );
-    const food = core.valueFlows(foodInputs, store.state.books, "buy", 0, Date.now(), GAME_DATA);
+    const food = core.valueFlows(foodInputs, books, "buy", 0, Date.now(), GAME_DATA);
     const potionInputs = { ...report.hour.inputs };
     for (const [id, n] of Object.entries(report.hour.food)) {
       potionInputs[id] -= n;
       if (Math.abs(potionInputs[id]) < 1e-12) delete potionInputs[id];
     }
     for (const id of Object.keys(potionInputs)) potionInputs[id] *= 24;
-    const potions = core.valueFlows(
-      potionInputs,
-      store.state.books,
-      "buy",
-      0,
-      Date.now(),
-      GAME_DATA,
-    );
+    const potions = core.valueFlows(potionInputs, books, "buy", 0, Date.now(), GAME_DATA);
     const text = report.ready ? profitText(profit) : t("观测中");
     const summary = combatBox.querySelector("[data-combat-profit]");
     setActivityValue(summary, text);
@@ -26504,12 +26584,13 @@ SOFTWARE.
     if (!actual.ready) return activityMetricHtml("每天收入", t("观测中"));
     if (store.state.player?.route?.onFull === "drop" && actual.jobId != null)
       return activityMetricHtml("每天收入", t("暂不计"), t("当前设置：丢弃产物"));
+    const ironman = store.state.player?.ironman;
     const v = globalThis.DVIActivity.income(
       globalThis.DVIPlannerCore,
       actual.outputs,
       actual.seconds,
-      store.state.books,
-      store.state.taxBp,
+      ironman ? {} : store.state.books,
+      ironman ? 0 : store.state.taxBp,
       Date.now(),
       GAME_DATA,
     );
@@ -27765,6 +27846,26 @@ html.dvi-insights .enhance-grid .item-tile-cap > span {
   color: inherit;
   font-weight: 400 !important;
   text-shadow: none !important;
+}
+/* Mobile market: retain scrolling/pinch zoom, avoid smart double-tap/input zoom. */
+@media (pointer: coarse) {
+  html.dvi-insights .market-window {
+    touch-action: manipulation;
+  }
+  html.dvi-insights .market-window :is(button, input, select, summary) {
+    touch-action: manipulation;
+  }
+  html.dvi-insights
+    .market-window
+    :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+    font-size: max(16px, var(--fs-sm, 16px)) !important;
+    line-height: 1.25;
+  }
+  html.dvi-insights
+    .market-window
+    :is(.market-list, .market-sheet, .market-detail, .market-suggest, .market-town-pop, .tape) {
+    overscroll-behavior-y: contain;
+  }
 }
 html.dvi-insights .market-window .dvi-market-sort {
   border: 1px solid #b88345;
@@ -32398,6 +32499,13 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       scheduleNative();
   });
   function trackHover(e) {
+    if (e.pointerType === "touch") {
+      if (hoveredItem !== null) {
+        hoveredItem = null;
+        scheduleNative();
+      }
+      return;
+    }
     const element = e.target.closest?.("[data-item]"),
       id = element && !e.target.closest?.("[data-tip-name]") ? Number(element.dataset.item) : null;
     if (hoveredItem !== id) {
