@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.37
+# [SIK] DVI Insights 0.4.38
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -36,6 +36,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 作者 SIKAer，MIT 开源。这是社区工具，与 Deep Vein Idle 官方没有隶属关系。游戏名称、机制数据及原有界面素材的权利归各自权利人。隐私与本地缓存说明见随附 [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)。
 
+- 轻量更新提醒每天最多读取一次 Greasy Fork 公开版本信息，有新版时显示小提示，点击进入原脚本安装页；可在工作列表的插件设置中关闭，或忽略当前版本。不强制更新，不上传角色数据。
+
 ## English description
 
 Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-sik-dynamic-dvi) adds equipment art, weapon motion and local visual effects. Both scripts can run together.
@@ -71,4 +73,6 @@ The script passively reads already-received data and performs calculations local
 By SIKAer, licensed under MIT. An independent community tool, not affiliated with Deep Vein Idle. Game names, mechanism data and original interface assets remain the property of their respective owners. See [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md) for local storage details.
 
 The embedded XP orb texture is from [Mojang's official Bedrock samples](https://github.com/Mojang/bedrock-samples/blob/main/resource_pack/textures/entity/experience_orb.png), © Mojang AB, all rights reserved, subject to the [Minecraft EULA](https://www.minecraft.net/eula). Original game and Minecraft assets are not covered by the plugin's MIT license.
+
+- A lightweight update reminder checks official Greasy Fork metadata at most once per 24 hours. A small notice links to the existing script’s installation page; disable reminders in work-list settings or dismiss the current version. No forced installation or character uploads.
 

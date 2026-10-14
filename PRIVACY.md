@@ -4,13 +4,15 @@ Author: SIKAer · License: MIT
 
 The sidebar includes a link to Alice Combat Simulator at `https://dvi-lab.pages.dev/`. It opens only when clicked, in a new tab without a referrer or character data in the URL. Opening the link does not export a character configuration.
 
-[SIK] DVI Insights runs locally on `deepveinidle.com` and its `www` host. It observes objects the game has already parsed, with a passive listener on already received WebSocket text when the parser hook is bypassed, calculates in local workers, and adds information to existing panels. It does not send additional game requests, operate game controls, collect analytics, or upload data. It has no external dependencies or external update URLs; its userscript permission is `@grant none`.
+[SIK] DVI Insights runs locally on `deepveinidle.com` and its `www` host. It observes objects the game has already parsed, with a passive listener on already received WebSocket text when the parser hook is bypassed, calculates in local workers, and adds information to existing panels. It does not send additional game requests, operate game controls, collect analytics, or upload character data. It has no external dependencies; its userscript permission remains `@grant none`.
+
+The optional update reminder reads this script's public version metadata from `update.greasyfork.org` at most once per 24 hours. The request sends no character data, cookies or referrer; the server receives ordinary connection information such as the IP address. No remote code is executed. The notice opens the existing script's official installation link only when clicked; installation remains under the userscript manager's control. Turn the reminder off in the work-list plugin settings, or dismiss the current version's notice.
 
 The running script uses the current character's HP, current map position, inventory, XP, equipment, active bonuses, task counters, received market quotes, and settlement amounts for calculation. These are held in page memory. Chat, credentials, cookies, payment information, and private messages are not used by the calculators or written to its caches. The parser wrapper returns the original result without changing it and preserves the original parser's errors and reviver behavior.
 
 Bank value sorting changes CSS display order only, not the stored bank order. No sorting request is sent; locked slots remain in place. Guild presentation reads the already displayed notice, rules and recruitment text in page memory. Drafts and the matching guild acknowledgement are held only in memory to preserve editing through redraws and return to reading after the native Save succeeds. The plugin does not submit or persist these texts. Native edit controls are required before local Edit is offered. Farming status tiles reuse the game's displayed text and keep the original seed preference control. Decorative artwork and native item sprites are embedded in the script; no asset server is contacted.
 
-Four local storage entries are used on the game origin:
+Five local storage entries are used on the game origin:
 
 | Key | Contents |
 | --- | --- |
@@ -18,15 +20,18 @@ Four local storage entries are used on the game origin:
 | `dvi-insights.purchase-prices.v1` | Recent public ask price and original receive time per exact item variant; no orders, quantities or identities; expires after one day |
 | `dvi-assistant.price-history.v1` | Public historical price summaries by exact item variant; no buyer or seller identities |
 | `dvi-insights.offline-before.v1` | The latest character's internal ID, tick, summed inventory, collection counters, coins, active potion times/rarity buckets, and discard mode, for offline accounting |
+| `dvi-insights.update-check.v1` | Last check attempt time, successful check time, latest public version and dismissed version; no character data |
 
 The offline baseline is overwritten with the latest snapshot. It contains no character name, account credentials, chat, or movement history. Market settlement records used to reconcile an in-tab away report stay in page memory and are reset on a new welcome message. Public historical estimates expire after seven days; cached ask estimates expire after one day. Each saved price cache is limited to 2,000 variants.
 
-The script reads the game’s existing `deepvein.locale` language setting without writing to it. It also reads the game's existing `deepvein-seen` record to align the native away summary. It does not write to that entry. To remove the script's saved data, disable the script and remove only its four entries listed above from the site's local storage. Uninstalling a userscript may leave site local storage behind.
+The script reads the game’s existing `deepvein.locale` language setting without writing to it. It also reads the game's existing `deepvein-seen` record to align the native away summary. It does not write to that entry. To remove the script's saved data, disable the script and remove only its five entries listed above from the site's local storage. Uninstalling a userscript may leave site local storage behind.
 
-脚本只在本机读取游戏已收到的数据、计算并补充界面，不增加游戏请求，不操作工作或交易，不上传数据。离线核算需要在游戏域名的本地存储中保留最近一次角色库存、金币、收集计数和药水状态；旧快照会被覆盖。以上表格列出了全部持久缓存。删除缓存时只删插件自己的四项，保留游戏的 `deepvein-seen`。插件还只读游戏已有的 `deepvein.locale` 以跟随界面语言，不写入该项。
+脚本只在本机读取游戏已收到的数据、计算并补充界面，不增加游戏请求，不操作工作或交易，不上传数据。离线核算需要在游戏域名的本地存储中保留最近一次角色库存、金币、收集计数和药水状态；旧快照会被覆盖。以上表格列出了全部持久缓存。删除缓存时只删插件自己的五项，保留游戏的 `deepvein-seen`。插件还只读游戏已有的 `deepvein.locale` 以跟随界面语言，不写入该项。
 
 快捷栏的 Alice战斗模拟器链接仅在点击时打开，不附带角色配置或来源页面信息。
 
 公会公告、规则、招募文字及编辑草稿只在当前页面内存中用于阅读展示和确认原生保存结果，不写入缓存、不上传。只有原生提供编辑权限时才显示编辑入口，提交仍由用户点击原生保存按钮完成。装饰素材与物品图标内嵌，无额外素材请求。
 
 战斗路线模拟额外读取当前血量、当前地图坐标、食物库存和携带设置，仅用于本地 Worker 计算；不会上传或持久保存移动记录。
+
+更新提醒每天最多读取一次 Greasy Fork 的公开版本信息，不发送角色信息、Cookie 或来源页面；服务器会收到 IP 等通常连接信息。不会运行远程代码，也不会强制安装。可在工作列表的插件设置中关闭提醒；点击提示才进入原脚本安装流程。更新缓存只含检查时间和版本号。

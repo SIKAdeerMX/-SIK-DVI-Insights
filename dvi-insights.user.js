@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.37
+// @version      0.4.38
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -2737,6 +2737,11 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      每天检查插件更新: "Check for plugin updates daily",
+      "更新到 {version}": "Update to {version}",
+      "当前版本 {version}": "Version {version}",
+      "[SIK] 有更新 {version}": "[SIK] Update available {version}",
+      关闭更新提示: "Dismiss update notice",
       工作已停用或不存在: "Job retired or unavailable",
       "稀有优先；缺料按普通补齐": "Best first; shortfalls use Normal materials",
       "战斗 · {name}": "Fight · {name}",
@@ -18983,17 +18988,17 @@ SOFTWARE.
       "The Chalk Steps": "白垩阶",
     },
     version: {
-      version: "1.0.2574",
+      version: "1.0.2612",
       env: "live",
-      commit: "a9133929",
+      commit: "7ea9defb",
       branch: "test-all",
-      subject: "1.0.1188 changelog: smoother servers, and craft for each other (EN+ZH)",
-      committedAt: "2026-10-13T20:17:09+02:00",
+      subject: "1.0.1189 changelog: smoother bosses, no more rubberbanding (EN+ZH)",
+      committedAt: "2026-10-14T10:32:47+02:00",
       dirty: false,
-      builtAt: "2026-10-13T18:21:22.838Z",
+      builtAt: "2026-10-14T08:38:43.792Z",
     },
-    clientAsset: "index-DImgE4Er.js",
-    sourceSha256: "4dd57774fde5dd25052e24a41acbae9b05695a3525b7258c9101dffe60ae6de6",
+    clientAsset: "index-CU7zVxCz.js",
+    sourceSha256: "5063145e2917c592231f2cb5d94e6d3cc98dedcbb5edf0f4c4ef48af083fb3dd",
   };
 
   // ---- Local forecast worker ----
@@ -22854,6 +22859,121 @@ SOFTWARE.
   const INSIGHT_WORKER_SOURCE = "(" + runInsightWorker.toString() + ")();";
   // ---- End local forecast worker ----
 
+  // ---- src/update-check.js ----
+  /* Reads official public metadata only; never downloads or executes script code. */
+  (function (root, factory) {
+    if (typeof module === "object" && module.exports) module.exports = factory();
+    else root.DVIUpdateCheck = factory();
+  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+    "use strict";
+    const DAY = 86400000,
+      KEY = "dvi-insights.update-check.v1";
+    const META_URL =
+      "https://update.greasyfork.org/scripts/599455/%5BSIK%5D%20DVI%20Insights.meta.js";
+    const INSTALL_URL =
+      "https://update.greasyfork.org/scripts/599455/%5BSIK%5D%20DVI%20Insights.user.js";
+    const validVersion = (v) =>
+      typeof v === "string" &&
+      v.length <= 48 &&
+      /^\d+(?:\.\d+){1,3}$/.test(v) &&
+      v.split(".").every((n) => Number.isSafeInteger(Number(n)));
+    function compare(a, b) {
+      if (!validVersion(a) || !validVersion(b)) return 0;
+      const left = a.split(".").map(Number),
+        right = b.split(".").map(Number);
+      for (let i = 0; i < Math.max(left.length, right.length); i++)
+        if ((left[i] || 0) !== (right[i] || 0)) return (left[i] || 0) > (right[i] || 0) ? 1 : -1;
+      return 0;
+    }
+    function parseMetadata(text) {
+      if (typeof text !== "string" || text.length > 65536) return null;
+      const header = text.match(/^\/\/ ==UserScript==\r?\n([\s\S]*?)^\/\/ ==\/UserScript==/m);
+      if (!header) return null;
+      const value = (key) =>
+        header[1].match(new RegExp("^//\\s*@" + key + "\\s+([^\\r\\n]+)$", "m"))?.[1]?.trim();
+      const version = value("version");
+      return value("namespace") === "SIKAer.DVIInsights" &&
+        value("name") === "[SIK] DVI Insights" &&
+        validVersion(version)
+        ? version
+        : null;
+    }
+    function create({
+      version,
+      storage,
+      fetchMetadata,
+      now = () => Date.now(),
+      onChange = () => {},
+    }) {
+      if (!validVersion(version)) throw Error("Invalid installed version");
+      let busy = false,
+        memory = {};
+      function read() {
+        try {
+          const saved = JSON.parse(storage.getItem(KEY) || "{}");
+          if (saved && typeof saved === "object" && !Array.isArray(saved)) memory = saved;
+        } catch {}
+        return memory;
+      }
+      function save(state) {
+        memory = state;
+        try {
+          storage.setItem(KEY, JSON.stringify(state));
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      function snapshot() {
+        const state = read(),
+          latest = validVersion(state.latest) ? state.latest : null;
+        return {
+          version,
+          latest,
+          available: !!latest && compare(latest, version) > 0 && state.dismissed !== latest,
+          busy,
+        };
+      }
+      function dismiss() {
+        const state = read();
+        if (validVersion(state.latest)) {
+          save({ ...state, dismissed: state.latest });
+          onChange(snapshot());
+        }
+      }
+      async function check() {
+        const state = read(),
+          at = now();
+        if (
+          busy ||
+          !Number.isFinite(at) ||
+          (Number.isFinite(state.attemptAt) && at < state.attemptAt + DAY)
+        )
+          return snapshot();
+        // Without persistent cooldown, reloads could exceed the once-per-day limit.
+        if (!save({ ...state, attemptAt: at })) return snapshot();
+        busy = true;
+        try {
+          const latest = parseMetadata(await fetchMetadata(META_URL));
+          if (latest) {
+            const current = read();
+            save({ ...current, latest, checkedAt: at });
+            onChange(snapshot());
+          }
+        } catch {
+        } finally {
+          busy = false;
+        }
+        return snapshot();
+      }
+      return { check, snapshot, dismiss };
+    }
+    return { DAY, KEY, META_URL, INSTALL_URL, validVersion, compare, parseMetadata, create };
+  });
+
+  // ---- Plugin version ----
+  const PLUGIN_VERSION = "0.4.38";
+
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
   const UI_ASSETS = {
@@ -26096,11 +26216,12 @@ SOFTWARE.
           ? model.item(id)?.name || t("物品 {id}", { id })
           : `${TIERS[model.tier(id)]} ${nameOf(model.item(model.base(id))?.name || t("物品 {id}", { id }))}`) +
         (Math.floor(id / 10000) ? ` +${Math.floor(id / 10000)}` : "");
-  let preferences = { targets: {}, potionCost: true };
+  let preferences = { targets: {}, potionCost: true, updateReminder: true };
   try {
     const saved = JSON.parse(localStorage.getItem("dvi-planner.preferences.v1") || "{}");
     preferences.targets = saved.targets && typeof saved.targets === "object" ? saved.targets : {};
     preferences.potionCost = saved.potionCost !== false;
+    preferences.updateReminder = saved.updateReminder !== false;
   } catch {}
   function save() {
     try {
@@ -31552,6 +31673,108 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     }
   }
 
+  // ---- src/update-ui.js ----
+  /* A small opt-out notice. Clicking opens the manager's normal install flow. */
+  const updateChecker = globalThis.DVIUpdateCheck.create({
+    version: PLUGIN_VERSION,
+    storage: localStorage,
+    onChange: () => scheduleNative(),
+    fetchMetadata: async (url) => {
+      const controller = new AbortController(),
+        timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(url, {
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw Error("Metadata unavailable");
+        return await response.text();
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+  });
+  let updateDemo = false;
+
+  function checkPluginUpdate() {
+    if (preferences.updateReminder && !document.hidden && navigator.onLine !== false && !updateDemo)
+      updateChecker.check();
+  }
+  function renderPluginUpdate() {
+    const current = updateChecker.snapshot();
+    for (const settings of document.querySelectorAll(".dvi-native-settings")) {
+      let controls = settings.querySelector(".dvi-update-controls");
+      if (!controls) {
+        controls = document.createElement("div");
+        controls.className = "dvi-update-controls";
+        const label = document.createElement("label"),
+          input = document.createElement("input"),
+          text = document.createElement("span");
+        input.type = "checkbox";
+        input.onchange = () => {
+          preferences.updateReminder = input.checked;
+          save();
+          if (input.checked) checkPluginUpdate();
+          scheduleNative();
+        };
+        label.append(input, text);
+        const link = document.createElement("a");
+        link.href = globalThis.DVIUpdateCheck.INSTALL_URL;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.referrerPolicy = "no-referrer";
+        controls.append(label, link);
+        settings.append(controls);
+      }
+      controls.querySelector("input").checked = preferences.updateReminder;
+      controls.querySelector("span").textContent = t("每天检查插件更新");
+      controls.querySelector("a").textContent = current.available
+        ? t("更新到 {version}", { version: current.latest })
+        : t("当前版本 {version}", { version: PLUGIN_VERSION });
+    }
+    const host = document.querySelector("[data-plan]");
+    if (host) {
+      let notice = host.querySelector(".dvi-update-notice");
+      if (!preferences.updateReminder || !current.available) notice?.remove();
+      else {
+        if (!notice) {
+          notice = document.createElement("div");
+          notice.className = "dvi-update-notice";
+          notice.dataset.noI18n = "";
+          const link = document.createElement("a"),
+            close = document.createElement("button");
+          link.href = globalThis.DVIUpdateCheck.INSTALL_URL;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.referrerPolicy = "no-referrer";
+          close.type = "button";
+          close.textContent = "×";
+          close.onclick = () => updateChecker.dismiss();
+          notice.append(link, close);
+          for (const event of ["click", "pointerdown"])
+            notice.addEventListener(event, (e) => e.stopPropagation());
+          host.append(notice);
+        }
+        notice.querySelector("a").textContent = t("[SIK] 有更新 {version}", {
+          version: current.latest,
+        });
+        notice.querySelector("button").setAttribute("aria-label", t("关闭更新提示"));
+      }
+    }
+    checkPluginUpdate();
+  }
+  const updateStyle = document.createElement("style");
+  updateStyle.textContent =
+    ".dvi-update-notice{display:flex;align-items:center;gap:8px;margin-top:6px;padding:3px 0;border-top:1px solid var(--edge);font:inherit;font-size:var(--fs-xs,12px)}.dvi-update-notice a{flex:1;min-width:0;color:var(--accent);overflow-wrap:anywhere}.dvi-update-notice button{padding:0 6px;min-width:24px;min-height:24px;border:0;background:transparent;color:var(--ink-faint);font:inherit;cursor:pointer}.dvi-update-controls{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px}.dvi-update-controls a{color:var(--ink-faint);overflow-wrap:anywhere}";
+  document.head.append(updateStyle);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkPluginUpdate();
+  });
+  window.addEventListener("online", checkPluginUpdate);
+  setInterval(checkPluginUpdate, 900000);
+
   // ---- src/integrated-ui.js ----
   /* Native UI attachments. Reads stable DOM data attributes, never clicks game controls. */
   const nativeRecords = new Map(),
@@ -32386,6 +32609,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       });
     }
     renderCurrentActivity();
+    renderPluginUpdate();
     syncNativeTip();
     const menu = document.querySelector("[data-item-menu]:not([hidden])");
     if (menu?.querySelector(".item-menu-icon")) {
