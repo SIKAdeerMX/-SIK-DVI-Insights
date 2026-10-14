@@ -4,7 +4,6 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## 中文介绍
 
-系列组件：[SIK] DVI信息增强负责信息与规划，[[SIK] 动态DVI](https://greasyfork.org/zh-CN/scripts/599633-sik-dynamic-dvi) 提供装备美术、武器动作与本地特效，两个脚本可同时使用。
 
 [SIK] DVI信息增强为 Deep Vein Idle 补充经验、材料、时间与收支信息，沿用游戏面板和主题配色。
 
@@ -40,7 +39,6 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-Companion script: [[SIK] Dynamic DVI](https://greasyfork.org/en/scripts/599633-sik-dynamic-dvi) adds equipment art, weapon motion and local visual effects. Both scripts can run together.
 
 [SIK] DVI Insights adds XP, material, time and income information to Deep Vein Idle's existing interface, using the game's theme colors.
 
