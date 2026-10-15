@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.47
+# [SIK] DVI Insights 0.4.48
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -23,7 +23,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 战斗列表刷新时保留浏览位置和已展开明细，减少滚动回跳，兼顾手机窄屏。
 - 物品提示补充求购、挂售和商人价格；买入缺价时可参考已接收的公开历史成交与一天内的报价缓存。被动行情接收增加兜底，切到后台及时保存价格，收到成交价后刷新期望日利；缺价时列出具体物品。
 - 仓库和市场“我的物品”的整堆估值按税后求购和商人价计算；一个按钮按价值排序，重复点击保持排序，仓库锁定物品保持原位。市场同类物品按各品质分别计价后汇总；仓库按钮和数量操作区统一棕金样式。
-- 农田采用紧凑状态格；公会用升级箭头、进度百分比和缺口表达升级与成员名额；贡献使用 K/M/B 和同列比例条，日志采用时间线，公会列表保留原生图标并显示序号与名额使用情况。公会仓库操作保留。
+- 农田和隐藏花园采用自适应卡片，保留每田原生作物下拉框与实时成熟状态；升级计算中的农田明细显示当前作物、成熟时间、浇水和下次播种，窄屏自动换行。仅调整信息布局，种植仍是单田参考，不含跨田移动与花园清障。公会用进度和缺口表达升级与成员名额，仓库操作保留。
 - 公会恢复原来的按钮、等级徽章、公告纸和奖励架呈现。公告、规则与招募默认阅读，原生保存确认后退出编辑，草稿只在页面内存保留。三种世界首领各用一套中英文名称艺术字：矿脉巨像为矿晶、霜冻利维坦为冰霜、余烬飞龙为余烬主题，仅三处短闪光，无牌匾。伤害榜支持三位数及更长名次。经验球使用原生 MC 贴图；食物跟随当前实际进食物品，药水图标跟随当前品质最先到期的实际药水。全部素材内嵌。
 - 仓库和市场“我的物品”默认不显示估值，点击“价值排序”后才在左上角显示整堆价值（最多两位小数），估值字体、字号和颜色与对应原生数量一致，数量位置保持原生不变；切换原生排序会隐藏估值并恢复原生顺序与数量样式。
 - 离线总结汇总掉落产值、金币变化与材料、食物、药水成本。有完整离线前记录时显示净收益。
@@ -49,6 +49,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Gathering XP and level-time estimates follow the current discard setting and account for fewer bank trips. Discard and bank modes use separate caches; discarded outputs are excluded from sale income.
 - Crafting supports Best first, selecting complete recipes from owned stock and filling shortages with Normal materials. Concurrent enhancement keeps the main action income and XP visible, with a separate enhancement status line.
 - Updated for live client 1.0.2704 with the new map and hidden gardens; farming status follows skill unlocks and shows each field’s crop choice. Commission outputs and client-owned materials are excluded from personal income and costs; observed XP remains available, while commission income is not estimated yet.
+- Responsive field and garden cards retain the original per-field crop dropdowns and live maturity updates. Calculator details show current crops, time remaining, watering and next crops in read-only cards. Farming estimates remain single-field references, excluding travel between fields and garden clearing.
 - The original desktop combat HUD gains collapsible DPS and damage-taken statistics; mobile restores numeric HP inside the original top health bar. DPS uses effective enemy HP loss; damage taken uses received hit events and stays unknown without data. Measurements reset after reconnects. Crafting calculators show per-quality material costs and after-tax unit revenue, retaining unknown prices.
 - Boss animations remember the same summon across reloads. Quick sell and item selection retain local value sorting; switching native sort exits it. Home timers sort by remaining time and show completion notices; no upgrade overview or added gameplay controls.
 - The active task shows daily income, expected income before consumption costs, and expected profit. Daily income gains a golden glow when it exceeds expected income. Normal combat also includes EPH and food endurance; both work and combat show a potion summary with the actual icon of the active potion whose current rarity expires first, and its name in the tooltip. Idle time and standalone enhancement retain active potion timers. All eight native potion icons are embedded and remain visible with the inventory closed; icon and countdown stay together. Click to expand the sorted duration list.

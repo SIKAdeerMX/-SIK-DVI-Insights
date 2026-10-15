@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.47
+// @version      0.4.48
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4063,6 +4063,9 @@ SOFTWARE.
         "Includes public snapshot estimates: top prices only, no full depth; bulk execution may differ.",
       下次播种: "Next crop",
       随当前任务: "Follow current task",
+      任意作物: "Any crop",
+      "此处只读。每田作物请在上方原生下拉框选择；单田估算不含跨田移动与花园清障。":
+        "Read only. Choose each field’s crop in the native dropdown above. Single-field estimates exclude travel between fields and clearing garden obstacles.",
       "缺少家园布局数据，暂无法模拟出门路线":
         "Home layout unavailable; cannot simulate the exit route yet",
       "承伤/s": "Taken/s",
@@ -20737,7 +20740,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.47";
+  const PLUGIN_VERSION = "0.4.48";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -26485,9 +26488,62 @@ html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort[aria-pressed="true"]
 }
 .dvi-insights [data-fields] .field-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr));
+  gap: 5px;
   margin: 4px 0 7px;
+}
+.dvi-insights [data-fields] .field-scroll {
+  max-height: clamp(190px, 34vh, 380px);
+  min-width: 0;
+}
+.dvi-insights [data-fields] .field-row.dvi-field-tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 3px;
+}
+.dvi-insights [data-fields] .field-row .field-name {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 600;
+}
+.dvi-insights [data-fields] .field-row .field-status {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 11px;
+}
+.dvi-insights [data-fields] .field-row .field-status:before,
+.dvi-insights [data-fields] .field-row .field-time:before {
+  content: none;
+}
+.dvi-insights [data-fields] .field-row .field-crop,
+.dvi-insights [data-fields] .field-row .field-time {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.dvi-insights [data-fields] .field-row.field-ready .field-status {
+  color: var(--moss);
+}
+.dvi-insights [data-fields] .field-row .field-pick {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 2px 0 0;
+  padding: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+}
+.dvi-insights [data-fields] .field-locked.dvi-field-tile {
+  align-content: center;
+  overflow-wrap: anywhere;
 }
 /* Mobile eat-label flex-basis is a width in option rows, but becomes a
    62–84px blank height inside the vertical fields container. */
@@ -30238,6 +30294,14 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   function polishFields() {
     for (const fields of document.querySelectorAll("[data-fields]:not([hidden])")) {
       for (const line of fields.querySelectorAll(".field-line:not(.dvi-field-tile)")) {
+        // Keep 1.0.2704's original crop select and the two native tick targets.
+        if (
+          line.matches(".field-row,.field-locked") ||
+          line.querySelector("[data-plot-choice],[data-field-status]")
+        ) {
+          line.classList.add("dvi-field-tile");
+          continue;
+        }
         const original = line.textContent.trim(),
           parts = original.split(/\s*·\s*/),
           number = parts[0].match(/\d+/)?.[0];
@@ -30254,9 +30318,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         status.textContent = parts.slice(parts.length > 2 ? 2 : 1).join(" · ");
         line.replaceChildren(head, status);
       }
-      for (const tile of fields.querySelectorAll(".dvi-field-tile[title]"))
-        tile.removeAttribute("title");
-      const hint = fields.querySelector(":scope>.field-hint");
+      const hint = fields.querySelector(":scope>.field-hint,:scope>.field-scroll>.field-hint");
       if (hint) {
         const details = document.createElement("details"),
           summary = document.createElement("summary");
@@ -30265,8 +30327,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         details.addEventListener("toggle", () => fieldHelpState.set(fields, details.open));
         summary.dataset.noI18n = "";
         summary.textContent = t("种子说明");
+        hint.before(details);
         details.append(summary, hint);
-        fields.append(details);
       }
       setNativeText(fields.querySelector(".dvi-field-help summary"), t("种子说明"));
     }
@@ -30793,6 +30855,66 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+.dvi-farm-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  gap: 5px;
+  margin: 7px 0;
+  padding: 0;
+  list-style: none;
+}
+.dvi-farm-list > li {
+  min-width: 0;
+  padding: 7px;
+  background: var(--panel-raised, #f8eed6);
+  border: 1px solid var(--edge, #b89763);
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+.dvi-farm-list > li.dvi-farm-active {
+  border-color: var(--brass, #9a6212);
+}
+.dvi-farm-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 5px;
+  flex-wrap: wrap;
+  color: var(--ink, #3d2612);
+}
+.dvi-farm-head strong {
+  font-weight: 600;
+}
+.dvi-farm-head small {
+  color: var(--brass, #9a6212);
+  font: inherit;
+}
+.dvi-farm-state {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 3px 0;
+  color: var(--ink-muted, #6b4826);
+}
+.dvi-farm-state.dvi-farm-ready {
+  color: var(--moss, #3b7326);
+}
+.dvi-farm-list dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 7px;
+  margin: 4px 0 0;
+  color: var(--ink-faint, #876640);
+}
+.dvi-farm-list dt,
+.dvi-farm-list dd {
+  margin: 0;
+}
+.dvi-farm-list dd {
+  text-align: right;
+  color: var(--ink-muted, #6b4826);
+}
 .dvi-native-work .dvi-note {
   font-size: var(--fs-2xs, 10px);
   line-height: 1.5;
@@ -31166,7 +31288,18 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     const p = store.state.player;
     if (!p) return "";
     const status = model.farmingStatus(p);
-    return `<details><summary>${t("当前农田")}</summary><p class="dvi-note">${t("浇水只作用于当前工作田。换田时优先成熟田；相邻成熟田同优先级，按编号选取。已有相邻站位会保留，重新寻路才挑落脚点。「收获并补种」不浇水。")}</p><table><thead><tr>${["田地", "状态", "浇水", "下次播种"].map((x) => `<th>${t(x)}</th>`).join("")}</tr></thead><tbody>${status.fields.map((f) => `<tr><td>${f.name ? escape(nameOf(f.name)) : fmt(f.number)}${f.current ? " · " + t("当前") : ""}</td><td>${!f.plot ? t("空田") : f.matureAt <= p.lastTick ? t("已成熟") : duration((f.matureAt - p.lastTick) * 0.6)}</td><td>${f.plot ? fmt(f.plot.watered || 0) : "—"}</td><td>${f.seedChoice === null ? t("随当前任务") : escape(itemName(f.seedChoice))}</td></tr>`).join("")}</tbody></table></details>`;
+    return `<details class="dvi-farm-details"><summary>${t("当前农田")} · ${fmt(status.fields.length)}<span class="dvi-native-action" aria-hidden="true"></span></summary><p class="dvi-note">${t("此处只读。每田作物请在上方原生下拉框选择；单田估算不含跨田移动与花园清障。")}</p><ul class="dvi-farm-list">${status.fields
+      .map((f) => {
+        const ready = f.plot && f.matureAt !== null && f.matureAt <= p.lastTick;
+        const crop = (id) => {
+          const job = GAME_DATA.jobs.find(
+            (j) => j.grow !== undefined && j.inputs[0]?.itemId === model.base(id),
+          );
+          return escape(job ? nameOf(job.name) : itemName(id));
+        };
+        return `<li${f.current ? ' class="dvi-farm-active"' : ""}><div class="dvi-farm-head"><strong>${f.name ? escape(nameOf(f.name)) : t("田地") + " " + fmt(f.number)}</strong>${f.current ? "<small>" + t("当前") + "</small>" : ""}</div><div class="dvi-farm-state${ready ? " dvi-farm-ready" : ""}"><span>${f.plot ? crop(f.plot.seedItemId) : t("空田")}</span><span>${!f.plot ? "" : ready ? t("已成熟") : f.matureAt === null ? "—" : duration((f.matureAt - p.lastTick) * 0.6)}</span></div><dl><dt>${t("浇水")}</dt><dd>${f.plot ? fmt(f.plot.watered || 0) : "—"}</dd><dt>${t("下次播种")}</dt><dd>${f.seedChoice === null ? t("任意作物") : crop(f.seedChoice)}</dd></dl></li>`;
+      })
+      .join("")}</ul></details>`;
   }
   function renderNative(record) {
     const unit = record.box.querySelector("[data-native-unit-price]");
