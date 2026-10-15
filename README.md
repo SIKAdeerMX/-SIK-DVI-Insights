@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.45
+# [SIK] DVI Insights 0.4.46
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -38,7 +38,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 作者 SIKAer，MIT 开源。这是社区工具，与 Deep Vein Idle 官方没有隶属关系。游戏名称、机制数据及原有界面素材的权利归各自权利人。隐私与本地缓存说明见随附 [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)。
 
-- 轻量更新提醒每天最多读取一次 Greasy Fork 公开版本信息，有新版时显示小提示，点击进入原脚本安装页；可在工作列表的插件设置中关闭，或忽略当前版本。不强制更新，不上传角色数据。
+- 轻量更新提醒每小时读取 Greasy Fork 公开版本信息，失败后 15 分钟重试；设置中可立即检查并查看状态，手动每分钟最多一次。有新版时显示独立小提示，切换手机界面也可见，点击进入原脚本安装页；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
 
@@ -78,5 +78,5 @@ By SIKAer, licensed under MIT. An independent community tool, not affiliated wit
 
 The embedded XP orb texture is from [Mojang's official Bedrock samples](https://github.com/Mojang/bedrock-samples/blob/main/resource_pack/textures/entity/experience_orb.png), © Mojang AB, all rights reserved, subject to the [Minecraft EULA](https://www.minecraft.net/eula). Original game and Minecraft assets are not covered by the plugin's MIT license.
 
-- A lightweight update reminder checks official Greasy Fork metadata at most once per 24 hours. A small notice links to the existing script’s installation page; disable reminders in work-list settings or dismiss the current version. No forced installation or character uploads.
+- A lightweight update reminder checks official Greasy Fork metadata hourly and retries failures after 15 minutes. Settings include Check now, limited to once a minute, and a check status. A standalone notice remains visible across mobile panels and links to the existing installation page. Disable automatic checks or dismiss a version in settings. No forced installation or character uploads.
 

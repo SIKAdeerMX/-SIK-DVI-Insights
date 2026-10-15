@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.45
+// @version      0.4.46
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4051,6 +4051,14 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      每小时检查插件更新: "Check plugin updates hourly",
+      立即检查: "Check now",
+      "检查中…": "Checking…",
+      每分钟最多手动检查一次: "Manual checks are limited to once a minute",
+      "检查失败，15 分钟后重试": "Check failed; retrying in 15 minutes",
+      "发现新版 {version}": "Update available: {version}",
+      "已检查，当前为最新版本": "Checked: up to date",
+      尚未检查: "Not checked yet",
       "含公开行情估价；仅最优报价，无完整深度，批量成交可能不同。":
         "Includes public snapshot estimates: top prices only, no full depth; bulk execution may differ.",
       下次播种: "Next crop",
@@ -20578,6 +20586,9 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const DAY = 86400000,
+      INTERVAL = 3600000,
+      RETRY = 900000,
+      MANUAL_INTERVAL = 60000,
       KEY = "dvi-insights.update-check.v1";
     const META_URL =
       "https://update.greasyfork.org/scripts/599455/%5BSIK%5D%20DVI%20Insights.meta.js";
@@ -20618,31 +20629,65 @@ SOFTWARE.
     }) {
       if (!validVersion(version)) throw Error("Invalid installed version");
       let busy = false,
-        memory = {};
+        memory = {},
+        persistent = true;
       function read() {
-        try {
-          const saved = JSON.parse(storage.getItem(KEY) || "{}");
-          if (saved && typeof saved === "object" && !Array.isArray(saved)) memory = saved;
-        } catch {}
+        if (persistent)
+          try {
+            const saved = JSON.parse(storage.getItem(KEY) || "{}");
+            if (saved && typeof saved === "object" && !Array.isArray(saved)) memory = saved;
+          } catch {
+            persistent = false;
+          }
         return memory;
       }
       function save(state) {
         memory = state;
-        try {
-          storage.setItem(KEY, JSON.stringify(state));
-          return true;
-        } catch {
-          return false;
-        }
+        if (persistent)
+          try {
+            storage.setItem(KEY, JSON.stringify(state));
+          } catch {
+            persistent = false;
+          }
+      }
+      function timing(state, at) {
+        const attempt =
+          Number.isFinite(state.attemptAt) && state.attemptAt >= 0 && state.attemptAt <= at
+            ? state.attemptAt
+            : null;
+        const success =
+          attempt !== null &&
+          Number.isFinite(state.checkedAt) &&
+          state.checkedAt >= attempt &&
+          validVersion(state.latest) &&
+          !state.error;
+        return {
+          nextCheckAt: attempt === null ? 0 : attempt + (success ? INTERVAL : RETRY),
+          manualAt: attempt === null ? 0 : attempt + MANUAL_INTERVAL,
+        };
       }
       function snapshot() {
         const state = read(),
-          latest = validVersion(state.latest) ? state.latest : null;
+          latest = validVersion(state.latest) ? state.latest : null,
+          at = now(),
+          next = timing(state, at),
+          newer = !!latest && compare(latest, version) > 0;
         return {
           version,
           latest,
-          available: !!latest && compare(latest, version) > 0 && state.dismissed !== latest,
+          newer,
+          available: newer && state.dismissed !== latest,
           busy,
+          status: busy
+            ? "checking"
+            : state.error
+              ? "failed"
+              : Number.isFinite(state.checkedAt)
+                ? "checked"
+                : "idle",
+          checkedAt: state.checkedAt ?? null,
+          nextCheckAt: next.nextCheckAt,
+          manualReady: !busy && at >= next.manualAt,
         };
       }
       function dismiss() {
@@ -20652,38 +20697,47 @@ SOFTWARE.
           onChange(snapshot());
         }
       }
-      async function check() {
+      async function check({ force = false } = {}) {
         const state = read(),
           at = now();
-        if (
-          busy ||
-          !Number.isFinite(at) ||
-          (Number.isFinite(state.attemptAt) && at < state.attemptAt + DAY)
-        )
+        const next = timing(state, at);
+        if (busy || !Number.isFinite(at) || at < (force ? next.manualAt : next.nextCheckAt))
           return snapshot();
-        // Without persistent cooldown, reloads could exceed the once-per-day limit.
-        if (!save({ ...state, attemptAt: at })) return snapshot();
+        save({ ...state, attemptAt: at });
         busy = true;
+        onChange(snapshot());
         try {
           const latest = parseMetadata(await fetchMetadata(META_URL));
-          if (latest) {
-            const current = read();
-            save({ ...current, latest, checkedAt: at });
-            onChange(snapshot());
-          }
+          if (!latest) throw Error("Invalid metadata");
+          const current = read();
+          save({ ...current, latest, checkedAt: at, error: false });
         } catch {
+          save({ ...read(), error: true });
         } finally {
           busy = false;
+          onChange(snapshot());
         }
         return snapshot();
       }
       return { check, snapshot, dismiss };
     }
-    return { DAY, KEY, META_URL, INSTALL_URL, validVersion, compare, parseMetadata, create };
+    return {
+      DAY,
+      INTERVAL,
+      RETRY,
+      MANUAL_INTERVAL,
+      KEY,
+      META_URL,
+      INSTALL_URL,
+      validVersion,
+      compare,
+      parseMetadata,
+      create,
+    };
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.45";
+  const PLUGIN_VERSION = "0.4.46";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -30220,32 +30274,38 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 
   // ---- src/update-ui.js ----
   /* A small opt-out notice. Clicking opens the manager's normal install flow. */
+  async function fetchUpdateMetadata(url) {
+    const controller = new AbortController(),
+      timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw Error("Metadata unavailable");
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   const updateChecker = globalThis.DVIUpdateCheck.create({
     version: PLUGIN_VERSION,
     storage: localStorage,
     onChange: () => scheduleNative(),
-    fetchMetadata: async (url) => {
-      const controller = new AbortController(),
-        timeout = setTimeout(() => controller.abort(), 10000);
-      try {
-        const response = await fetch(url, {
-          credentials: "omit",
-          referrerPolicy: "no-referrer",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) throw Error("Metadata unavailable");
-        return await response.text();
-      } finally {
-        clearTimeout(timeout);
-      }
-    },
+    fetchMetadata: fetchUpdateMetadata,
   });
   let updateDemo = false;
 
-  function checkPluginUpdate() {
-    if (preferences.updateReminder && !document.hidden && navigator.onLine !== false && !updateDemo)
-      updateChecker.check();
+  function checkPluginUpdate(force = false) {
+    if (
+      (force === true || preferences.updateReminder) &&
+      !document.hidden &&
+      navigator.onLine !== false &&
+      !updateDemo
+    )
+      return updateChecker.check({ force: force === true });
   }
   function renderPluginUpdate() {
     const current = updateChecker.snapshot();
@@ -30265,23 +30325,42 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           scheduleNative();
         };
         label.append(input, text);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "dvi-update-now";
+        button.onclick = () => checkPluginUpdate(true);
         const link = document.createElement("a");
         link.href = globalThis.DVIUpdateCheck.INSTALL_URL;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.referrerPolicy = "no-referrer";
-        controls.append(label, link);
+        const status = document.createElement("small");
+        status.className = "dvi-update-status";
+        controls.append(label, button, link, status);
         settings.append(controls);
       }
       controls.querySelector("input").checked = preferences.updateReminder;
-      controls.querySelector("span").textContent = t("每天检查插件更新");
-      controls.querySelector("a").textContent = current.available
+      controls.querySelector("span").textContent = t("每小时检查插件更新");
+      const button = controls.querySelector(".dvi-update-now");
+      button.textContent = t(current.busy ? "检查中…" : "立即检查");
+      button.disabled = current.busy || current.manualReady === false;
+      button.title = t("每分钟最多手动检查一次");
+      controls.querySelector("a").textContent = current.newer
         ? t("更新到 {version}", { version: current.latest })
         : t("当前版本 {version}", { version: PLUGIN_VERSION });
+      controls.querySelector(".dvi-update-status").textContent = current.busy
+        ? t("检查中…")
+        : current.status === "failed"
+          ? t("检查失败，15 分钟后重试")
+          : current.newer
+            ? t("发现新版 {version}", { version: current.latest })
+            : current.status === "checked"
+              ? t("已检查，当前为最新版本")
+              : t("尚未检查");
     }
-    const host = document.querySelector("[data-plan]");
+    const host = document.body || document.documentElement;
     if (host) {
-      let notice = host.querySelector(".dvi-update-notice");
+      let notice = document.querySelector(".dvi-update-notice");
       if (!preferences.updateReminder || !current.available) notice?.remove();
       else {
         if (!notice) {
@@ -30312,13 +30391,13 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   }
   const updateStyle = document.createElement("style");
   updateStyle.textContent =
-    ".dvi-update-notice{display:flex;align-items:center;gap:8px;margin-top:6px;padding:3px 0;border-top:1px solid var(--edge);font:inherit;font-size:var(--fs-xs,12px)}.dvi-update-notice a{flex:1;min-width:0;color:var(--accent);overflow-wrap:anywhere}.dvi-update-notice button{padding:0 6px;min-width:24px;min-height:24px;border:0;background:transparent;color:var(--ink-faint);font:inherit;cursor:pointer}.dvi-update-controls{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px}.dvi-update-controls a{color:var(--ink-faint);overflow-wrap:anywhere}";
-  document.head.append(updateStyle);
+    ".dvi-update-notice{position:fixed;right:12px;bottom:12px;z-index:90;display:flex;align-items:center;gap:8px;box-sizing:border-box;max-width:calc(100vw - 24px);padding:8px 10px;border:1px solid var(--edge-bright,var(--edge));border-radius:5px;background:var(--panel);color:var(--ink);box-shadow:0 3px 12px #0003;font:500 12px/1.4 var(--sans)}.dvi-update-notice a{flex:1;min-width:0;color:var(--brass);overflow-wrap:anywhere}.dvi-update-notice button{padding:0 4px;min-width:22px;min-height:22px;border:0;background:transparent;color:var(--ink-faint);font:inherit;cursor:pointer}html.m-on .dvi-update-notice{left:8px;right:8px;bottom:calc(var(--m-tab-full,64px) + 8px);max-width:none}.dvi-update-controls{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px}.dvi-update-controls a,.dvi-update-status{color:var(--ink-faint);overflow-wrap:anywhere}.dvi-update-status{flex-basis:100%}";
+  (document.head || document.documentElement).append(updateStyle);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) checkPluginUpdate();
   });
-  window.addEventListener("online", checkPluginUpdate);
-  setInterval(checkPluginUpdate, 900000);
+  window.addEventListener("online", () => checkPluginUpdate());
+  setInterval(checkPluginUpdate, 60000);
 
   // ---- src/public-market-ui.js ----
   /* Documented planner endpoint, separate from the game's private market actions. */

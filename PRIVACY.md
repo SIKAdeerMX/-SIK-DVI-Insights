@@ -6,7 +6,7 @@ The sidebar includes a link to Alice Combat Simulator at `https://dvi-lab.pages.
 
 [SIK] DVI Insights runs locally on `deepveinidle.com` and its `www` host. It observes objects the game has already parsed, with a passive listener on already received WebSocket text when the parser hook is bypassed, calculates in local workers, and adds information to existing panels. It reads the officially documented public market snapshot as described below. It does not make other game queries, operate game controls, collect analytics, or upload character data. It has no external dependencies; its userscript permission remains `@grant none`.
 
-The optional update reminder reads this script's public version metadata from `update.greasyfork.org` at most once per 24 hours. The request sends no character data, cookies or referrer; the server receives ordinary connection information such as the IP address. No remote code is executed. The notice opens the existing script's official installation link only when clicked; installation remains under the userscript manager's control. Turn the reminder off in the work-list plugin settings, or dismiss the current version's notice.
+The optional update reminder reads this script's public version metadata from `update.greasyfork.org` hourly, with a 15-minute retry after failures and manual checks limited to once a minute. The request sends no character data, cookies or referrer; the server receives ordinary connection information such as the IP address. No remote code is executed. The notice opens the existing script's official installation link only when clicked; installation remains under the userscript manager's control. Turn the reminder off in the work-list plugin settings, or dismiss the current version's notice.
 
 The folded damage meter uses enemy HP/kill counters or received boss-hit events; samples stay in memory and do not upload or alter combat. Boss summon identifiers and acknowledgement times are stored in the existing plugin preferences, bounded to 64 recent entries, to suppress repeated animations after reload.
 
@@ -24,7 +24,7 @@ Seven local storage entries are used on the game origin:
 | `dvi-insights.offline-before.v1` | The latest character's internal ID, tick, summed inventory, collection counters, coins, active potion times/rarity buckets, and discard mode, for offline accounting |
 | `dvi-insights.home-timers.v1` | The latest character's internal ID, tick, pending home room/station jobs and undismissed completion notices, for completion reminders across reconnects |
 | `dvi-insights.public-market.v1` | Public item prices and generation time plus shared five-minute request cooldown; no character data or order identities |
-| `dvi-insights.update-check.v1` | Last check attempt time, successful check time, latest public version and dismissed version; no character data |
+| `dvi-insights.update-check.v1` | Last check attempt/success times, a failure flag, latest public version and dismissed version; no character data |
 
 The offline baseline is overwritten with the latest snapshot. It contains no character name, account credentials, chat, or movement history. Market settlement records used to reconcile an in-tab away report stay in page memory and are reset on a new welcome message. Public historical estimates expire after seven days; cached ask estimates expire after one day. Each saved price cache is limited to 2,000 variants.
 
@@ -38,7 +38,7 @@ The script reads the game’s existing `deepvein.locale` language setting withou
 
 战斗路线模拟额外读取当前血量、当前地图坐标、食物库存和携带设置，仅用于本地 Worker 计算；不会上传或持久保存移动记录。
 
-更新提醒每天最多读取一次 Greasy Fork 的公开版本信息，不发送角色信息、Cookie 或来源页面；服务器会收到 IP 等通常连接信息。不会运行远程代码，也不会强制安装。可在工作列表的插件设置中关闭提醒；点击提示才进入原脚本安装流程。更新缓存只含检查时间和版本号。
+更新提醒每小时读取 Greasy Fork 的公开版本信息，失败后 15 分钟重试；手动检查每分钟最多一次，不发送角色信息、Cookie 或来源页面；服务器会收到 IP 等通常连接信息。不会运行远程代码，也不会强制安装。可在工作列表的插件设置中关闭提醒；点击提示才进入原脚本安装流程。更新缓存只含检查时间、失败标记和版本号；不可持久存储时仅在当前页面内存冷却。
 
 Public market prices are fetched only from https://deepveinidle.com/api/market/prices.json, with no cookies, referrer or character parameters and no redirects. The endpoint is documented by the game for planners and rebuilds every five minutes. Tabs share a local cache/cooldown; failures also wait five minutes. Checks pause while hidden/offline or using Ironman. Snapshots older than fifteen minutes are discarded. The server receives ordinary IP/connection information. Price JSON is validated as data, never executed. Public snapshots do not provide full order depth; estimates are marked.
 
