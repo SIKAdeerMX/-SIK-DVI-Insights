@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.49
+// @version      0.4.50
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -20773,7 +20773,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.49";
+  const PLUGIN_VERSION = "0.4.50";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -30544,6 +30544,12 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   const updateStyle = document.createElement("style");
   updateStyle.textContent =
     ".dvi-update-notice{position:fixed;right:12px;bottom:12px;z-index:90;display:flex;align-items:center;gap:8px;box-sizing:border-box;max-width:calc(100vw - 24px);padding:8px 10px;border:1px solid var(--edge-bright,var(--edge));border-radius:5px;background:var(--panel);color:var(--ink);box-shadow:0 3px 12px #0003;font:500 12px/1.4 var(--sans)}.dvi-update-notice a{flex:1;min-width:0;color:var(--brass);overflow-wrap:anywhere}.dvi-update-notice button{padding:0 4px;min-width:22px;min-height:22px;border:0;background:transparent;color:var(--ink-faint);font:inherit;cursor:pointer}html.m-on .dvi-update-notice{left:8px;right:8px;bottom:calc(var(--m-tab-full,64px) + 8px);max-width:none}.dvi-update-controls{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px}.dvi-update-controls a,.dvi-update-status{color:var(--ink-faint);overflow-wrap:anywhere}.dvi-update-status{flex-basis:100%}";
+  updateStyle.textContent += `
+html.dvi-insights .dvi-native-settings .dvi-update-controls .dvi-update-now{appearance:none;box-sizing:border-box;flex:0 0 auto;width:auto!important;min-width:0!important;height:24px!important;min-height:24px!important;margin:0!important;padding:2px 8px!important;border:1px solid var(--edge,#b89763)!important;border-radius:3px!important;background:transparent!important;color:var(--ink-muted,#6b4826)!important;font:400 11px/1.3 var(--sans,inherit)!important;letter-spacing:0!important;box-shadow:none!important;text-shadow:none!important;transform:none!important;cursor:pointer}
+html.dvi-insights .dvi-native-settings .dvi-update-now:hover:not(:disabled){background:var(--panel-raised,#f8eed6)!important;border-color:var(--brass,#9a6212)!important}
+html.dvi-insights .dvi-native-settings .dvi-update-now:disabled{opacity:.6;cursor:default}
+html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px solid var(--brass,#9a6212);outline-offset:2px}
+`;
   (document.head || document.documentElement).append(updateStyle);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
