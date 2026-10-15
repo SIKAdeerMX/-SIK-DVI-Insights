@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.46
+// @version      0.4.47
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -20737,7 +20737,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.46";
+  const PLUGIN_VERSION = "0.4.47";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
