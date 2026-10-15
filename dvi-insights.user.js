@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.48
+// @version      0.4.49
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4064,6 +4064,20 @@ SOFTWARE.
       下次播种: "Next crop",
       随当前任务: "Follow current task",
       任意作物: "Any crop",
+      打开更新页面: "Open update page",
+      "运行版本 {version}": "Running {version}",
+      投入计价明细: "Input price details",
+      物品: "Item",
+      "数量/d": "Qty/d",
+      单价: "Unit price",
+      价格来源: "Price source",
+      "公开快照（估价）": "Public snapshot (estimate)",
+      "历史成交（估价）": "Trade history (estimate)",
+      "缓存报价（估价）": "Cached quote (estimate)",
+      "客户端报价（估价）": "Client quote (estimate)",
+      客户端报价: "Client quote",
+      "数量为预计每日消耗；单价为金币/件。现价缺失或数量不足时，保留历史与缓存估价兜底；估价不代表可立即成交。":
+        "Quantities are projected daily consumption; unit prices are coins/item. History and cached estimates cover missing quotes or volume; estimates do not imply immediate execution.",
       "此处只读。每田作物请在上方原生下拉框选择；单田估算不含跨田移动与花园清障。":
         "Read only. Choose each field’s crop in the native dropdown above. Single-field estimates exclude travel between fields and clearing garden obstacles.",
       "缺少家园布局数据，暂无法模拟出门路线":
@@ -20502,8 +20516,16 @@ SOFTWARE.
           ["bid", "highestBuy", "buyQty", "bids", "buy"],
           ["ask", "lowestSell", "sellQty", "asks", "sell"],
         ]) {
-          const stamp = old[side + "At"] ?? old.at ?? 0;
-          if (old[side + "Public"] && now - stamp > MAX_AGE) {
+          const cachedAt =
+            side === "ask" &&
+            Number.isFinite(old.purchaseCache?.at) &&
+            old.purchaseCache.at <= now &&
+            now - old.purchaseCache.at <= 86400000
+              ? old.purchaseCache.at
+              : 0;
+          const quoteStamp = old[side + "At"] ?? old.at ?? 0,
+            stamp = Math.max(quoteStamp, cachedAt);
+          if (old[side + "Public"] && now - quoteStamp > MAX_AGE) {
             delete book[side + "Public"];
             delete book[side + "Qty"];
             book[side] = null;
@@ -20511,6 +20533,16 @@ SOFTWARE.
             dirty = true;
           }
           if (!q || !Object.hasOwn(q, price) || at <= stamp) continue;
+          // A newly generated snapshot is still only a delayed top quote. Keep
+          // recently received native prices/depth (including explicit no stock).
+          if (
+            !old[side + "Public"] &&
+            Object.hasOwn(old, side) &&
+            stamp > 0 &&
+            stamp <= now &&
+            now - stamp <= INTERVAL
+          )
+            continue;
           const own = orders
             .filter((o) => o.itemId === +id && o.side === orderSide && o.price === q[price])
             .reduce((n, o) => n + (o.qtyRemaining || 0), 0);
@@ -20522,7 +20554,8 @@ SOFTWARE.
           delete book[depth];
           delete book[side + "DepthAt"];
           delete book[side + "More"];
-          if (side === "ask") delete book.purchaseCache;
+          // A public snapshot is not a native trade/fill event. Retain the last
+          // received client ask as a fallback for missing or insufficient stock.
           dirty = true;
         }
         if (dirty) {
@@ -20740,7 +20773,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.48";
+  const PLUGIN_VERSION = "0.4.49";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -24252,6 +24285,30 @@ SOFTWARE.
   const missingPriceIds = (value) => [
     ...new Set([...value.missing, ...value.partial.map((x) => x.id)]),
   ];
+  function nativeCostSourcesHtml(cost) {
+    if (!cost?.details?.length) return "";
+    const name = (d) =>
+      i18n.language === "en" && d.id !== 200
+        ? t(["普通", "罕见", "稀有", "史诗", "传说"][Math.floor((d.id % 10000) / 1000)] || "普通") +
+          " " +
+          itemName(d.id)
+        : itemName(d.id);
+    const source = (d) =>
+      d.source === "missing"
+        ? t("待报价")
+        : d.public
+          ? t("公开快照（估价）")
+          : d.source === "history"
+            ? t("历史成交（估价）")
+            : d.source === "cached"
+              ? t("缓存报价（估价）")
+              : d.source === "vendor"
+                ? t("商人")
+                : d.source === "coins"
+                  ? t("金币")
+                  : t(d.estimated ? "客户端报价（估价）" : "客户端报价");
+    return `<details class="dvi-cost-sources"><summary>${t("投入计价明细")}<span class="dvi-native-action" aria-hidden="true"></span></summary><table><thead><tr>${["物品", "数量/d", "单价", "价格来源"].map((x) => "<th>" + t(x) + "</th>").join("")}</tr></thead><tbody>${cost.details.map((d) => `<tr><td>${escape(name(d))}</td><td>${fmt(d.qty, 2)}</td><td>${Number.isFinite(d.price) ? fmt(d.price, 2) : "—"}</td><td>${source(d)}</td></tr>`).join("")}</tbody></table><p class="dvi-note">${t("数量为预计每日消耗；单价为金币/件。现价缺失或数量不足时，保留历史与缓存估价兜底；估价不代表可立即成交。")}</p></details>`;
+  }
   function profitHint(profit, kind = "immediate") {
     const income = profit[kind],
       parts = [`${t("产值")} ${fmt(income.pricedSubtotal)} ${t("金币/d")}`];
@@ -30352,13 +30409,25 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       clearTimeout(timeout);
     }
   }
+  let updateRenderTimer = null;
+  function queueUpdateRender() {
+    if (!updateRenderTimer)
+      updateRenderTimer = setTimeout(() => {
+        updateRenderTimer = null;
+        renderPluginUpdate();
+      }, 80);
+  }
   const updateChecker = globalThis.DVIUpdateCheck.create({
     version: PLUGIN_VERSION,
     storage: localStorage,
-    onChange: () => scheduleNative(),
+    onChange: () => {
+      scheduleNative();
+      queueUpdateRender();
+    },
     fetchMetadata: fetchUpdateMetadata,
   });
   let updateDemo = false;
+  let updateSessionChecked = false;
 
   function checkPluginUpdate(force = false) {
     if (
@@ -30366,11 +30435,21 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       !document.hidden &&
       navigator.onLine !== false &&
       !updateDemo
-    )
+    ) {
+      // Reopening the page can discover a release made during the hourly wait.
+      // Retain the shared one-minute throttle across refreshes and other tabs.
+      if (!updateSessionChecked && updateChecker.snapshot().manualReady !== false) {
+        updateSessionChecked = true;
+        force = true;
+      }
       return updateChecker.check({ force: force === true });
+    }
   }
   function renderPluginUpdate() {
     const current = updateChecker.snapshot();
+    const text = (element, value) => {
+      if (element.textContent !== value) element.textContent = value;
+    };
     for (const settings of document.querySelectorAll(".dvi-native-settings")) {
       let controls = settings.querySelector(".dvi-update-controls");
       if (!controls) {
@@ -30402,23 +30481,34 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         settings.append(controls);
       }
       controls.querySelector("input").checked = preferences.updateReminder;
-      controls.querySelector("span").textContent = t("每小时检查插件更新");
+      text(controls.querySelector("span"), t("每小时检查插件更新"));
       const button = controls.querySelector(".dvi-update-now");
-      button.textContent = t(current.busy ? "检查中…" : "立即检查");
-      button.disabled = current.busy || current.manualReady === false;
-      button.title = t("每分钟最多手动检查一次");
-      controls.querySelector("a").textContent = current.newer
-        ? t("更新到 {version}", { version: current.latest })
-        : t("当前版本 {version}", { version: PLUGIN_VERSION });
-      controls.querySelector(".dvi-update-status").textContent = current.busy
-        ? t("检查中…")
-        : current.status === "failed"
-          ? t("检查失败，15 分钟后重试")
-          : current.newer
-            ? t("发现新版 {version}", { version: current.latest })
-            : current.status === "checked"
-              ? t("已检查，当前为最新版本")
-              : t("尚未检查");
+      text(button, t(current.busy ? "检查中…" : "立即检查"));
+      const disabled = current.busy || current.manualReady === false;
+      if (button.disabled !== disabled) button.disabled = disabled;
+      const hint = t("每分钟最多手动检查一次");
+      if (button.title !== hint) button.title = hint;
+      text(
+        controls.querySelector("a"),
+        current.newer ? t("更新到 {version}", { version: current.latest }) : t("打开更新页面"),
+      );
+      const installed = t("当前版本 {version}", { version: PLUGIN_VERSION });
+      if (controls.querySelector("a").title !== installed)
+        controls.querySelector("a").title = installed;
+      text(
+        controls.querySelector(".dvi-update-status"),
+        t("运行版本 {version}", { version: PLUGIN_VERSION }) +
+          " · " +
+          (current.busy
+            ? t("检查中…")
+            : current.status === "failed"
+              ? t("检查失败，15 分钟后重试")
+              : current.newer
+                ? t("发现新版 {version}", { version: current.latest })
+                : current.status === "checked"
+                  ? t("已检查，当前为最新版本")
+                  : t("尚未检查")),
+      );
     }
     const host = document.body || document.documentElement;
     if (host) {
@@ -30443,10 +30533,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
             notice.addEventListener(event, (e) => e.stopPropagation());
           host.append(notice);
         }
-        notice.querySelector("a").textContent = t("[SIK] 有更新 {version}", {
-          version: current.latest,
-        });
-        notice.querySelector("button").setAttribute("aria-label", t("关闭更新提示"));
+        text(notice.querySelector("a"), t("[SIK] 有更新 {version}", { version: current.latest }));
+        const close = notice.querySelector("button"),
+          label = t("关闭更新提示");
+        if (close.getAttribute("aria-label") !== label) close.setAttribute("aria-label", label);
       }
     }
     checkPluginUpdate();
@@ -30456,10 +30546,20 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     ".dvi-update-notice{position:fixed;right:12px;bottom:12px;z-index:90;display:flex;align-items:center;gap:8px;box-sizing:border-box;max-width:calc(100vw - 24px);padding:8px 10px;border:1px solid var(--edge-bright,var(--edge));border-radius:5px;background:var(--panel);color:var(--ink);box-shadow:0 3px 12px #0003;font:500 12px/1.4 var(--sans)}.dvi-update-notice a{flex:1;min-width:0;color:var(--brass);overflow-wrap:anywhere}.dvi-update-notice button{padding:0 4px;min-width:22px;min-height:22px;border:0;background:transparent;color:var(--ink-faint);font:inherit;cursor:pointer}html.m-on .dvi-update-notice{left:8px;right:8px;bottom:calc(var(--m-tab-full,64px) + 8px);max-width:none}.dvi-update-controls{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px}.dvi-update-controls a,.dvi-update-status{color:var(--ink-faint);overflow-wrap:anywhere}.dvi-update-status{flex-basis:100%}";
   (document.head || document.documentElement).append(updateStyle);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) checkPluginUpdate();
+    if (!document.hidden) {
+      queueUpdateRender();
+      checkPluginUpdate();
+    }
   });
-  window.addEventListener("online", () => checkPluginUpdate());
-  setInterval(checkPluginUpdate, 60000);
+  window.addEventListener("online", () => {
+    queueUpdateRender();
+    checkPluginUpdate();
+  });
+  setInterval(() => {
+    queueUpdateRender();
+    checkPluginUpdate();
+  }, 60000);
+  queueUpdateRender();
 
   // ---- src/public-market-ui.js ----
   /* Documented planner endpoint, separate from the game's private market actions. */
@@ -31304,6 +31404,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   function renderNative(record) {
     const unit = record.box.querySelector("[data-native-unit-price]");
     if (unit) updateNativeResult(unit, nativeUnitPriceHtml(record.job));
+    const pricing = record.box.querySelector("[data-native-pricing]");
     const cached = nativeCache.get(nativeKey(record)),
       summary = record.box.querySelector("[data-native-summary]");
     let text;
@@ -31316,6 +31417,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           ? t("丢弃产物 · 暂不估算日利")
           : `${p.immediateProfit === null ? t("日利") + " " : ""}${profitText(p)}${cached.result.farming ? " · " + t("单田参考") : ""}`;
       summary.title = cached.options.onFull === "drop" ? "" : profitHint(p);
+      if (pricing)
+        updateNativeResult(
+          pricing,
+          cached.options.onFull === "drop" ? "" : nativeCostSourcesHtml(p.cost),
+        );
       const rate = record.row.querySelector(".route-meta");
       if (rate && !cached.result.farming) {
         const value = `≈ ${fmt(cached.result.hour.xp)} XP/h`;
@@ -31323,6 +31429,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         rate.title = t("未来一小时平均经验");
       }
     } else text = cached?.error ? errorText(cached.error) : t("正在估算经验与收益…");
+    if (pricing && !cached?.result) updateNativeResult(pricing, "");
     const asset = Array.from(document.scripts)
       .map((s) => s.src.match(/index-[A-Za-z0-9_-]+\.js/)?.[0])
       .find(Boolean);
@@ -31365,7 +31472,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           Number.isInteger(saved) && saved >= 1 && saved < GAME_DATA.xpTable.length
             ? saved
             : Math.min(current + 1, GAME_DATA.xpTable.length - 1);
-      box.innerHTML = `<details><summary><span class="dvi-native-summary" data-native-summary></span><span class="dvi-native-action">${t("升级计算")}</span></summary><div class="dvi-native-controls"><label><span data-native-target-label>${t("升到")}</span> <input aria-label="${escape(t("{name}目标等级", { name: nameOf(job.name) }))}" type="number" min="1" max="${GAME_DATA.xpTable.length - 1}" step="1" value="${target}"> <span data-native-level-unit>${t("级")}</span></label><button type="button">${t("计算")}</button><small data-native-rarity></small></div><div data-native-unit-price></div><div data-native-result></div></details>`;
+      box.innerHTML = `<details><summary><span class="dvi-native-summary" data-native-summary></span><span class="dvi-native-action">${t("升级计算")}</span></summary><div data-native-pricing></div><div class="dvi-native-controls"><label><span data-native-target-label>${t("升到")}</span> <input aria-label="${escape(t("{name}目标等级", { name: nameOf(job.name) }))}" type="number" min="1" max="${GAME_DATA.xpTable.length - 1}" step="1" value="${target}"> <span data-native-level-unit>${t("级")}</span></label><button type="button">${t("计算")}</button><small data-native-rarity></small></div><div data-native-unit-price></div><div data-native-result></div></details>`;
       record = { row, box, job, list: row.closest("[data-routes]") };
       nativeRecords.set(row, record);
       row.insertAdjacentElement("afterend", box);
@@ -31468,7 +31575,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         list.prepend(settings);
       }
     for (const settings of document.querySelectorAll(".dvi-native-settings")) {
-      setNativeText(settings.querySelector("summary"), t("[SIK] DVI信息增强"));
+      setNativeText(
+        settings.querySelector("summary"),
+        t("[SIK] DVI信息增强") + " " + PLUGIN_VERSION,
+      );
       setNativeText(
         settings.querySelector("[data-native-potion-label]"),
         t("工作收益扣除药水成本"),
@@ -31486,9 +31596,9 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         settings: list.querySelector(".dvi-native-settings"),
       });
     }
+    renderPluginUpdate();
     renderCurrentActivity();
     syncCombatMetrics();
-    renderPluginUpdate();
     syncNativeTip();
     const menu = document.querySelector("[data-item-menu]:not([hidden])");
     if (menu?.querySelector(".item-menu-icon")) {

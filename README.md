@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.48
+# [SIK] DVI Insights 0.4.49
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -8,6 +8,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 [SIK] DVI信息增强为 Deep Vein Idle 补充经验、材料、时间与收支信息，沿用游戏面板和主题配色。
 
 - 工作列表显示 XP/h 和期望日利，点击“升级计算”查看目标等级的工作次数、耗时与材料缺口；材料表补充逐项估价、材料总估价和补齐成本，按买价与订单深度计算；收支只用箭头展开。
+- 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
 - 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
 - 适配正式服 1.0.2704 的新地图与隐藏农田；农田按各技能解锁并显示每田作物选择。代工产物和委托材料不计为自己的收入与消耗；代工期间保留实际经验观测，订单收益暂不估算。
@@ -38,7 +39,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 作者 SIKAer，MIT 开源。这是社区工具，与 Deep Vein Idle 官方没有隶属关系。游戏名称、机制数据及原有界面素材的权利归各自权利人。隐私与本地缓存说明见随附 [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)。
 
-- 轻量更新提醒每小时读取 Greasy Fork 公开版本信息，失败后 15 分钟重试；设置中可立即检查并查看状态，手动每分钟最多一次。有新版时显示独立小提示，切换手机界面也可见，点击进入原脚本安装页；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
+- 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
 
@@ -46,6 +47,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 [SIK] DVI Insights adds XP, material, time and income information to Deep Vein Idle's existing interface, using the game's theme colors.
 
 - Work rows show XP/h and estimated daily profit. Open Level calculator to plan attempts, time and materials for a target level. Material tables include per-item estimates, total material value and the cost to cover shortages, using purchase prices and order depth; financial breakdowns expand with a chevron.
+- Expanded work rows show input rarity, projected daily consumption, unit price and each price source. Public snapshots retain client purchase caches; missing quotes or volume still fall back to valid cached prices and trade history, marked as estimates.
 - Gathering XP and level-time estimates follow the current discard setting and account for fewer bank trips. Discard and bank modes use separate caches; discarded outputs are excluded from sale income.
 - Crafting supports Best first, selecting complete recipes from owned stock and filling shortages with Normal materials. Concurrent enhancement keeps the main action income and XP visible, with a separate enhancement status line.
 - Updated for live client 1.0.2704 with the new map and hidden gardens; farming status follows skill unlocks and shows each field’s crop choice. Commission outputs and client-owned materials are excluded from personal income and costs; observed XP remains available, while commission income is not estimated yet.
@@ -73,11 +75,11 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 Install with Tampermonkey, then reload the game. If updating a test version, replace its entire contents rather than running both copies. Offline net accounting needs a snapshot captured after installation. Missing costs are not treated as zero.
 
-The script calculates locally and combines received client quotes with the officially documented public market snapshot, fetched anonymously every five minutes with shared caching and no character upload. It makes no other game queries, automates no gameplay and does not modify task queues. Quote sides compare timestamps independently; newer data wins. Public top prices lack full order depth and remain estimates; bulk execution may differ. Bank liquidation labels retain received quotes and vendor prices; `≈` marks estimates. Food recommendations compare all rarities using whole-item purchase budgets for an additional day, without subtracting existing buff time. Farming uses a single-field model, excluding inter-field travel and hidden-garden obstacle clearing. Active combat uses measured rates and expected loot; Monster-list simulations start from current position and HP, use finite food stocks and carrying policies, travel to banks/fountains, account for buff expiry and XP level-ups, and average 16 deterministic samples. Loot is valued by probability expectation. Daily profit projects the next hour’s flows by 24; it does not guarantee day-long supplies or performance. Quest rewards, seasonal boxes and future room upgrades are excluded; combat includes Home doors and exit portals using received room layouts; work-level calculators do not yet support dynamic Home paths. Boss income and enhancing plans are not supported.
+The script calculates locally and combines received client quotes with the officially documented public market snapshot, fetched anonymously every five minutes with shared caching and no character upload. It makes no other game queries, automates no gameplay and does not modify task queues. Fresh client quotes and depth take priority; older native sides and cached observations compare timestamps independently with the snapshot. Public snapshots never delete the client purchase-price fallback. Public top prices lack full order depth and remain estimates; bulk execution may differ. Bank liquidation labels retain received quotes and vendor prices; `≈` marks estimates. Food recommendations compare all rarities using whole-item purchase budgets for an additional day, without subtracting existing buff time. Farming uses a single-field model, excluding inter-field travel and hidden-garden obstacle clearing. Active combat uses measured rates and expected loot; Monster-list simulations start from current position and HP, use finite food stocks and carrying policies, travel to banks/fountains, account for buff expiry and XP level-ups, and average 16 deterministic samples. Loot is valued by probability expectation. Daily profit projects the next hour’s flows by 24; it does not guarantee day-long supplies or performance. Quest rewards, seasonal boxes and future room upgrades are excluded; combat includes Home doors and exit portals using received room layouts; work-level calculators do not yet support dynamic Home paths. Boss income and enhancing plans are not supported.
 
 By SIKAer, licensed under MIT. An independent community tool, not affiliated with Deep Vein Idle. Game names, mechanism data and original interface assets remain the property of their respective owners. See [PRIVACY.md](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md) for local storage details.
 
 The embedded XP orb texture is from [Mojang's official Bedrock samples](https://github.com/Mojang/bedrock-samples/blob/main/resource_pack/textures/entity/experience_orb.png), © Mojang AB, all rights reserved, subject to the [Minecraft EULA](https://www.minecraft.net/eula). Original game and Minecraft assets are not covered by the plugin's MIT license.
 
-- A lightweight update reminder checks official Greasy Fork metadata hourly and retries failures after 15 minutes. Settings include Check now, limited to once a minute, and a check status. A standalone notice remains visible across mobile panels and links to the existing installation page. Disable automatic checks or dismiss a version in settings. No forced installation or character uploads.
+- A lightweight update reminder checks official Greasy Fork metadata on page startup and then hourly, retrying failures after 15 minutes, with a shared one-minute minimum interval. Independently mounted settings show the running version, Check now and an update-page link. A standalone notice stays visible across mobile panels. No forced installation or character uploads.
 
