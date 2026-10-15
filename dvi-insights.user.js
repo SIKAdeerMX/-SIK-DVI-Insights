@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.38
+// @version      0.4.45
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -46,1373 +46,2593 @@ SOFTWARE.
   if (window[installKey]) return;
   window[installKey] = true;
 
-  // ---- src/core.js ----
-  /* Independent calculator. No browser, game requests or game-state writes. */
-  (function (root, factory) {
-    if (typeof module === "object" && module.exports) module.exports = factory();
-    else root.DVIPlannerCore = factory();
-  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-    "use strict";
-    const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-    const sum = (xs) => xs.reduce((a, b) => a + b, 0);
-    const add = (obj, key, value) => {
-      obj[key] = (obj[key] || 0) + value;
-    };
-    const clone = (x) => JSON.parse(JSON.stringify(x));
-    const neighbors = [
-      [0, 1],
-      [1, 0],
-      [0, -1],
-      [-1, 0],
-      [1, 1],
-      [-1, 1],
-      [1, -1],
-      [-1, -1],
-    ];
-    const skillSlots = {
-      mining: "pickaxe",
-      fishing: "rod",
-      woodcutting: "axe",
-      thieving: "gloves",
-      cooking: "pan",
-      smithing: "hammer",
-      fletching: "knife",
-      crafting: "needle",
-      herblore: "mortar",
-      farming: "hoe",
-    };
-    const gathers = new Set(["mining", "fishing", "woodcutting", "thieving", "farming"]);
-    function hash(a, b, c) {
-      let x = (a ^ 2654435769) >>> 0;
-      x = Math.imul(x ^ (b >>> 0), 2246822507) >>> 0;
-      x = (x ^ (x >>> 13)) >>> 0;
-      x = Math.imul(x ^ (c >>> 0), 3266489909) >>> 0;
-      return (x ^ (x >>> 16)) >>> 0;
-    }
-    function rng(seed) {
-      let x = seed >>> 0;
-      const random = () => {
-        x = (x + 0x6d2b79f5) >>> 0;
-        let t = Math.imul(x ^ (x >>> 15), 1 | x);
-        t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  // ---- Local forecast worker ----
+  function installPlannerCore() {
+    /* Independent calculator. No browser, game requests or game-state writes. */
+    (function (root, factory) {
+      if (typeof module === "object" && module.exports) module.exports = factory();
+      else root.DVIPlannerCore = factory();
+    })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+      "use strict";
+      const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+      const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+      const add = (obj, key, value) => {
+        obj[key] = (obj[key] || 0) + value;
       };
-      random.getState = () => x;
-      random.setState = (value) => {
-        x = value >>> 0;
+      const clone = (x) => JSON.parse(JSON.stringify(x));
+      const neighbors = [
+        [0, 1],
+        [1, 0],
+        [0, -1],
+        [-1, 0],
+        [1, 1],
+        [-1, 1],
+        [1, -1],
+        [-1, -1],
+      ];
+      const skillSlots = {
+        mining: "pickaxe",
+        fishing: "rod",
+        woodcutting: "axe",
+        thieving: "gloves",
+        cooking: "pan",
+        smithing: "hammer",
+        fletching: "knife",
+        crafting: "needle",
+        herblore: "mortar",
+        farming: "hoe",
       };
-      return random;
-    }
-    class Heap {
-      constructor(compare) {
-        this.q = [];
-        this.compare = compare;
+      const gathers = new Set(["mining", "fishing", "woodcutting", "thieving", "farming"]);
+      function hash(a, b, c) {
+        let x = (a ^ 2654435769) >>> 0;
+        x = Math.imul(x ^ (b >>> 0), 2246822507) >>> 0;
+        x = (x ^ (x >>> 13)) >>> 0;
+        x = Math.imul(x ^ (c >>> 0), 3266489909) >>> 0;
+        return (x ^ (x >>> 16)) >>> 0;
       }
-      push(v) {
-        const q = this.q;
-        let i = q.length;
-        q.push(v);
-        while (i) {
-          const p = (i - 1) >> 1;
-          if (this.compare(q[p], v) <= 0) break;
-          q[i] = q[p];
-          i = p;
-        }
-        q[i] = v;
-      }
-      pop() {
-        const q = this.q,
-          v = q[0],
-          last = q.pop();
-        if (q.length) {
-          let i = 0;
-          while (i * 2 + 1 < q.length) {
-            let j = i * 2 + 1;
-            if (j + 1 < q.length && this.compare(q[j + 1], q[j]) < 0) j++;
-            if (this.compare(last, q[j]) <= 0) break;
-            q[i] = q[j];
-            i = j;
-          }
-          q[i] = last;
-        }
-        return v;
-      }
-    }
-    const octile = (ax, ay, bx, by) => {
-      const x = Math.abs(ax - bx),
-        y = Math.abs(ay - by);
-      return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
-    };
-    function create(data) {
-      const jobs = new Map(data.jobs.map((x) => [x.id, x])),
-        items = new Map(data.items.map((x) => [x.id, x]));
-      const tools = new Map(data.tools.map((x) => [x.itemId, x])),
-        gear = new Map(data.gear.map((x) => [x.itemId, x]));
-      const mastery = new Map(data.masteries.map((x) => [x.id, x.perRank]));
-      const eligible = new Set(data.rarityEligible),
-        seeds = new Set(data.seedIds),
-        map = data.world;
-      const c = data.constants,
-        paths = new Map(),
-        bankFields = new Map(),
-        rotations = [];
-      function level(xp) {
-        let lo = 1,
-          hi = data.xpTable.length - 1;
-        while (lo < hi) {
-          const mid = Math.ceil((lo + hi) / 2);
-          if (data.xpTable[mid] <= xp) lo = mid;
-          else hi = mid - 1;
-        }
-        return lo;
-      }
-      const base = (id) => (id % 10000) % 1000,
-        tier = (id) => Math.floor((id % 10000) / 1000);
-      const identity = (id, t) => id + t * 1000;
-      const item = (id) => items.get(id % 10000) || items.get(base(id));
-      function tool(id) {
-        if (id == null) return null;
-        const t = tools.get(id % 10000);
-        return t
-          ? {
-              ...t,
-              bonus:
-                t.bonus *
-                (1 +
-                  (t.slot === "mount" ? c.mountEnhance : c.toolEnhance) * Math.floor(id / 10000)),
-            }
-          : null;
-      }
-      const bonus = (id) => tool(id)?.bonus || 0;
-      function luck(p) {
-        const id = p.equipment?.amulet;
-        if (id == null) return 0;
-        return (gear.get(id % 10000)?.luck || 0) * (1 + c.toolEnhance * Math.floor(id / 10000));
-      }
-      const master = (p, k) => 1 + (p.masteries?.[k] || 0) * (mastery.get(k) || 0);
-      function brewTier(p, k, tick) {
-        const buckets = p.brewBuckets?.[k];
-        if (buckets?.length) {
-          const elapsed = Math.max(0, tick - ((p.brews?.[k] || 0) - sum(buckets)));
-          let used = 0;
-          for (let i = buckets.length - 1; i >= 0; i--) {
-            used += buckets[i];
-            if (elapsed < used) return clamp(i, 0, 4);
-          }
-        }
-        return clamp(p.brewTier?.[k] || 0, 0, 4);
-      }
-      const brew = (p, k, tick) =>
-        (p.brews?.[k] || 0) > tick ? c.brewStrength[brewTier(p, k, tick)] : 0;
-      const active = (p, k, tick) => (p.brews?.[k] || 0) > tick;
-      function home(p, kind, skill) {
-        let n = 0;
-        for (const r of data.rooms)
-          if (
-            p.houseFurniture?.[r.id] !== undefined &&
-            r.bonus.kind === kind &&
-            (!skill || r.bonus.skill === skill)
-          )
-            n += (p.house?.[r.id] || 0) * 0.01 * (r.rate ?? 1);
-        return n;
-      }
-      function rotation(tick) {
-        const kinds = [
-          "mining",
-          "fishing",
-          "woodcutting",
-          "farming",
-          "thieving",
-          "cooking",
-          "smithing",
-          "fletching",
-          "herblore",
-          "crafting",
-          "enhancing",
-          "combat",
-        ];
-        const index = Math.floor(tick / 3000);
-        for (let i = rotations.length; i <= index; i++) {
-          let k = hash(i, 1, 1213158433) % kinds.length;
-          if (i && k === rotations[i - 1]) k = (k + 1) % kinds.length;
-          rotations.push(k);
-        }
-        const skill = kinds[rotations[index]],
-          rare =
-            ["mining", "fishing", "woodcutting", "farming", "combat"].includes(skill) &&
-            hash(index, 2, 1213158433) % 3 === 0;
-        return {
-          skill,
-          kind: rare ? "rarity" : "xp",
-          mult: rare ? 1.25 : 1.2,
-          until: (index + 1) * 3000,
+      function rng(seed) {
+        let x = seed >>> 0;
+        const random = () => {
+          x = (x + 0x6d2b79f5) >>> 0;
+          let t = Math.imul(x ^ (x >>> 15), 1 | x);
+          t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
         };
+        random.getState = () => x;
+        random.setState = (value) => {
+          x = value >>> 0;
+        };
+        return random;
       }
-      function world(windows, tick, key) {
-        let value = 1;
-        for (const w of windows || [])
-          if (tick >= w.fromTick && tick <= w.toTick) value += (w[key] ?? 1) - 1;
-        return value;
-      }
-      function xpMultiplier(p, job, tick, windows, watering = false) {
-        const gathering = job.inputs.length === 0 || job.grow !== undefined;
-        const r = rotation(tick);
-        return (
-          world(windows, tick, "xpMult") +
-          0.1 * brew(p, "elixir", tick) +
-          (gathering ? 0.1 * brew(p, "gatherer", tick) : 0) +
-          (active(p, "blessing", tick) ? 0.05 : 0) +
-          (p.guildBonus || 0) +
-          (master(p, "xp") - 1) +
-          (!watering && r.skill === job.skill && r.kind === "xp" ? r.mult - 1 : 0)
-        );
-      }
-      const xp = (p, j, t, windows, rarity) =>
-        Math.round(j.xp * c.xpRarity[rarity] * xpMultiplier(p, j, t, windows));
-      function rarityProbabilities(p, j, t, windows, seedReturn = false) {
-        const r = rotation(t),
-          toolId = p.equipment?.[skillSlots[j.skill]],
-          toolLuck = seedReturn ? 0 : c.toolLuck[tier(toolId || 0)] || 0;
-        const multiplier =
-          world(windows, t, "rarityMult") +
-          0.25 * brew(p, "hunter", t) +
-          (active(p, "blessing", t) ? 0.1 : 0) +
-          (r.skill === j.skill && r.kind === "rarity" ? r.mult - 1 : 0) +
-          home(p, "rareChance") +
-          master(p, "rare") -
-          1;
-        const factor = (1 + luck(p) + toolLuck) * multiplier;
-        const thresholds = [
-          c.rareThresholds.uncommon,
-          c.rareThresholds.rare,
-          c.rareThresholds.epic,
-          c.rareThresholds.legendary,
-        ].map((x) => clamp(x * factor, 0, 1));
-        return [
-          1 - thresholds[0],
-          thresholds[0] - thresholds[1],
-          thresholds[1] - thresholds[2],
-          thresholds[2] - thresholds[3],
-          thresholds[3],
-        ];
-      }
-      function draw(probs, random) {
-        let u = random();
-        for (let i = 0; i < probs.length; i++) {
-          u -= probs[i];
-          if (u < 0) return i;
+      class Heap {
+        constructor(compare) {
+          this.q = [];
+          this.compare = compare;
         }
-        return probs.length - 1;
+        push(v) {
+          const q = this.q;
+          let i = q.length;
+          q.push(v);
+          while (i) {
+            const p = (i - 1) >> 1;
+            if (this.compare(q[p], v) <= 0) break;
+            q[i] = q[p];
+            i = p;
+          }
+          q[i] = v;
+        }
+        pop() {
+          const q = this.q,
+            v = q[0],
+            last = q.pop();
+          if (q.length) {
+            let i = 0;
+            while (i * 2 + 1 < q.length) {
+              let j = i * 2 + 1;
+              if (j + 1 < q.length && this.compare(q[j + 1], q[j]) < 0) j++;
+              if (this.compare(last, q[j]) <= 0) break;
+              q[i] = q[j];
+              i = j;
+            }
+            q[i] = last;
+          }
+          return v;
+        }
       }
-      function chance(p, j) {
-        const lev = level(p.skills[j.skill]);
-        const equipped = tool(p.equipment?.[skillSlots[j.skill]]);
-        return Math.min(
-          1,
-          ((1 + Math.max(0, lev - j.levelReq) * 0.005) *
-            (1 + (equipped?.slot === skillSlots[j.skill] ? equipped.bonus : 0)) *
-            (1 +
-              0.005 * (p.perks?.quick || 0) +
-              home(p, gathers.has(j.skill) ? "gatherSpeed" : "craftSpeed", j.skill)) *
-            master(p, gathers.has(j.skill) ? "gather" : "craft")) /
-            j.baseTicks,
-        );
-      }
-      function failure(p, j) {
-        const f = j.burn || j.caught;
-        return f
-          ? clamp(
-              f.chanceAtReq *
-                (1 - (level(p.skills[j.skill]) - j.levelReq) / (f.safeAtLevel - j.levelReq)) *
-                (1 - 0.03 * (p.perks?.hands || 0)),
-              0,
-              1,
+      const octile = (ax, ay, bx, by) => {
+        const x = Math.abs(ax - bx),
+          y = Math.abs(ay - by);
+        return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
+      };
+      function create(data) {
+        const jobs = new Map(data.jobs.map((x) => [x.id, x])),
+          items = new Map(data.items.map((x) => [x.id, x]));
+        const tools = new Map(data.tools.map((x) => [x.itemId, x])),
+          gear = new Map(data.gear.map((x) => [x.itemId, x]));
+        const mastery = new Map(data.masteries.map((x) => [x.id, x.perRank]));
+        const eligible = new Set(data.rarityEligible),
+          seeds = new Set(data.seedIds),
+          map = data.world;
+        const c = data.constants,
+          paths = new Map(),
+          bankFields = new Map(),
+          rotations = [];
+        function level(xp) {
+          let lo = 1,
+            hi = data.xpTable.length - 1;
+          while (lo < hi) {
+            const mid = Math.ceil((lo + hi) / 2);
+            if (data.xpTable[mid] <= xp) lo = mid;
+            else hi = mid - 1;
+          }
+          return lo;
+        }
+        const base = (id) => (id % 10000) % 1000,
+          tier = (id) => Math.floor((id % 10000) / 1000);
+        const identity = (id, t) => id + t * 1000;
+        const item = (id) => items.get(id % 10000) || items.get(base(id));
+        function tool(id) {
+          if (id == null) return null;
+          const t = tools.get(id % 10000);
+          return t
+            ? {
+                ...t,
+                bonus:
+                  t.bonus *
+                  (1 +
+                    (t.slot === "mount" ? c.mountEnhance : c.toolEnhance) * Math.floor(id / 10000)),
+              }
+            : null;
+        }
+        const bonus = (id) => tool(id)?.bonus || 0;
+        function luck(p) {
+          const id = p.equipment?.amulet;
+          if (id == null) return 0;
+          return (gear.get(id % 10000)?.luck || 0) * (1 + c.toolEnhance * Math.floor(id / 10000));
+        }
+        const master = (p, k) => 1 + (p.masteries?.[k] || 0) * (mastery.get(k) || 0);
+        function brewTier(p, k, tick) {
+          const buckets = p.brewBuckets?.[k];
+          if (buckets?.length) {
+            const elapsed = Math.max(0, tick - ((p.brews?.[k] || 0) - sum(buckets)));
+            let used = 0;
+            for (let i = buckets.length - 1; i >= 0; i--) {
+              used += buckets[i];
+              if (elapsed < used) return clamp(i, 0, 4);
+            }
+          }
+          return clamp(p.brewTier?.[k] || 0, 0, 4);
+        }
+        const brew = (p, k, tick) =>
+          (p.brews?.[k] || 0) > tick ? c.brewStrength[brewTier(p, k, tick)] : 0;
+        const active = (p, k, tick) => (p.brews?.[k] || 0) > tick;
+        function home(p, kind, skill) {
+          let n = 0;
+          for (const r of data.rooms)
+            if (
+              p.houseFurniture?.[r.id] !== undefined &&
+              r.bonus.kind === kind &&
+              (!skill || r.bonus.skill === skill)
             )
-          : 0;
-      }
-      function inputs(j, rarity) {
-        return j.inputs.map((x) => ({
-          ...x,
-          itemId:
-            rarity &&
-            eligible.has(x.itemId) &&
-            x.itemId !== 5 &&
-            !(x.itemId >= 201 && x.itemId <= 207)
-              ? identity(x.itemId, rarity)
-              : x.itemId,
-        }));
-      }
-      const walkable = (x, y) =>
-        x >= 0 &&
-        y >= 0 &&
-        x < map.width &&
-        y < map.height &&
-        map.collision[y * map.width + x] === 0;
-      function canStep(x, y, nx, ny) {
-        return walkable(nx, ny) && (x === nx || y === ny || (walkable(nx, y) && walkable(x, ny)));
-      }
-      function adjacent(site, id = 0) {
-        const points = neighbors
-          .map(([dx, dy]) => ({ x: site.x + dx, y: site.y + dy }))
-          .filter((p) => walkable(p.x, p.y));
-        return points[id === 0 ? 0 : hash(id, site.x, site.y) % points.length] || null;
-      }
-      function path(ax, ay, bx, by, nativeCombat = false) {
-        const steps = nativeCombat
-          ? [
-              [0, -1],
-              [1, -1],
-              [1, 0],
-              [1, 1],
-              [0, 1],
-              [-1, 1],
-              [-1, 0],
-              [-1, -1],
-            ]
-          : neighbors;
-        const heuristic = nativeCombat
-          ? (ax, ay, bx, by) => {
-              const x = Math.abs(ax - bx),
-                y = Math.abs(ay - by);
-              return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
-            }
-          : octile;
-        const key = [ax, ay, bx, by, nativeCombat].join(",");
-        if (paths.has(key)) return paths.get(key);
-        if (!walkable(ax, ay) || !walkable(bx, by)) return null;
-        const width = map.width,
-          start = ay * width + ax,
-          goal = by * width + bx,
-          n = width * map.height;
-        const g = new Float64Array(n).fill(Infinity),
-          prev = new Int32Array(n).fill(-1),
-          closed = nativeCombat ? new Uint8Array(n) : null;
-        const heap = new Heap((a, b) => a.f - b.f || b.g - a.g || a.id - b.id);
-        g[start] = 0;
-        heap.push({ id: start, g: 0, f: heuristic(ax, ay, bx, by) });
-        while (heap.q.length) {
-          const u = heap.pop();
-          if (closed ? closed[u.id] : u.g !== g[u.id]) continue;
-          if (u.id === goal) {
-            const out = [];
-            for (let v = goal; v !== start; v = prev[v])
-              out.push({ x: v % width, y: Math.floor(v / width) });
-            out.reverse();
-            if (paths.size > 2048) paths.clear();
-            paths.set(key, out);
-            return out;
-          }
-          if (closed) closed[u.id] = 1;
-          const x = u.id % width,
-            y = Math.floor(u.id / width);
-          for (const [dx, dy] of steps) {
-            const nx = x + dx,
-              ny = y + dy;
-            if (!canStep(x, y, nx, ny)) continue;
-            const id = ny * width + nx,
-              ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
-            if (!closed?.[id] && ng < g[id]) {
-              g[id] = ng;
-              prev[id] = u.id;
-              heap.push({ id, g: ng, f: ng + heuristic(nx, ny, bx, by) });
-            }
-          }
+              n += (p.house?.[r.id] || 0) * 0.01 * (r.rate ?? 1);
+          return n;
         }
-        paths.set(key, null);
-        return null;
-      }
-      function bankDistance(bank, x, y) {
-        let distances = bankFields.get(bank.id);
-        if (!distances) {
-          distances = new Int32Array(map.width * map.height).fill(-1);
-          const queue = [];
-          for (const [dx, dy] of neighbors)
-            if (walkable(bank.x + dx, bank.y + dy)) {
-              const i = (bank.y + dy) * map.width + bank.x + dx;
-              distances[i] = 0;
-              queue.push(i);
+        function rotation(tick) {
+          const kinds = [
+            "mining",
+            "fishing",
+            "woodcutting",
+            "farming",
+            "thieving",
+            "cooking",
+            "smithing",
+            "fletching",
+            "herblore",
+            "crafting",
+            "enhancing",
+            "combat",
+          ];
+          const index = Math.floor(tick / 3000);
+          for (let i = rotations.length; i <= index; i++) {
+            let k = hash(i, 1, 1213158433) % kinds.length;
+            if (i && k === rotations[i - 1]) k = (k + 1) % kinds.length;
+            rotations.push(k);
+          }
+          const skill = kinds[rotations[index]],
+            rare =
+              ["mining", "fishing", "woodcutting", "farming", "combat"].includes(skill) &&
+              hash(index, 2, 1213158433) % 3 === 0;
+          return {
+            skill,
+            kind: rare ? "rarity" : "xp",
+            mult: rare ? 1.25 : 1.2,
+            until: (index + 1) * 3000,
+          };
+        }
+        function world(windows, tick, key) {
+          let value = 1;
+          for (const w of windows || [])
+            if (tick >= w.fromTick && tick <= w.toTick) value += (w[key] ?? 1) - 1;
+          return value;
+        }
+        function xpMultiplier(p, job, tick, windows, watering = false) {
+          const gathering = job.inputs.length === 0 || job.grow !== undefined;
+          const r = rotation(tick);
+          return (
+            world(windows, tick, "xpMult") +
+            0.1 * brew(p, "elixir", tick) +
+            (gathering ? 0.1 * brew(p, "gatherer", tick) : 0) +
+            (active(p, "blessing", tick) ? 0.05 : 0) +
+            (p.guildBonus || 0) +
+            (master(p, "xp") - 1) +
+            (!watering && r.skill === job.skill && r.kind === "xp" ? r.mult - 1 : 0)
+          );
+        }
+        const xp = (p, j, t, windows, rarity) =>
+          Math.round(j.xp * c.xpRarity[rarity] * xpMultiplier(p, j, t, windows));
+        function rarityProbabilities(p, j, t, windows, seedReturn = false) {
+          const r = rotation(t),
+            toolId = p.equipment?.[skillSlots[j.skill]],
+            toolLuck = seedReturn ? 0 : c.toolLuck[tier(toolId || 0)] || 0;
+          const multiplier =
+            world(windows, t, "rarityMult") +
+            0.25 * brew(p, "hunter", t) +
+            (active(p, "blessing", t) ? 0.1 : 0) +
+            (r.skill === j.skill && r.kind === "rarity" ? r.mult - 1 : 0) +
+            home(p, "rareChance") +
+            master(p, "rare") -
+            1;
+          const factor = (1 + luck(p) + toolLuck) * multiplier;
+          const thresholds = [
+            c.rareThresholds.uncommon,
+            c.rareThresholds.rare,
+            c.rareThresholds.epic,
+            c.rareThresholds.legendary,
+          ].map((x) => clamp(x * factor, 0, 1));
+          return [
+            1 - thresholds[0],
+            thresholds[0] - thresholds[1],
+            thresholds[1] - thresholds[2],
+            thresholds[2] - thresholds[3],
+            thresholds[3],
+          ];
+        }
+        function draw(probs, random) {
+          let u = random();
+          for (let i = 0; i < probs.length; i++) {
+            u -= probs[i];
+            if (u < 0) return i;
+          }
+          return probs.length - 1;
+        }
+        function chance(p, j) {
+          const lev = level(p.skills[j.skill]);
+          const equipped = tool(p.equipment?.[skillSlots[j.skill]]);
+          return Math.min(
+            1,
+            ((1 + Math.max(0, lev - j.levelReq) * 0.005) *
+              (1 + (equipped?.slot === skillSlots[j.skill] ? equipped.bonus : 0)) *
+              (1 +
+                0.005 * (p.perks?.quick || 0) +
+                home(p, gathers.has(j.skill) ? "gatherSpeed" : "craftSpeed", j.skill)) *
+              master(p, gathers.has(j.skill) ? "gather" : "craft")) /
+              j.baseTicks,
+          );
+        }
+        function failure(p, j) {
+          const f = j.burn || j.caught;
+          return f
+            ? clamp(
+                f.chanceAtReq *
+                  (1 - (level(p.skills[j.skill]) - j.levelReq) / (f.safeAtLevel - j.levelReq)) *
+                  (1 - 0.03 * (p.perks?.hands || 0)),
+                0,
+                1,
+              )
+            : 0;
+        }
+        function inputs(j, rarity) {
+          return j.inputs.map((x) => ({
+            ...x,
+            itemId:
+              rarity &&
+              eligible.has(x.itemId) &&
+              x.itemId !== 5 &&
+              !(x.itemId >= 201 && x.itemId <= 207)
+                ? identity(x.itemId, rarity)
+                : x.itemId,
+          }));
+        }
+        const walkable = (x, y) =>
+          x >= 0 &&
+          y >= 0 &&
+          x < map.width &&
+          y < map.height &&
+          map.collision[y * map.width + x] === 0;
+        function canStep(x, y, nx, ny) {
+          return walkable(nx, ny) && (x === nx || y === ny || (walkable(nx, y) && walkable(x, ny)));
+        }
+        function adjacent(site, id = 0) {
+          const points = neighbors
+            .map(([dx, dy]) => ({ x: site.x + dx, y: site.y + dy }))
+            .filter((p) => walkable(p.x, p.y));
+          return points[id === 0 ? 0 : hash(id, site.x, site.y) % points.length] || null;
+        }
+        function path(ax, ay, bx, by, nativeCombat = false) {
+          const steps = nativeCombat
+            ? [
+                [0, -1],
+                [1, -1],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [-1, 1],
+                [-1, 0],
+                [-1, -1],
+              ]
+            : neighbors;
+          const heuristic = nativeCombat
+            ? (ax, ay, bx, by) => {
+                const x = Math.abs(ax - bx),
+                  y = Math.abs(ay - by);
+                return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
+              }
+            : octile;
+          const key = [ax, ay, bx, by, nativeCombat].join(",");
+          if (paths.has(key)) return paths.get(key);
+          if (!walkable(ax, ay) || !walkable(bx, by)) return null;
+          const width = map.width,
+            start = ay * width + ax,
+            goal = by * width + bx,
+            n = width * map.height;
+          const g = new Float64Array(n).fill(Infinity),
+            prev = new Int32Array(n).fill(-1),
+            closed = nativeCombat ? new Uint8Array(n) : null;
+          const heap = new Heap((a, b) => a.f - b.f || b.g - a.g || a.id - b.id);
+          g[start] = 0;
+          heap.push({ id: start, g: 0, f: heuristic(ax, ay, bx, by) });
+          while (heap.q.length) {
+            const u = heap.pop();
+            if (closed ? closed[u.id] : u.g !== g[u.id]) continue;
+            if (u.id === goal) {
+              const out = [];
+              for (let v = goal; v !== start; v = prev[v])
+                out.push({ x: v % width, y: Math.floor(v / width) });
+              out.reverse();
+              if (paths.size > 2048) paths.clear();
+              paths.set(key, out);
+              return out;
             }
-          for (let at = 0; at < queue.length; at++) {
-            const i = queue[at],
-              cx = i % map.width,
-              cy = Math.floor(i / map.width);
-            for (const [dx, dy] of neighbors) {
-              const nx = cx + dx,
-                ny = cy + dy;
-              if (!canStep(cx, cy, nx, ny)) continue;
-              const ni = ny * map.width + nx;
-              if (distances[ni] < 0) {
-                distances[ni] = distances[i] + 1;
-                queue.push(ni);
+            if (closed) closed[u.id] = 1;
+            const x = u.id % width,
+              y = Math.floor(u.id / width);
+            for (const [dx, dy] of steps) {
+              const nx = x + dx,
+                ny = y + dy;
+              if (!canStep(x, y, nx, ny)) continue;
+              const id = ny * width + nx,
+                ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
+              if (!closed?.[id] && ng < g[id]) {
+                g[id] = ng;
+                prev[id] = u.id;
+                heap.push({ id, g: ng, f: ng + heuristic(nx, ny, bx, by) });
               }
             }
           }
-          bankFields.set(bank.id, distances);
+          paths.set(key, null);
+          return null;
         }
-        const d = distances[y * map.width + x];
-        return d >= 0 ? d : Infinity;
-      }
-      function nearestBank(p) {
-        const homeBank = map.banks.find((b) => b.id === p.homeBank);
-        if (homeBank && Number.isFinite(bankDistance(homeBank, p.x, p.y))) return homeBank;
-        return (
-          [...map.banks]
-            .sort((a, b) => bankDistance(a, p.x, p.y) - bankDistance(b, p.x, p.y) || a.id - b.id)
-            .find((b) => Number.isFinite(bankDistance(b, p.x, p.y))) || null
-        );
-      }
-      function nearestSite(j, p) {
-        return map.sites
-          .filter((s) => s.jobIds?.includes(j.id))
-          .sort(
-            (a, b) => octile(a.x, a.y, p.x, p.y) - octile(b.x, b.y, p.x, p.y) || a.id - b.id,
-          )[0];
-      }
-      function workSite(j, p) {
-        // Client 1.0.2206 sends crafting work to the station nearest the preferred
-        // bank, even when the character originally selected a different station.
-        const bank =
-          j.inputs.length && j.grow === undefined
-            ? map.banks.find((b) => b.id === p.homeBank)
-            : null;
-        if (bank)
+        function bankDistance(bank, x, y) {
+          let distances = bankFields.get(bank.id);
+          if (!distances) {
+            distances = new Int32Array(map.width * map.height).fill(-1);
+            const queue = [];
+            for (const [dx, dy] of neighbors)
+              if (walkable(bank.x + dx, bank.y + dy)) {
+                const i = (bank.y + dy) * map.width + bank.x + dx;
+                distances[i] = 0;
+                queue.push(i);
+              }
+            for (let at = 0; at < queue.length; at++) {
+              const i = queue[at],
+                cx = i % map.width,
+                cy = Math.floor(i / map.width);
+              for (const [dx, dy] of neighbors) {
+                const nx = cx + dx,
+                  ny = cy + dy;
+                if (!canStep(cx, cy, nx, ny)) continue;
+                const ni = ny * map.width + nx;
+                if (distances[ni] < 0) {
+                  distances[ni] = distances[i] + 1;
+                  queue.push(ni);
+                }
+              }
+            }
+            bankFields.set(bank.id, distances);
+          }
+          const d = distances[y * map.width + x];
+          return d >= 0 ? d : Infinity;
+        }
+        function nearestBank(p) {
+          const homeBank = map.banks.find((b) => b.id === p.homeBank);
+          if (homeBank && Number.isFinite(bankDistance(homeBank, p.x, p.y))) return homeBank;
+          return (
+            [...map.banks]
+              .sort((a, b) => bankDistance(a, p.x, p.y) - bankDistance(b, p.x, p.y) || a.id - b.id)
+              .find((b) => Number.isFinite(bankDistance(b, p.x, p.y))) || null
+          );
+        }
+        function nearestSite(j, p) {
           return map.sites
             .filter((s) => s.jobIds?.includes(j.id))
-            .reduce(
-              (best, s) =>
-                !best || octile(s.x, s.y, bank.x, bank.y) < octile(best.x, best.y, bank.x, bank.y)
-                  ? s
-                  : best,
-              null,
-            );
-        return (
-          (p.route?.jobId === j.id
-            ? map.sites.find((s) => s.id === p.route.siteId && s.jobIds?.includes(j.id))
-            : null) || nearestSite(j, p)
-        );
-      }
-      function farmingStatus(p) {
-        const fields = map.sites
-          .filter((s) => s.kind === "field")
-          .sort((a, b) => a.id - b.id)
-          .slice(
-            0,
-            (data.farming?.unlockLevels || [1]).filter((n) => level(p.skills.farming) >= n).length,
+            .sort(
+              (a, b) => octile(a.x, a.y, p.x, p.y) - octile(b.x, b.y, p.x, p.y) || a.id - b.id,
+            )[0];
+        }
+        function workSite(j, p) {
+          // Client 1.0.2206 sends crafting work to the station nearest the preferred
+          // bank, even when the character originally selected a different station.
+          const bank =
+            j.inputs.length && j.grow === undefined
+              ? map.banks.find((b) => b.id === p.homeBank)
+              : null;
+          if (bank)
+            return map.sites
+              .filter((s) => s.jobIds?.includes(j.id))
+              .reduce(
+                (best, s) =>
+                  !best || octile(s.x, s.y, bank.x, bank.y) < octile(best.x, best.y, bank.x, bank.y)
+                    ? s
+                    : best,
+                null,
+              );
+          return (
+            (p.route?.jobId === j.id
+              ? map.sites.find((s) => s.id === p.route.siteId && s.jobIds?.includes(j.id))
+              : null) || nearestSite(j, p)
           );
-        const matureAt = (plot) => {
-          const job = data.jobs.find(
-            (j) => j.grow !== undefined && j.inputs[0]?.itemId === base(plot.seedItemId),
-          );
-          if (!job) return null;
-          const grow = Math.round(job.grow / (plot.sowSpeed ?? 1)),
-            trim =
-              plot.trim ??
-              Math.min(plot.watered ?? 0, Math.floor(job.grow / 40)) *
-                (data.farming?.waterTrim ?? 20);
-          return plot.plantedAt + grow - Math.min(trim, Math.floor(grow / 2));
-        };
-        const ready = fields.filter(
-          (s) => p.plots?.[s.id] && matureAt(p.plots[s.id]) <= p.lastTick,
-        );
-        const distance = (s) => Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y));
-        const next =
-          [...ready].sort(
-            (a, b) =>
-              (distance(a) <= 1 ? 0 : distance(a)) - (distance(b) <= 1 ? 0 : distance(b)) ||
-              a.id - b.id,
-          )[0] ||
-          fields.find((s) => !p.plots?.[s.id]) ||
-          null;
-        let stand = null;
-        if (next)
-          for (let dy = -1; dy <= 1; dy++)
-            for (let dx = -1; dx <= 1; dx++) {
-              if (!dx && !dy) continue;
-              const x = next.x + dx,
-                y = next.y + dy;
-              if (!walkable(x, y)) continue;
-              const score = ready.filter(
-                  (s) => Math.max(Math.abs(s.x - x), Math.abs(s.y - y)) <= 1,
-                ).length,
-                dist = Math.max(Math.abs(p.x - x), Math.abs(p.y - y));
-              if (!stand || score > stand.score || (score === stand.score && dist < stand.dist))
-                stand = { x, y, score, dist };
-            }
-        return {
-          fields: fields.map((s, i) => ({
-            id: s.id,
-            number: i + 1,
-            x: s.x,
-            y: s.y,
-            plot: p.plots?.[s.id] || null,
-            matureAt: p.plots?.[s.id] ? matureAt(p.plots[s.id]) : null,
-            current: s.id === p.workSiteId,
-          })),
-          nextId: next?.id ?? null,
-          stand,
-          currentId: p.workSiteId ?? null,
-          errand: !!p.route?.errand,
-        };
-      }
-      const capacity = (p) => c.packSlots + (p.perks?.pockets || 0);
-      const held = (p, id) => sum(p.pack.filter((x) => x.itemId === id).map((x) => x.qty));
-      function put(p, id, qty) {
-        if (qty <= 0) return true;
-        if (item(id)?.stackable) {
-          const entry = p.pack.find((x) => x.itemId === id);
-          if (entry) {
-            entry.qty += qty;
-            return true;
-          }
-          if (p.pack.length >= capacity(p)) return false;
-          p.pack.push({ itemId: id, qty });
-          return true;
         }
-        if (p.pack.length + qty > capacity(p)) return false;
-        for (let i = 0; i < qty; i++) p.pack.push({ itemId: id, qty: 1 });
-        return true;
-      }
-      function remove(p, id, qty) {
-        for (let i = p.pack.length - 1; i >= 0 && qty > 0; i--) {
-          if (p.pack[i].itemId !== id) continue;
-          const take = Math.min(qty, p.pack[i].qty);
-          p.pack[i].qty -= take;
-          qty -= take;
-          if (!p.pack[i].qty) p.pack.splice(i, 1);
-        }
-      }
-      function canWork(p, j, rarity) {
-        const ins = inputs(j, rarity);
-        if (ins.some((x) => held(p, x.itemId) < x.qty)) return false;
-        if (!ins.length) return p.pack.length < capacity(p);
-        const output = identity(j.output.itemId, rarity);
-        if (j.output.itemId === c.coins || (item(output)?.stackable && held(p, output) > 0))
-          return true;
-        let freed = 0;
-        for (const x of ins)
-          freed += item(x.itemId)?.stackable ? (held(p, x.itemId) === x.qty ? 1 : 0) : x.qty;
-        return p.pack.length - freed < capacity(p);
-      }
-      function withdraw(p, j, rarity) {
-        const ins = inputs(j, rarity),
-          free = capacity(p) - p.pack.length;
-        const nonstack = sum(ins.filter((x) => !item(x.itemId)?.stackable).map((x) => x.qty)),
-          stack = ins.filter((x) => item(x.itemId)?.stackable).length,
-          outStack = !!item(j.output.itemId)?.stackable;
-        const max = nonstack
-          ? Math.floor((free - stack - (outStack ? 1 : 0)) / nonstack)
-          : outStack
-            ? free - stack - 1 >= 0
-              ? 1e9
-              : 0
-            : free - stack;
-        const n = Math.max(
-          0,
-          Math.min(
-            max,
-            ...ins.map((x) => Math.floor(((p.bank[x.itemId] || 0) + held(p, x.itemId)) / x.qty)),
-          ),
-        );
-        for (const x of ins) {
-          const q = n * x.qty;
-          add(p.bank, x.itemId, -q);
-          put(p, x.itemId, q);
-        }
-        return n;
-      }
-      function bestRarity(p, j, includePack = true) {
-        if (!j.inputs.length || j.grow !== undefined) return 0;
-        for (const rarity of [4, 3, 2, 1])
-          if (
-            inputs(j, rarity).every(
-              (x) => (p.bank?.[x.itemId] || 0) + (includePack ? held(p, x.itemId) : 0) >= x.qty,
-            )
-          )
-            return rarity;
-        return 0;
-      }
-      const petIds = new Set(c.petIds || []);
-      const bankCount = (p) =>
-        Object.entries(p.bank).filter(
-          ([id, n]) => n > 0 && !(c.petsNoBankSlots && petIds.has(Number(id) % 10000)),
-        ).length;
-      function run(options, random, mode) {
-        const j = jobs.get(Number(options.jobId));
-        if (!j || j.retired) throw new Error("工作已停用或不存在");
-        if (j.grow !== undefined) return runFarm(options, random, mode);
-        const p = clone(options.player),
-          startTick = p.lastTick,
-          best = !!options.best && j.inputs.length > 0;
-        if (level(p.skills[j.skill]) < j.levelReq) throw new Error("当前等级尚未解锁这个工作");
-        p.pack = p.pack || [];
-        p.bank = p.bank || {};
-        p.skills = p.skills || {};
-        const site = workSite(j, p);
-        if (!site) throw new Error("没有找到可用工作地点");
-        let rarity = best
-            ? p.route?.jobId === j.id && p.route.best
-              ? p.workRarity || 0
-              : bestRarity(p, j)
-            : Number(options.rarity || 0),
-          ins = inputs(j, rarity);
-        if (best) p.workRarity = rarity;
-        // Target plans assume purchases for missing materials. Best-first spends
-        // owned higher tiers, then plans plain materials; it never invents rare stock.
-        if (!options.finiteStock)
-          for (const x of best ? inputs(j, 0) : ins)
-            p.bank[x.itemId] = Math.max(p.bank[x.itemId] || 0, 1e9);
-        const onFull = options.onFull ?? p.route?.onFull ?? "bank",
-          discarding = !ins.length && onFull === "drop";
-        const gathered = new Set([j.output.itemId, ...(j.bonus ? [j.bonus.itemId] : [])].map(base));
-        const target = options.targetLevel == null ? Infinity : data.xpTable[options.targetLevel],
-          deadline =
-            mode === "hour"
-              ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
-              : Infinity;
-        const r = {
-          attempts: 0,
-          successes: 0,
-          burnt: 0,
-          caught: 0,
-          ticks: 0,
-          workTicks: 0,
-          walkTicks: 0,
-          bankTicks: 0,
-          stunTicks: 0,
-          inputs: {},
-          outputs: {},
-          xp: 0,
-          trips: 0,
-        };
-        function deposit(id, qty) {
-          if (!options.finiteStock) {
-            add(p.bank, id, qty);
-            return true;
-          }
-          p.overflow ||= {};
-          const slots =
-              75 +
-              (p.bankSlotsBought || 0) +
-              data.rooms
-                .filter((x) => x.bonus.kind === "bankSlots")
-                .reduce((n, x) => n + Math.floor((p.house?.[x.id] || 0) / 2), 0),
-            fits =
-              p.unlimitedBank ||
-              (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
-              (p.brews?.blessing || 0) > p.lastTick ||
-              p.bank[id] > 0 ||
-              bankCount(p) < slots;
-          if (fits) {
-            add(p.bank, id, qty);
-            return true;
-          }
-          if (p.overflow[id] > 0 || Object.values(p.overflow).filter((n) => n > 0).length < 10) {
-            add(p.overflow, id, qty);
-            return true;
-          }
-          return false;
-        }
-        const matching =
-          p.route?.jobId === j.id &&
-          !!p.route.best === best &&
-          p.workRarity === rarity &&
-          (p.route.onFull ?? "bank") === onFull;
-        if (mode !== "hour" && p.skills[j.skill] >= target) return r;
-        let phase = matching
-          ? p.route.phase
-          : canWork(p, j, rarity) &&
-              !(discarding && p.pack.some((x) => !gathered.has(base(x.itemId))))
-            ? "toWork"
-            : "toBank";
-        let alreadyWorking = matching && p.activity === "working" && phase === "working";
-        const near = (s) => Math.abs(p.x - s.x) <= 1 && Math.abs(p.y - s.y) <= 1;
-        function advance(ticks, kind) {
-          const used = Math.min(ticks, deadline - p.lastTick),
-            before = p.lastTick;
-          p.lastTick += used;
-          r[kind] += used;
-          if (options.onAdvance) options.onAdvance(p, before, p.lastTick, r);
-          return used === ticks;
-        }
-        function travel(destination, id) {
-          if (near(destination)) return true;
-          const end = adjacent(destination, id);
-          if (!end) throw new Error("目标地点不可达");
-          const route = path(p.x, p.y, end.x, end.y);
-          if (!route) throw new Error("无法寻路；请在主地图上再计算");
-          if (!advance(1, "bankTicks")) return false;
-          const speed = Math.round(
-            (1000 + Math.round(bonus(p.equipment?.mount) * 1000)) *
-              (1 + 0.2 * brew(p, "swift", p.lastTick)) *
-              master(p, "move"),
-          );
-          if (!advance(Math.ceil((route.length * 1000) / speed), "walkTicks")) return false;
-          p.x = end.x;
-          p.y = end.y;
-          return true;
-        }
-        // Resume the game's already planned walk, with its recorded speed/stride.
-        if (matching && p.activity === "walking" && p.path?.length) {
-          const remaining = p.path.length - (p.pathIndex || 0),
-            ticks = Math.max(
+        function farmingStatus(p) {
+          const gardens = data.farming?.gardens || [],
+            hidden = new Set(gardens.map((g) => g.fieldId));
+          const fields = map.sites
+            .filter((s) => s.kind === "field" && !hidden.has(s.id))
+            .sort((a, b) => a.id - b.id)
+            .slice(
               0,
-              Math.ceil((remaining * 1000 - (p.stride || 0)) / (p.strideSpeed || 1000)),
+              (data.farming?.unlockLevels || [1]).filter((n) => level(p.skills.farming) >= n)
+                .length,
             );
-          if (advance(ticks, "walkTicks")) Object.assign(p, p.path.at(-1));
+          for (const g of gardens)
+            if (level(p.skills[g.skill] || 0) >= g.level) {
+              const f = map.sites.find((s) => s.id === g.fieldId);
+              if (f) fields.push(f);
+            }
+          const matureAt = (plot) => {
+            const job = data.jobs.find(
+              (j) => j.grow !== undefined && j.inputs[0]?.itemId === base(plot.seedItemId),
+            );
+            if (!job) return null;
+            const grow = Math.round(job.grow / (plot.sowSpeed ?? 1)),
+              trim =
+                plot.trim ??
+                Math.min(plot.watered ?? 0, Math.floor(job.grow / 40)) *
+                  (data.farming?.waterTrim ?? 20);
+            return plot.plantedAt + grow - Math.min(trim, Math.floor(grow / 2));
+          };
+          const ready = fields.filter(
+            (s) => p.plots?.[s.id] && matureAt(p.plots[s.id]) <= p.lastTick,
+          );
+          const distance = (s) => Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y));
+          const next =
+            [...ready].sort(
+              (a, b) =>
+                (distance(a) <= 1 ? 0 : distance(a)) - (distance(b) <= 1 ? 0 : distance(b)) ||
+                a.id - b.id,
+            )[0] ||
+            fields.find((s) => !p.plots?.[s.id]) ||
+            null;
+          let stand = null;
+          if (next)
+            for (let dy = -1; dy <= 1; dy++)
+              for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue;
+                const x = next.x + dx,
+                  y = next.y + dy;
+                if (!walkable(x, y)) continue;
+                const score = ready.filter(
+                    (s) => Math.max(Math.abs(s.x - x), Math.abs(s.y - y)) <= 1,
+                  ).length,
+                  dist = Math.max(Math.abs(p.x - x), Math.abs(p.y - y));
+                if (!stand || score > stand.score || (score === stand.score && dist < stand.dist))
+                  stand = { x, y, score, dist };
+              }
+          return {
+            fields: fields.map((s, i) => ({
+              id: s.id,
+              number: i + 1,
+              x: s.x,
+              y: s.y,
+              name: gardens.find((g) => g.fieldId === s.id)?.name,
+              seedChoice: p.plotChoice?.[s.id] ?? null,
+              plot: p.plots?.[s.id] || null,
+              matureAt: p.plots?.[s.id] ? matureAt(p.plots[s.id]) : null,
+              current: s.id === p.workSiteId,
+            })),
+            nextId: next?.id ?? null,
+            stand,
+            currentId: p.workSiteId ?? null,
+            errand: !!p.route?.errand,
+          };
         }
-        while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
-          if (options.stopWhen?.(p, r)) break;
-          if (r.attempts >= (options.maxAttempts || 150000))
-            throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
-          if (phase === "toWork") {
-            if (!travel(site, p.id)) break;
-            if (!advance(1, "bankTicks")) break;
-            phase = "working";
-            alreadyWorking = false;
-            continue;
+        const capacity = (p) => c.packSlots + (p.perks?.pockets || 0);
+        const held = (p, id) => sum(p.pack.filter((x) => x.itemId === id).map((x) => x.qty));
+        function put(p, id, qty) {
+          if (qty <= 0) return true;
+          if (item(id)?.stackable) {
+            const entry = p.pack.find((x) => x.itemId === id);
+            if (entry) {
+              entry.qty += qty;
+              return true;
+            }
+            if (p.pack.length >= capacity(p)) return false;
+            p.pack.push({ itemId: id, qty });
+            return true;
           }
-          if (phase === "toBank") {
-            const bank = nearestBank(p);
-            if (!bank) throw new Error("找不到可达仓库");
-            if (!travel(bank, 0)) break;
-            if (!advance(1, "bankTicks")) break;
-            phase = "banking";
-            continue;
+          if (p.pack.length + qty > capacity(p)) return false;
+          for (let i = 0; i < qty; i++) p.pack.push({ itemId: id, qty: 1 });
+          return true;
+        }
+        function remove(p, id, qty) {
+          for (let i = p.pack.length - 1; i >= 0 && qty > 0; i--) {
+            if (p.pack[i].itemId !== id) continue;
+            const take = Math.min(qty, p.pack[i].qty);
+            p.pack[i].qty -= take;
+            qty -= take;
+            if (!p.pack[i].qty) p.pack.splice(i, 1);
           }
-          if (phase === "banking") {
-            if (!advance(1, "bankTicks")) break;
-            const remaining = [];
-            for (const x of p.pack) if (!deposit(x.itemId, x.qty)) remaining.push(x);
-            p.pack = remaining;
-            if (remaining.length) {
+        }
+        function canWork(p, j, rarity) {
+          const ins = inputs(j, rarity);
+          if (ins.some((x) => held(p, x.itemId) < x.qty)) return false;
+          if (!ins.length) return p.pack.length < capacity(p);
+          const output = identity(j.output.itemId, rarity);
+          if (j.output.itemId === c.coins || (item(output)?.stackable && held(p, output) > 0))
+            return true;
+          let freed = 0;
+          for (const x of ins)
+            freed += item(x.itemId)?.stackable ? (held(p, x.itemId) === x.qty ? 1 : 0) : x.qty;
+          return p.pack.length - freed < capacity(p);
+        }
+        function withdraw(p, j, rarity) {
+          const ins = inputs(j, rarity),
+            free = capacity(p) - p.pack.length;
+          const nonstack = sum(ins.filter((x) => !item(x.itemId)?.stackable).map((x) => x.qty)),
+            stack = ins.filter((x) => item(x.itemId)?.stackable).length,
+            outStack = !!item(j.output.itemId)?.stackable;
+          const max = nonstack
+            ? Math.floor((free - stack - (outStack ? 1 : 0)) / nonstack)
+            : outStack
+              ? free - stack - 1 >= 0
+                ? 1e9
+                : 0
+              : free - stack;
+          const n = Math.max(
+            0,
+            Math.min(
+              max,
+              ...ins.map((x) => Math.floor(((p.bank[x.itemId] || 0) + held(p, x.itemId)) / x.qty)),
+            ),
+          );
+          for (const x of ins) {
+            const q = n * x.qty;
+            add(p.bank, x.itemId, -q);
+            put(p, x.itemId, q);
+          }
+          return n;
+        }
+        function bestRarity(p, j, includePack = true) {
+          if (!j.inputs.length || j.grow !== undefined) return 0;
+          for (const rarity of [4, 3, 2, 1])
+            if (
+              inputs(j, rarity).every(
+                (x) => (p.bank?.[x.itemId] || 0) + (includePack ? held(p, x.itemId) : 0) >= x.qty,
+              )
+            )
+              return rarity;
+          return 0;
+        }
+        const petIds = new Set(c.petIds || []);
+        const bankCount = (p) =>
+          Object.entries(p.bank).filter(
+            ([id, n]) => n > 0 && !(c.petsNoBankSlots && petIds.has(Number(id) % 10000)),
+          ).length;
+        function run(options, random, mode) {
+          const j = jobs.get(Number(options.jobId));
+          if (!j || j.retired) throw new Error("工作已停用或不存在");
+          if (j.grow !== undefined) return runFarm(options, random, mode);
+          const p = clone(options.player),
+            startTick = p.lastTick,
+            best = !!options.best && j.inputs.length > 0;
+          if (level(p.skills[j.skill]) < j.levelReq) throw new Error("当前等级尚未解锁这个工作");
+          p.pack = p.pack || [];
+          p.bank = p.bank || {};
+          p.skills = p.skills || {};
+          const site = workSite(j, p);
+          if (!site) throw new Error("没有找到可用工作地点");
+          let rarity = best
+              ? p.route?.jobId === j.id && p.route.best
+                ? p.workRarity || 0
+                : bestRarity(p, j)
+              : Number(options.rarity || 0),
+            ins = inputs(j, rarity);
+          if (best) p.workRarity = rarity;
+          // Target plans assume purchases for missing materials. Best-first spends
+          // owned higher tiers, then plans plain materials; it never invents rare stock.
+          if (!options.finiteStock)
+            for (const x of best ? inputs(j, 0) : ins)
+              p.bank[x.itemId] = Math.max(p.bank[x.itemId] || 0, 1e9);
+          const onFull = options.onFull ?? p.route?.onFull ?? "bank",
+            discarding = !ins.length && onFull === "drop";
+          const gathered = new Set(
+            [j.output.itemId, ...(j.bonus ? [j.bonus.itemId] : [])].map(base),
+          );
+          const target = options.targetLevel == null ? Infinity : data.xpTable[options.targetLevel],
+            deadline =
+              mode === "hour"
+                ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
+                : Infinity;
+          const r = {
+            attempts: 0,
+            successes: 0,
+            burnt: 0,
+            caught: 0,
+            ticks: 0,
+            workTicks: 0,
+            walkTicks: 0,
+            bankTicks: 0,
+            stunTicks: 0,
+            inputs: {},
+            outputs: {},
+            xp: 0,
+            trips: 0,
+          };
+          function deposit(id, qty) {
+            if (!options.finiteStock) {
+              add(p.bank, id, qty);
+              return true;
+            }
+            p.overflow ||= {};
+            const slots =
+                75 +
+                (p.bankSlotsBought || 0) +
+                data.rooms
+                  .filter((x) => x.bonus.kind === "bankSlots")
+                  .reduce((n, x) => n + Math.floor((p.house?.[x.id] || 0) / 2), 0),
+              fits =
+                p.unlimitedBank ||
+                (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
+                (p.brews?.blessing || 0) > p.lastTick ||
+                p.bank[id] > 0 ||
+                bankCount(p) < slots;
+            if (fits) {
+              add(p.bank, id, qty);
+              return true;
+            }
+            if (p.overflow[id] > 0 || Object.values(p.overflow).filter((n) => n > 0).length < 10) {
+              add(p.overflow, id, qty);
+              return true;
+            }
+            return false;
+          }
+          const matching =
+            p.route?.jobId === j.id &&
+            !!p.route.best === best &&
+            p.workRarity === rarity &&
+            (p.route.onFull ?? "bank") === onFull;
+          if (mode !== "hour" && p.skills[j.skill] >= target) return r;
+          let phase = matching
+            ? p.route.phase
+            : canWork(p, j, rarity) &&
+                !(discarding && p.pack.some((x) => !gathered.has(base(x.itemId))))
+              ? "toWork"
+              : "toBank";
+          let alreadyWorking = matching && p.activity === "working" && phase === "working";
+          const near = (s) => Math.abs(p.x - s.x) <= 1 && Math.abs(p.y - s.y) <= 1;
+          function advance(ticks, kind) {
+            const used = Math.min(ticks, deadline - p.lastTick),
+              before = p.lastTick;
+            p.lastTick += used;
+            r[kind] += used;
+            if (options.onAdvance) options.onAdvance(p, before, p.lastTick, r);
+            return used === ticks;
+          }
+          function travel(destination, id) {
+            if (near(destination)) return true;
+            const end = adjacent(destination, id);
+            if (!end) throw new Error("目标地点不可达");
+            const route = path(p.x, p.y, end.x, end.y);
+            if (!route) throw new Error("无法寻路；请在主地图上再计算");
+            if (!advance(1, "bankTicks")) return false;
+            const speed = Math.round(
+              (1000 + Math.round(bonus(p.equipment?.mount) * 1000)) *
+                (1 + 0.2 * brew(p, "swift", p.lastTick)) *
+                master(p, "move"),
+            );
+            if (!advance(Math.ceil((route.length * 1000) / speed), "walkTicks")) return false;
+            p.x = end.x;
+            p.y = end.y;
+            return true;
+          }
+          // Resume the game's already planned walk, with its recorded speed/stride.
+          if (matching && p.activity === "walking" && p.path?.length) {
+            const remaining = p.path.length - (p.pathIndex || 0),
+              ticks = Math.max(
+                0,
+                Math.ceil((remaining * 1000 - (p.stride || 0)) / (p.strideSpeed || 1000)),
+              );
+            if (advance(ticks, "walkTicks")) Object.assign(p, p.path.at(-1));
+          }
+          while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
+            if (options.stopWhen?.(p, r)) break;
+            if (r.attempts >= (options.maxAttempts || 150000))
+              throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
+            if (phase === "toWork") {
+              if (!travel(site, p.id)) break;
+              if (!advance(1, "bankTicks")) break;
+              phase = "working";
+              alreadyWorking = false;
+              continue;
+            }
+            if (phase === "toBank") {
+              const bank = nearestBank(p);
+              if (!bank) throw new Error("找不到可达仓库");
+              if (!travel(bank, 0)) break;
+              if (!advance(1, "bankTicks")) break;
+              phase = "banking";
+              continue;
+            }
+            if (phase === "banking") {
+              if (!advance(1, "bankTicks")) break;
+              const remaining = [];
+              for (const x of p.pack) if (!deposit(x.itemId, x.qty)) remaining.push(x);
+              p.pack = remaining;
+              if (remaining.length) {
+                r.stop = "storageFull";
+                break;
+              }
+              if (options.finiteStock) {
+                const slots =
+                  75 + (p.bankSlotsBought || 0) + Math.floor((p.house?.storeroom || 0) / 2);
+                for (const [id, n] of Object.entries(p.overflow || {}))
+                  if (
+                    n > 0 &&
+                    (p.unlimitedBank ||
+                      (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
+                      (p.brews?.blessing || 0) > p.lastTick ||
+                      p.bank[id] > 0 ||
+                      bankCount(p) < slots)
+                  ) {
+                    add(p.bank, id, n);
+                    delete p.overflow[id];
+                  }
+              }
+              if (best) {
+                rarity = bestRarity(p, j, false);
+                p.workRarity = rarity;
+                ins = inputs(j, rarity);
+              }
+              if (ins.length && !withdraw(p, j, rarity)) {
+                if (options.finiteStock) {
+                  r.stop = "materials";
+                  break;
+                }
+                throw new Error("背包无法容纳这份配方");
+              }
+              r.trips++;
+              if (!advance(1, "bankTicks")) break;
+              phase = "toWork";
+              continue;
+            }
+            if (!canWork(p, j, rarity)) {
+              if (!advance(1, "bankTicks")) break;
+              if (discarding) {
+                const previous = p.pack.length;
+                p.pack = p.pack.filter((x) => !gathered.has(base(x.itemId)));
+                if (p.pack.length < previous) {
+                  alreadyWorking = true;
+                  continue;
+                }
+              }
+              phase = "toBank";
+              alreadyWorking = false;
+              continue;
+            }
+            if (!alreadyWorking) {
+              if (!advance(1, "bankTicks")) break;
+              alreadyWorking = true;
+            }
+            if (
+              (p.stunUntil || 0) > p.lastTick + 1 &&
+              !advance(p.stunUntil - p.lastTick - 1, "stunTicks")
+            )
+              break;
+            const probability = j.inputs.length === 0 && p.skills[j.skill] === 0 ? 1 : chance(p, j);
+            const wait =
+              probability === 1
+                ? 1
+                : Math.floor(Math.log(1 - random()) / Math.log(1 - probability)) + 1;
+            const boundary = options.nextBoundary?.(p);
+            if (
+              Number.isFinite(boundary) &&
+              boundary > p.lastTick &&
+              wait > boundary - p.lastTick
+            ) {
+              if (!advance(boundary - p.lastTick, "workTicks")) break;
+              continue;
+            }
+            if (!advance(wait, "workTicks")) break;
+            r.attempts++;
+            for (const x of ins) {
+              remove(p, x.itemId, x.qty);
+              add(r.inputs, x.itemId, x.qty);
+            }
+            if (random() < failure(p, j)) {
+              if (j.burn) {
+                r.burnt++;
+                put(p, j.burn.itemId, 1);
+                add(r.outputs, j.burn.itemId, 1);
+              } else {
+                r.caught++;
+                p.stunUntil = p.lastTick + j.caught.stunTicks;
+              }
+              if (options.onAttempt) options.onAttempt(p, j, r, !j.caught);
+              continue;
+            }
+            r.successes++;
+            const gathering = !ins.length && j.output.itemId !== c.coins;
+            const outputProbs = gathering
+              ? rarityProbabilities(p, j, p.lastTick, options.windows)
+              : null;
+            const rt = gathering ? draw(outputProbs, random) : rarity;
+            const output = j.output.itemId === c.coins ? c.coins : identity(j.output.itemId, rt),
+              gain = xp(p, j, p.lastTick, options.windows, rt);
+            p.skills[j.skill] += gain;
+            r.xp += gain;
+            if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
+            if (options.onCollected && output !== c.coins)
+              options.onCollected(p, output, j.output.qty);
+            // Price every rarity by its conditional expectation, including very rare tiers
+            // which a small timing simulation may never actually draw.
+            if (outputProbs)
+              for (let t = 0; t < 5; t++)
+                add(r.outputs, identity(j.output.itemId, t), outputProbs[t] * j.output.qty);
+            else add(r.outputs, output, j.output.qty);
+            if (
+              output !== c.coins &&
+              !put(p, output, j.output.qty) &&
+              !deposit(output, j.output.qty)
+            ) {
               r.stop = "storageFull";
               break;
             }
-            if (options.finiteStock) {
-              const slots =
-                75 + (p.bankSlotsBought || 0) + Math.floor((p.house?.storeroom || 0) / 2);
-              for (const [id, n] of Object.entries(p.overflow || {}))
+            if (j.bonus) {
+              const probs = eligible.has(j.bonus.itemId)
+                ? rarityProbabilities(p, j, p.lastTick, options.windows)
+                : [1, 0, 0, 0, 0];
+              const bonusTier = draw(probs, random);
+              // Expected auxiliary loot is priced separately, avoiding rare-drop sample noise.
+              const id = identity(
+                j.bonus.itemId,
+                seeds.has(j.bonus.itemId) ? Math.max(1, bonusTier) : bonusTier,
+              );
+              for (let t = 0; t < 5; t++)
+                if (probs[t] > 0)
+                  add(
+                    r.outputs,
+                    identity(j.bonus.itemId, seeds.has(j.bonus.itemId) ? Math.max(1, t) : t),
+                    probs[t] * j.bonus.chance,
+                  );
+              if (random() < j.bonus.chance) {
+                const stored = put(p, id, 1);
                 if (
-                  n > 0 &&
-                  (p.unlimitedBank ||
-                    (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
-                    (p.brews?.blessing || 0) > p.lastTick ||
-                    p.bank[id] > 0 ||
-                    bankCount(p) < slots)
-                ) {
-                  add(p.bank, id, n);
-                  delete p.overflow[id];
-                }
+                  options.onCollected &&
+                  stored &&
+                  (!seeds.has(j.bonus.itemId) || options.recordSeeds)
+                )
+                  options.onCollected(p, id, 1);
+              }
             }
-            if (best) {
-              rarity = bestRarity(p, j, false);
-              p.workRarity = rarity;
-              ins = inputs(j, rarity);
-            }
-            if (ins.length && !withdraw(p, j, rarity)) {
+            if (options.onAttempt) options.onAttempt(p, j, r, true);
+          }
+          r.ticks = p.lastTick - startTick;
+          if (options.returnPlayer) r.endPlayer = p;
+          return r;
+        }
+        function runFarm(options, random, mode) {
+          // A single selected field: explicitly labelled in the UI. Other plots remain untouched.
+          const j = jobs.get(Number(options.jobId)),
+            p = clone(options.player),
+            rarity = Number(options.rarity || 0),
+            start = p.lastTick,
+            target = data.xpTable[options.targetLevel];
+          if (level(p.skills.farming) < j.levelReq) throw new Error("当前等级尚未解锁这项种植");
+          const end =
+            mode === "hour"
+              ? start + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
+              : Infinity;
+          const r = {
+            attempts: 0,
+            successes: 0,
+            burnt: 0,
+            caught: 0,
+            ticks: 0,
+            workTicks: 0,
+            walkTicks: 0,
+            bankTicks: 0,
+            stunTicks: 0,
+            inputs: {},
+            outputs: {},
+            xp: 0,
+            trips: 0,
+          };
+          const seedId = identity(j.inputs[0].itemId, rarity);
+          let seedStock = options.finiteStock ? (p.bank[seedId] || 0) + held(p, seedId) : 0;
+          function advance(ticks) {
+            const n = Math.min(ticks, end - p.lastTick);
+            p.lastTick += n;
+            r.workTicks += n;
+            return n === ticks;
+          }
+          while (p.lastTick < end && (mode === "hour" || p.skills.farming < target)) {
+            if (r.attempts >= (options.maxAttempts || 150000)) throw new Error("种植目标过大");
+            const seed = identity(j.inputs[0].itemId, rarity),
+              cost = j.inputs[0].qty;
+            if (seedStock < cost) {
               if (options.finiteStock) {
                 r.stop = "materials";
                 break;
               }
-              throw new Error("背包无法容纳这份配方");
+              add(r.inputs, seed, cost - seedStock);
+              seedStock = cost;
             }
-            r.trips++;
-            if (!advance(1, "bankTicks")) break;
-            phase = "toWork";
-            continue;
-          }
-          if (!canWork(p, j, rarity)) {
-            if (!advance(1, "bankTicks")) break;
-            if (discarding) {
-              const previous = p.pack.length;
-              p.pack = p.pack.filter((x) => !gathered.has(base(x.itemId)));
-              if (p.pack.length < previous) {
-                alreadyWorking = true;
-                continue;
+            if (options.finiteStock) add(r.inputs, seed, cost);
+            seedStock -= cost;
+            const planted = p.lastTick;
+            if (!advance(1)) break;
+            const grow = Math.round(j.grow / (1 + home(p, "gatherSpeed", "farming"))),
+              maxWater = Math.floor(j.grow / 40),
+              trimEach = Math.round(20 * (1 + bonus(p.equipment?.hoe)));
+            let trim = 0,
+              watered = 0;
+            while (p.lastTick < planted + grow - Math.min(trim, Math.floor(grow / 2))) {
+              const mature = planted + grow - Math.min(trim, Math.floor(grow / 2)),
+                next = (Math.floor(p.lastTick / 100) + 1) * 100;
+              if (watered < maxWater && next < mature) {
+                if (!advance(next - p.lastTick)) break;
+                watered++;
+                trim += trimEach;
+                const gain = Math.max(
+                  1,
+                  Math.round(j.xp * 0.1 * xpMultiplier(p, j, p.lastTick, options.windows, true)),
+                );
+                p.skills.farming += gain;
+                r.xp += gain;
+                if (mode !== "hour" && p.skills.farming >= target) break;
+              } else {
+                advance(mature - p.lastTick);
+                break;
               }
             }
-            phase = "toBank";
-            alreadyWorking = false;
-            continue;
-          }
-          if (!alreadyWorking) {
-            if (!advance(1, "bankTicks")) break;
-            alreadyWorking = true;
-          }
-          if (
-            (p.stunUntil || 0) > p.lastTick + 1 &&
-            !advance(p.stunUntil - p.lastTick - 1, "stunTicks")
-          )
-            break;
-          const probability = j.inputs.length === 0 && p.skills[j.skill] === 0 ? 1 : chance(p, j);
-          const wait =
-            probability === 1
-              ? 1
-              : Math.floor(Math.log(1 - random()) / Math.log(1 - probability)) + 1;
-          const boundary = options.nextBoundary?.(p);
-          if (Number.isFinite(boundary) && boundary > p.lastTick && wait > boundary - p.lastTick) {
-            if (!advance(boundary - p.lastTick, "workTicks")) break;
-            continue;
-          }
-          if (!advance(wait, "workTicks")) break;
-          r.attempts++;
-          for (const x of ins) {
-            remove(p, x.itemId, x.qty);
-            add(r.inputs, x.itemId, x.qty);
-          }
-          if (random() < failure(p, j)) {
-            if (j.burn) {
-              r.burnt++;
-              put(p, j.burn.itemId, 1);
-              add(r.outputs, j.burn.itemId, 1);
-            } else {
-              r.caught++;
-              p.stunUntil = p.lastTick + j.caught.stunTicks;
-            }
-            if (options.onAttempt) options.onAttempt(p, j, r, !j.caught);
-            continue;
-          }
-          r.successes++;
-          const gathering = !ins.length && j.output.itemId !== c.coins;
-          const outputProbs = gathering
-            ? rarityProbabilities(p, j, p.lastTick, options.windows)
-            : null;
-          const rt = gathering ? draw(outputProbs, random) : rarity;
-          const output = j.output.itemId === c.coins ? c.coins : identity(j.output.itemId, rt),
-            gain = xp(p, j, p.lastTick, options.windows, rt);
-          p.skills[j.skill] += gain;
-          r.xp += gain;
-          if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
-          if (options.onCollected && output !== c.coins)
-            options.onCollected(p, output, j.output.qty);
-          // Price every rarity by its conditional expectation, including very rare tiers
-          // which a small timing simulation may never actually draw.
-          if (outputProbs)
-            for (let t = 0; t < 5; t++)
-              add(r.outputs, identity(j.output.itemId, t), outputProbs[t] * j.output.qty);
-          else add(r.outputs, output, j.output.qty);
-          if (
-            output !== c.coins &&
-            !put(p, output, j.output.qty) &&
-            !deposit(output, j.output.qty)
-          ) {
-            r.stop = "storageFull";
-            break;
-          }
-          if (j.bonus) {
-            const probs = eligible.has(j.bonus.itemId)
-              ? rarityProbabilities(p, j, p.lastTick, options.windows)
-              : [1, 0, 0, 0, 0];
-            const bonusTier = draw(probs, random);
-            // Expected auxiliary loot is priced separately, avoiding rare-drop sample noise.
-            const id = identity(
-              j.bonus.itemId,
-              seeds.has(j.bonus.itemId) ? Math.max(1, bonusTier) : bonusTier,
-            );
-            for (let t = 0; t < 5; t++)
-              if (probs[t] > 0)
-                add(
-                  r.outputs,
-                  identity(j.bonus.itemId, seeds.has(j.bonus.itemId) ? Math.max(1, t) : t),
-                  probs[t] * j.bonus.chance,
-                );
-            if (random() < j.bonus.chance) {
-              const stored = put(p, id, 1);
-              if (
-                options.onCollected &&
-                stored &&
-                (!seeds.has(j.bonus.itemId) || options.recordSeeds)
-              )
-                options.onCollected(p, id, 1);
+            if (p.lastTick >= end || (mode !== "hour" && p.skills.farming >= target)) break;
+            if (!advance(1)) break;
+            r.attempts++;
+            r.successes++;
+            const lev = level(p.skills.farming),
+              count =
+                3 +
+                Math.floor(random() * 3) +
+                Math.floor(lev / 100) +
+                (random() < (lev / 100) % 1 ? 1 : 0);
+            add(r.outputs, identity(j.output.itemId, rarity), count);
+            const gain = xp(p, j, p.lastTick, options.windows, rarity);
+            p.skills.farming += gain;
+            r.xp += gain;
+            if (options.onCollected)
+              options.onCollected(p, identity(j.output.itemId, rarity), count);
+            for (let k = 0; k < cost; k++) {
+              const rt = draw(rarityProbabilities(p, j, p.lastTick, options.windows, true), random);
+              const id = identity(j.inputs[0].itemId, rt);
+              if (rt === rarity) {
+                seedStock++;
+                if (options.finiteStock) add(r.outputs, id, 1);
+              } else add(r.outputs, id, 1);
             }
           }
-          if (options.onAttempt) options.onAttempt(p, j, r, true);
+          r.ticks = p.lastTick - start;
+          if (options.finiteStock) {
+            p.pack = p.pack.filter((s) => s.itemId !== seedId);
+            p.bank[seedId] = seedStock;
+          }
+          if (options.returnPlayer) r.endPlayer = p;
+          return r;
         }
-        r.ticks = p.lastTick - startTick;
-        if (options.returnPlayer) r.endPlayer = p;
-        return r;
+        const quantile = (values, q) => {
+          const xs = [...values].sort((a, b) => a - b);
+          return xs[Math.min(xs.length - 1, Math.ceil(q * xs.length) - 1)] || 0;
+        };
+        function summarize(runs) {
+          const result = {};
+          for (const k of [
+            "attempts",
+            "successes",
+            "burnt",
+            "caught",
+            "ticks",
+            "workTicks",
+            "walkTicks",
+            "bankTicks",
+            "stunTicks",
+            "xp",
+            "trips",
+          ])
+            result[k] = sum(runs.map((x) => x[k])) / runs.length;
+          for (const k of ["inputs", "outputs"]) {
+            result[k] = {};
+            for (const r of runs)
+              for (const [id, n] of Object.entries(r[k])) add(result[k], id, n / runs.length);
+          }
+          result.seconds = (result.ticks * c.tickMs) / 1000;
+          result.secondsP05 = quantile(
+            runs.map((r) => (r.ticks * c.tickMs) / 1000),
+            0.05,
+          );
+          result.secondsP95 = quantile(
+            runs.map((r) => (r.ticks * c.tickMs) / 1000),
+            0.95,
+          );
+          result.attemptsP95 = quantile(
+            runs.map((r) => r.attempts),
+            0.95,
+          );
+          result.materialsP95 = {};
+          for (const id of Object.keys(result.inputs))
+            result.materialsP95[id] = quantile(
+              runs.map((r) => r.inputs[id] || 0),
+              0.95,
+            );
+          return result;
+        }
+        function forecast(options) {
+          if (
+            !Number.isSafeInteger(options.player?.lastTick) ||
+            !Number.isFinite(options.player?.skills?.[jobs.get(Number(options.jobId))?.skill])
+          )
+            throw new Error("等待有效角色快照");
+          if (
+            jobs.get(Number(options.jobId)).grow === undefined &&
+            map.regions?.some(
+              (r) =>
+                r.name === "Home" &&
+                options.player.x >= r.x &&
+                options.player.y >= r.y &&
+                options.player.x < r.x + r.width &&
+                options.player.y < r.y + r.height,
+            )
+          )
+            throw new Error("动态家园路线尚未校准；请返回主地图后计算完整时间");
+          const current = level(options.player.skills[jobs.get(Number(options.jobId)).skill]);
+          if (
+            !Number.isInteger(options.targetLevel) ||
+            options.targetLevel < 1 ||
+            options.targetLevel >= data.xpTable.length
+          )
+            throw new Error(`目标等级须为 1–${data.xpTable.length - 1} 的整数`);
+          const count = clamp(options.samples || 32, 8, 128),
+            planRuns = [],
+            hourRuns = [];
+          for (let i = 0; i < count; i++) {
+            planRuns.push(run(options, rng(7919 * (i + 1)), "target"));
+            hourRuns.push(run(options, rng(104729 * (i + 1)), "hour"));
+          }
+          const plan = summarize(planRuns),
+            hour = summarize(hourRuns);
+          const materials = Object.entries(plan.inputs).map(([id, mean]) => {
+            id = Number(id);
+            const owned =
+              (options.player.bank?.[id] || 0) +
+              held({ ...options.player, pack: options.player.pack || [] }, id);
+            return {
+              id,
+              mean,
+              p95: plan.materialsP95[id],
+              owned,
+              shortage: Math.max(0, Math.ceil(mean) - owned),
+              shortageP95: Math.max(0, Math.ceil(plan.materialsP95[id]) - owned),
+            };
+          });
+          return {
+            jobId: Number(options.jobId),
+            currentLevel: current,
+            targetLevel: options.targetLevel,
+            xpLeft: Math.max(
+              0,
+              data.xpTable[options.targetLevel] -
+                options.player.skills[jobs.get(Number(options.jobId)).skill],
+            ),
+            samples: count,
+            plan,
+            hour,
+            materials,
+            farming: jobs.get(Number(options.jobId)).grow !== undefined,
+            build: data.version.version,
+          };
+        }
+        function forecastHour(options) {
+          const j = jobs.get(Number(options.jobId));
+          if (
+            !j ||
+            !Number.isSafeInteger(options.player?.lastTick) ||
+            !Number.isFinite(options.player.skills?.[j.skill])
+          )
+            throw new Error("等待有效角色快照");
+          if (
+            j.grow === undefined &&
+            map.regions?.some(
+              (r) =>
+                r.name === "Home" &&
+                options.player.x >= r.x &&
+                options.player.y >= r.y &&
+                options.player.x < r.x + r.width &&
+                options.player.y < r.y + r.height,
+            )
+          )
+            throw new Error("家园路线尚未校准");
+          const count = clamp(options.samples || 8, 8, 128),
+            runs = [];
+          for (let i = 0; i < count; i++) runs.push(run(options, rng(104729 * (i + 1)), "hour"));
+          return {
+            jobId: j.id,
+            hour: summarize(runs),
+            samples: count,
+            farming: j.grow !== undefined,
+          };
+        }
+        return {
+          data,
+          jobs,
+          item,
+          level,
+          base,
+          tier,
+          inputs,
+          bestRarity,
+          tool,
+          brew,
+          brewTier,
+          master,
+          home,
+          rotation,
+          xpMultiplier,
+          xp,
+          rarityProbabilities,
+          chance,
+          failure,
+          path,
+          adjacent,
+          nearestBank,
+          nearestSite,
+          workSite,
+          farmingStatus,
+          forecast,
+          forecastHour,
+          run,
+          summarize,
+          rng,
+        };
       }
-      function runFarm(options, random, mode) {
-        // A single selected field: explicitly labelled in the UI. Other plots remain untouched.
-        const j = jobs.get(Number(options.jobId)),
-          p = clone(options.player),
-          rarity = Number(options.rarity || 0),
-          start = p.lastTick,
-          target = data.xpTable[options.targetLevel];
-        if (level(p.skills.farming) < j.levelReq) throw new Error("当前等级尚未解锁这项种植");
-        const end =
-          mode === "hour"
-            ? start + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
-            : Infinity;
+      function fillBook(levels, qty, side, taxBp = 0) {
+        let left = qty,
+          gross = 0;
+        const fills = [];
+        for (const l of [...levels]
+          .filter((l) => l.price > 0 && l.qty > 0)
+          .sort((a, b) => (side === "buy" ? a.price - b.price : b.price - a.price))) {
+          const n = Math.min(left, l.qty);
+          if (n <= 0) break;
+          left -= n;
+          gross += n * l.price;
+          fills.push({ price: l.price, qty: n });
+        }
+        return {
+          gross,
+          net: side === "sell" ? gross * (1 - taxBp / 10000) : gross,
+          filled: qty - left,
+          left,
+          fills,
+        };
+      }
+      function vendorPrice(id, books, pricing = {}) {
+        // Enhancements do not change buyback value; received server floors take precedence.
+        const plain = id % 10000,
+          price = books[id]?.floor ?? pricing.vendorPrices?.[plain];
+        return price > 0 ? price : null;
+      }
+      function valueFlows(flow, books, mode, taxBp, now = Date.now(), pricing = {}) {
+        const missing = [],
+          stale = [],
+          partial = [],
+          details = [],
+          estimated = [];
+        let total = 0,
+          unknownTax = false;
+        const put = (id, qty, price, source, extra = {}) => {
+          if (qty <= 1e-9) return;
+          const taxed = source === "market" && mode !== "buy";
+          if (taxed && taxBp == null) unknownTax = true;
+          const value = qty * price * (taxed ? 1 - (taxBp ?? 0) / 10000 : 1);
+          total += value;
+          details.push({ id, qty, value, price, source, ...extra });
+        };
+        for (const [key, qty] of Object.entries(flow)) {
+          const id = Number(key);
+          if (!(qty > 0)) continue;
+          if (id === 200) {
+            put(id, qty, 1, "coins");
+            continue;
+          }
+          const b = books[id] || {},
+            sell = mode !== "buy",
+            vendor = sell ? vendorPrice(id, books, pricing) : pricing.vendorBuys?.[id],
+            factor = sell ? 1 - (taxBp ?? 0) / 10000 : 1;
+          const quote =
+            mode === "buy" ? b.ask : mode === "sell" ? b.bid : mode === "list" ? b.ask : null;
+          const side = mode === "sell" ? "bid" : "ask",
+            quoteAt = b[side + "At"] ?? b.at,
+            depthAt = b[side + "DepthAt"] ?? b.depthAt;
+          if (mode !== "vendor" && quote > 0 && now - (quoteAt || 0) > 300000) stale.push(id);
+          const levels = mode === "buy" ? b.asks : mode === "sell" ? b.bids : null;
+          let left = qty;
+          if (mode !== "vendor" && Array.isArray(levels)) {
+            const old = now - (depthAt || 0) > 300000;
+            const useful = levels.filter(
+              (x) => !(vendor > 0) || (sell ? x.price * factor > vendor : x.price < vendor),
+            );
+            const fill = fillBook(useful, qty, mode, taxBp ?? 0);
+            for (const f of fill.fills)
+              put(id, f.qty, f.price, "market", { depth: !old, estimated: old, quoteAt: depthAt });
+            if (old && fill.filled > 0) estimated.push(id);
+            left = fill.left;
+          } else if (
+            mode !== "vendor" &&
+            quote > 0 &&
+            (!(vendor > 0) || (sell ? quote * factor > vendor : quote < vendor))
+          ) {
+            const old = now - (quoteAt || 0) > 300000 || b[side + "Public"] === true,
+              available =
+                mode === "list"
+                  ? qty
+                  : Number.isFinite(b[side + "Qty"])
+                    ? Math.max(0, b[side + "Qty"])
+                    : qty,
+              filled = Math.min(qty, available);
+            put(id, filled, quote, "market", {
+              depth: false,
+              estimated: old,
+              public: b[side + "Public"] === true,
+              quoteAt,
+            });
+            if (old && filled > 0) estimated.push(id);
+            left = qty - filled;
+          }
+          if (left > 1e-9 && vendor > 0) {
+            put(id, left, vendor, "vendor");
+            left = 0;
+          }
+          // Restored asks are short-lived cost estimates, never executable orders.
+          // Prefer more recent trade history when it supersedes the cached ask.
+          const history =
+            mode === "buy" &&
+            b.history?.price > 0 &&
+            Number.isFinite(b.history.tradeAt) &&
+            b.history.tradeAt <= now &&
+            now - b.history.tradeAt <= 7 * 86400000
+              ? b.history
+              : null;
+          const cached =
+            mode === "buy" &&
+            Number.isFinite(b.purchaseCache?.price) &&
+            b.purchaseCache.price > 0 &&
+            Number.isFinite(b.purchaseCache.at) &&
+            b.purchaseCache.at <= now &&
+            now - b.purchaseCache.at <= 86400000
+              ? b.purchaseCache
+              : null;
+          if (left > 1e-9 && (cached || history)) {
+            if (cached && (!history || cached.at > history.tradeAt))
+              put(id, left, cached.price, "cached", { estimated: true, cachedAt: cached.at });
+            else
+              put(id, left, history.price, "history", {
+                estimated: true,
+                tradeAt: history.tradeAt,
+              });
+            estimated.push(id);
+            left = 0;
+          }
+          // Known nontradable outputs have no cash resale value, rather than an unknown price.
+          if (
+            left > 1e-9 &&
+            sell &&
+            Object.hasOwn(pricing.vendorPrices || {}, id % 10000) &&
+            pricing.vendorPrices[id % 10000] === null
+          ) {
+            put(id, left, 0, "nontradable");
+            left = 0;
+          }
+          if (left > 1e-9) {
+            if (left < qty) partial.push({ id, unfilled: left, filled: qty - left });
+            else missing.push(id);
+            details.push({ id, qty: left, value: null, source: "missing" });
+          }
+        }
+        return {
+          total: missing.length || partial.length || unknownTax ? null : total,
+          pricedSubtotal: total,
+          missing,
+          stale,
+          partial,
+          details,
+          estimated,
+          unknownTax,
+          vendorSubtotal: sum(details.filter((x) => x.source === "vendor").map((x) => x.value)),
+          coinSubtotal: sum(details.filter((x) => x.source === "coins").map((x) => x.value)),
+        };
+      }
+      function profits(hour, books, taxBp, now, pricing = {}) {
+        const cost = valueFlows(hour.inputs, books, "buy", taxBp, now, pricing),
+          immediate = valueFlows(hour.outputs, books, "sell", taxBp, now, pricing),
+          listing = valueFlows(hour.outputs, books, "list", taxBp, now, pricing),
+          vendor = valueFlows(hour.outputs, books, "vendor", taxBp, now, pricing);
+        const net = (revenue) =>
+          revenue.total !== null && cost.total !== null ? revenue.total - cost.total : null;
+        return {
+          cost,
+          immediate,
+          listing,
+          vendor,
+          immediateProfit: net(immediate),
+          listingProfit: net(listing),
+          vendorProfit: net(vendor),
+          immediateKnownNet: immediate.pricedSubtotal - cost.pricedSubtotal,
+          listingKnownNet: listing.pricedSubtotal - cost.pricedSubtotal,
+          vendorKnownNet: vendor.pricedSubtotal - cost.pricedSubtotal,
+        };
+      }
+      function dailyProfits(hour, books, taxBp, now, pricing) {
+        const daily = { inputs: {}, outputs: {} };
+        for (const kind of ["inputs", "outputs"])
+          for (const [id, n] of Object.entries(hour[kind] || {})) daily[kind][id] = n * 24;
+        // Quote depth is consumed once across the whole projected day.
+        return profits(daily, books, taxBp, now, pricing);
+      }
+      function formatNumber(n, d = 0) {
+        if (!Number.isFinite(n)) return "—";
+        const units = ["", "K", "M", "B"];
+        let i = Math.min(3, Math.max(0, Math.floor(Math.log10(Math.max(1, Math.abs(n))) / 3)));
+        let scaled = n / 1000 ** i;
+        if (i && Math.abs(Number(scaled.toFixed(2))) >= 1000 && i < 3) {
+          i++;
+          scaled = n / 1000 ** i;
+        }
+        const text = scaled.toLocaleString("en-US", { maximumFractionDigits: i ? 2 : d });
+        return (text === "-0" ? "0" : text) + units[i];
+      }
+      return {
+        create,
+        hash,
+        rng,
+        fillBook,
+        vendorPrice,
+        valueFlows,
+        profits,
+        dailyProfits,
+        formatNumber,
+      };
+    });
+  }
+  function runForecastWorker() {
+    let model;
+    self.onmessage = function (e) {
+      try {
+        model = model || self.DVIPlannerCore.create(e.data.data);
+        const result = e.data.options.hourOnly
+          ? model.forecastHour(e.data.options)
+          : model.forecast(e.data.options);
+        self.postMessage({ result });
+      } catch (error) {
+        self.postMessage({ error: error.message });
+      }
+    };
+  }
+  const WORKER_SOURCE =
+    "(" + installPlannerCore.toString() + ")();(" + runForecastWorker.toString() + ")();";
+  function runInsightWorker() {
+    /* One-food budgets for adding a day of a buff, using passive purchase quotes. */
+    (function (root, factory) {
+      if (typeof module === "object" && module.exports)
+        module.exports = factory(require("./core.js"));
+      else root.DVIBuffs = factory(root.DVIPlannerCore);
+    })(typeof globalThis !== "undefined" ? globalThis : this, function (core) {
+      "use strict";
+      function bestDaily(model, books, kind, now = Date.now()) {
+        if (kind !== "fed" && kind !== "rooted") throw new Error("Invalid food buff");
+        const day = 24 * 6000;
+        let best = { kind, hours: 24, id: null, qty: 0, cost: null, ticks: 0, estimated: false };
+        for (const food of model.data.food.variants) {
+          const ticks = food[kind + "Ticks"];
+          if (!ticks) continue;
+          const qty = Math.ceil(day / ticks);
+          // Quote the whole quantity: a cheap first ask may not cover a day's food.
+          const quote = core.valueFlows({ [food.id]: qty }, books, "buy", 0, now, model.data);
+          if (quote.total === null) continue;
+          const estimated = quote.estimated.length > 0;
+          if (
+            best.cost !== null &&
+            (quote.total > best.cost ||
+              (quote.total === best.cost &&
+                ((estimated && !best.estimated) ||
+                  (estimated === best.estimated && qty >= best.qty))))
+          )
+            continue;
+          best = {
+            kind,
+            hours: 24,
+            id: food.id,
+            qty,
+            cost: quote.total,
+            ticks: qty * ticks,
+            estimated,
+          };
+        }
+        return best;
+      }
+      function potionPrice(model, player, books, kind, now = Date.now()) {
+        const active = (player.brews?.[kind] || 0) > player.lastTick;
+        const tier = active ? model.brewTier(player, kind, player.lastTick) : 0;
+        const potion = model.data.potions.find((x) => x.kind === kind && x.tier === tier);
+        if (!potion) return null;
+        const quote = core.valueFlows({ [potion.id]: 1 }, books, "buy", 0, now, model.data);
+        return { id: potion.id, tier, cost: quote.total, estimated: quote.estimated.length > 0 };
+      }
+      return { bestDaily, potionPrice };
+    });
+
+    /* Passive current-fight sampling. Counters and inventory are copied, never changed. */
+    (function (root, factory) {
+      if (typeof module === "object" && module.exports) module.exports = factory();
+      else root.DVICombat = factory();
+    })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+      "use strict";
+      const kinds = ["warrior", "haste", "abyssal", "nourish", "hunter", "elixir", "swift"];
+      const RATE_WINDOW = 3000,
+        EPH_WINDOW = 500; // 30-minute valuation, 5-minute current encounter rate.
+      const skills = ["melee", "ranged", "magic", "defence", "hitpoints"];
+      const add = (flow, id, n) => {
+        if (n) flow[id] = (flow[id] || 0) + n;
+      };
+      function inventory(p) {
+        const counts = { ...p.bank };
+        for (const s of p.pack || []) add(counts, s.itemId, s.qty);
+        return counts;
+      }
+      function foodEligible(model, p, id) {
+        return (
+          (model.item(id)?.heals || 0) > 0 &&
+          (model.tier(id) <= (p.foodMaxTier ?? 0) || id === p.foodItemId)
+        );
+      }
+      function selectedFood(model, p) {
+        const pack = p.pack || [];
+        if (p.foodItemId > 0 && pack.some((x) => x.itemId === p.foodItemId && x.qty > 0))
+          return p.foodItemId;
+        const held = pack.find((x) => x.qty > 0 && foodEligible(model, p, x.itemId));
+        if (held) return held.itemId;
+        if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0) return p.foodItemId;
+        return (
+          Object.keys(p.bank || {})
+            .map(Number)
+            .filter((id) => p.bank[id] > 0 && foodEligible(model, p, id))
+            .sort(
+              (a, b) =>
+                (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
+                a - b,
+            )[0] ?? null
+        );
+      }
+      function potionFlow(model, p, start, end, potionKinds = kinds) {
+        const out = {};
+        for (const kind of potionKinds) {
+          let tick = start;
+          while (tick < end && (p.brews?.[kind] || 0) > tick) {
+            const tier = model.brewTier(p, kind, tick),
+              buckets = p.brewBuckets?.[kind];
+            let until = p.brews[kind];
+            if (buckets?.length) {
+              let accumulated = 0;
+              for (let i = buckets.length - 1; i >= tier; i--) accumulated += buckets[i];
+              until = Math.min(
+                until,
+                p.brews[kind] - buckets.reduce((a, b) => a + b, 0) + accumulated,
+              );
+            }
+            until = Math.min(end, until);
+            if (until <= tick) break;
+            const potion = model.data.potions.find((x) => x.kind === kind && x.tier === tier);
+            if (potion) add(out, potion.id, (until - tick) / model.data.constants.potionTicks);
+            tick = until;
+          }
+        }
+        return out;
+      }
+      function loot(model, p, monster, tick, windows = []) {
+        const out = {},
+          facts = model.data.combat;
+        let gold = 0;
+        for (let n = monster.gold[0]; n <= monster.gold[1]; n++)
+          gold += Math.floor(n * (1 + facts.abyssalCoins * model.brew(p, "abyssal", tick)));
+        add(out, 200, gold / (monster.gold[1] - monster.gold[0] + 1));
+        const probs = model.rarityProbabilities(p, { skill: "combat", inputs: [] }, tick, windows);
+        probs.forEach((prob, tier) =>
+          add(out, monster.drop + tier * 1000, (monster.dropChance ?? 1) * prob),
+        );
+        let rare = 1;
+        for (const w of windows)
+          if (tick >= w.fromTick && tick <= w.toTick) rare += (w.rarityMult ?? 1) - 1;
+        const rotation = model.rotation(tick);
+        rare +=
+          0.25 * model.brew(p, "hunter", tick) +
+          ((p.brews?.blessing || 0) > tick ? 0.1 : 0) +
+          (rotation.skill === "combat" && rotation.kind === "rarity" ? 0.25 : 0) +
+          model.master(p, "rare") -
+          1;
+        const amulet = p.equipment?.amulet || 0,
+          gear = model.data.gear.find((x) => x.itemId === amulet % 10000);
+        const luck =
+          (gear?.luck || 0) * (1 + model.data.constants.toolEnhance * Math.floor(amulet / 10000));
+        if (monster.bonus)
+          add(out, monster.bonus.itemId, Math.min(1, monster.bonus.chance * (1 + luck) * rare));
+        add(
+          out,
+          facts.shardId,
+          Math.min(0.2, 0.08 + monster.level * 0.0013) * (1 + Math.floor(monster.level / 30)),
+        );
+        add(out, facts.pets[monster.id], facts.petChance);
+        return out;
+      }
+      function mountLoot(model, p, opportunityTicks) {
+        const facts = model.data.combat.mountDrops,
+          out = {};
+        if (!facts || p.ironman || !(opportunityTicks > 0)) return out;
+        const id = p.equipment?.amulet || 0,
+          gear = model.data.gear.find((g) => g.itemId === id % 10000),
+          luck =
+            (gear?.luck || 0) * (1 + model.data.constants.toolEnhance * Math.floor(id / 10000));
+        const cumulative = ["uncommon", "rare", "epic", "legendary"].map((k) =>
+          Math.min(1, facts.thresholds[k] * (1 + luck)),
+        );
+        const probabilities = [
+            1 - cumulative[0],
+            cumulative[0] - cumulative[1],
+            cumulative[1] - cumulative[2],
+            cumulative[2] - cumulative[3],
+            cumulative[3],
+          ],
+          chance = Math.min(1, opportunityTicks / facts.chanceTicks);
+        probabilities.forEach((n, tier) => add(out, facts.itemId + tier * 1000, n * chance));
+        return out;
+      }
+      function create(model) {
+        let previous = null,
+          segments = [],
+          key = null,
+          lastFood = null,
+          reason = "等待战斗数据";
+        function reset(message) {
+          previous = null;
+          segments = [];
+          lastFood = null;
+          reason = message;
+        }
+        function sample(p, windows = []) {
+          const zone = p?.route?.zoneId;
+          if (zone == null || !p.tally?.monsters) {
+            reset("没有正在进行的普通战斗");
+            key = null;
+            return null;
+          }
+          // A change of loadout, food policy or zone starts a new measurement window.
+          const signature = JSON.stringify([
+            p.id,
+            zone,
+            p.equipment,
+            p.masteries,
+            p.perks,
+            p.house,
+            p.houseFurniture,
+            p.foodItemId,
+            p.foodMaxTier,
+            p.eatAt,
+            p.foodPerTrip,
+            !!p.ironman,
+          ]);
+          if (key !== signature) {
+            key = signature;
+            reset("刚开始观测");
+          }
+          const counts = inventory(p),
+            snap = {
+              ...p,
+              skills: { ...p.skills },
+              equipment: { ...p.equipment },
+              rollIndex: { ...p.rollIndex },
+              brews: { ...p.brews },
+              brewTier: { ...p.brewTier },
+              brewBuckets: JSON.parse(JSON.stringify(p.brewBuckets || {})),
+              tally: JSON.parse(JSON.stringify(p.tally)),
+              counts,
+              food: selectedFood(model, p),
+              windows: JSON.parse(JSON.stringify(windows)),
+            };
+          if (previous) {
+            const ticks = p.lastTick - previous.lastTick;
+            const decreased =
+              skills.some((k) => (p.skills[k] || 0) < (previous.skills[k] || 0)) ||
+              Object.entries(previous.tally.monsters).some(
+                ([id, n]) => (p.tally.monsters[id] || 0) < n,
+              ) ||
+              (p.tally.eaten || 0) < (previous.tally.eaten || 0) ||
+              (Number.isSafeInteger(p.rollIndex?.mount) &&
+                Number.isSafeInteger(previous.rollIndex?.mount) &&
+                p.rollIndex.mount < previous.rollIndex.mount);
+            if (ticks < 0 || ticks > 200 || decreased) {
+              reset("数据重同步，重新观测");
+            } else if (ticks > 0) {
+              const segment = {
+                start: previous.lastTick,
+                end: p.lastTick,
+                outputs: {},
+                inputs: potionFlow(model, previous, previous.lastTick, p.lastTick),
+                food: {},
+                xp: {},
+                kills: 0,
+                deaths: Math.max(0, (p.tally.deaths || 0) - (previous.tally.deaths || 0)),
+                unknownFood: 0,
+              };
+              if (
+                Number.isSafeInteger(previous.rollIndex?.mount) &&
+                Number.isSafeInteger(p.rollIndex?.mount)
+              ) {
+                const attacks = p.rollIndex.mount - previous.rollIndex.mount,
+                  weapon = model.data.gear.find(
+                    (g) => g.itemId === (previous.equipment?.weapon || 0) % 10000,
+                  ),
+                  attackTicks = previous.equipment?.weapon == null ? 5 : weapon?.speed || 4;
+                for (const [id, n] of Object.entries(mountLoot(model, previous, attackTicks)))
+                  add(segment.outputs, id, n * attacks);
+              }
+              for (const monster of model.data.combat.monsters) {
+                const kills =
+                  (p.tally.monsters[monster.id] || 0) - (previous.tally.monsters[monster.id] || 0);
+                if (kills <= 0) continue;
+                segment.kills += kills;
+                // Average known buffs over the sampling interval; does not invent rare drops from a small sample.
+                for (let t = previous.lastTick; t < p.lastTick; t++)
+                  for (const [id, n] of Object.entries(
+                    loot(model, previous, monster, t, previous.windows),
+                  ))
+                    add(segment.outputs, id, (n * kills) / ticks);
+              }
+              let eaten = (p.tally.eaten || 0) - (previous.tally.eaten || 0);
+              for (const [id, before] of Object.entries(previous.counts))
+                if (eaten > 0 && foodEligible(model, previous, Number(id))) {
+                  const n = Math.min(eaten, Math.max(0, before - (counts[id] || 0)));
+                  if (n) {
+                    add(segment.food, id, n);
+                    eaten -= n;
+                    lastFood = Number(id);
+                  }
+                }
+              // A concurrent purchase can conceal food consumption. Use the unchanged selected food only.
+              if (eaten > 0 && previous.food != null && previous.food === snap.food) {
+                add(segment.food, previous.food, eaten);
+                lastFood = previous.food;
+                eaten = 0;
+              }
+              segment.unknownFood = eaten;
+              for (const [id, n] of Object.entries(segment.food)) add(segment.inputs, id, n);
+              for (const skill of skills)
+                segment.xp[skill] = (p.skills[skill] || 0) - (previous.skills[skill] || 0);
+              segments.push(segment);
+              segments = segments.filter((s) => s.end > p.lastTick - RATE_WINDOW);
+              reason = "";
+            }
+          }
+          if (!previous || p.lastTick !== previous.lastTick) previous = snap;
+          return report(p);
+        }
+        function report(p) {
+          const zone = p?.route?.zoneId;
+          if (zone == null || key === null) return null;
+          const cutoff = p.lastTick - RATE_WINDOW,
+            recent = { ticks: 0, kills: 0, deaths: 0 },
+            totals = {
+              outputs: {},
+              inputs: {},
+              food: {},
+              xp: {},
+              ticks: 0,
+              kills: 0,
+              deaths: 0,
+              unknownFood: 0,
+            };
+          for (const s of segments) {
+            const ticks = s.end - s.start,
+              factor = Math.max(0, s.end - Math.max(s.start, cutoff)) / ticks;
+            totals.ticks += ticks * factor;
+            totals.kills += s.kills * factor;
+            totals.deaths += s.deaths * factor;
+            totals.unknownFood += s.unknownFood * factor;
+            const recentFactor =
+              Math.max(0, s.end - Math.max(s.start, p.lastTick - EPH_WINDOW)) / ticks;
+            recent.ticks += ticks * recentFactor;
+            recent.kills += s.kills * recentFactor;
+            recent.deaths += s.deaths * recentFactor;
+            for (const name of ["outputs", "inputs", "food", "xp"])
+              for (const [id, n] of Object.entries(s[name])) add(totals[name], id, n * factor);
+          }
+          const factor = totals.ticks ? 6000 / totals.ticks : 0,
+            hour = { ticks: 6000, outputs: {}, inputs: {}, xp: {}, food: {} };
+          for (const name of ["outputs", "inputs", "food", "xp"])
+            for (const [id, n] of Object.entries(totals[name])) hour[name][id] = n * factor;
+          const owned = inventory(p),
+            foodId = selectedFood(model, p) ?? lastFood,
+            foodRate = hour.food[foodId] || 0;
+          const foods = Object.entries(owned)
+            .filter(([id, n]) => n > 0 && foodEligible(model, p, Number(id)))
+            .map(([id, qty]) => ({ id: Number(id), qty }));
+          return {
+            zone,
+            reason,
+            seconds: totals.ticks * 0.6,
+            ready: totals.ticks >= 100,
+            hour,
+            killsPerHour: totals.kills * factor,
+            encountersPerHour: recent.ticks
+              ? ((recent.kills + recent.deaths) * 6000) / recent.ticks
+              : 0,
+            unknownFood: totals.unknownFood,
+            foodId,
+            foodQty: owned[foodId] || 0,
+            foods,
+            foodSeconds: foodRate > 0 ? ((owned[foodId] || 0) / foodRate) * 3600 : null,
+            potions: activePotions(model, p),
+          };
+        }
+        return { sample, report, reset };
+      }
+      function currentTierTicks(model, p, kind) {
+        const tier = model.brewTier(p, kind, p.lastTick),
+          buckets = p.brewBuckets?.[kind];
+        if (!buckets?.length) return p.brews[kind] - p.lastTick;
+        let sum = 0;
+        for (let i = buckets.length - 1; i >= tier; i--) sum += buckets[i];
+        return Math.min(
+          p.brews[kind] - p.lastTick,
+          p.brews[kind] - buckets.reduce((a, b) => a + b, 0) + sum - p.lastTick,
+        );
+      }
+      function activePotions(model, p) {
+        return [...new Set(model.data.potions.map((x) => x.kind))]
+          .filter((kind) => (p.brews?.[kind] || 0) > p.lastTick)
+          .map((kind) => ({
+            kind,
+            tier: model.brewTier(p, kind, p.lastTick),
+            seconds: (p.brews[kind] - p.lastTick) * 0.6,
+            currentTierSeconds: currentTierTicks(model, p, kind) * 0.6,
+          }))
+          .sort(
+            (a, b) => a.currentTierSeconds - b.currentTierSeconds || a.kind.localeCompare(b.kind),
+          );
+      }
+      function levelEstimate(model, player, hour, skill, target) {
+        if (
+          !["melee", "ranged", "magic", "defence", "hitpoints"].includes(skill) ||
+          !Number.isInteger(target) ||
+          target < 1 ||
+          target >= model.data.xpTable.length
+        )
+          return { error: "target" };
+        const remaining = Math.max(0, model.data.xpTable[target] - (player.skills[skill] || 0)),
+          rate = hour?.bySkill?.[skill];
+        if (!remaining) return { remaining, seconds: 0, rate: rate || 0 };
+        return {
+          remaining,
+          seconds: rate > 0 ? (remaining / rate) * 3600 : null,
+          rate: rate > 0 ? rate : 0,
+        };
+      }
+      return {
+        create,
+        loot,
+        mountLoot,
+        potionFlow,
+        inventory,
+        selectedFood,
+        kinds,
+        levelEstimate,
+        activePotions,
+      };
+    });
+
+    /* Passive route forecasts: audited native timing with independent market valuation. */
+    (function (root, factory) {
+      if (typeof module === "object" && module.exports)
+        module.exports = factory(require("./core.js"), require("./combat.js"));
+      else root.DVIBattleForecast = factory(root.DVIPlannerCore, root.DVICombat);
+    })(typeof globalThis !== "undefined" ? globalThis : this, function (core, combat) {
+      "use strict";
+      const gearMaps = new WeakMap();
+      function buildStats(model, p) {
+        const facts = model.data;
+        let gear = gearMaps.get(model);
+        if (!gear) {
+          gear = new Map(facts.gear.map((x) => [x.itemId, x]));
+          gearMaps.set(model, gear);
+        }
+        const weapon = gear.get((p.equipment?.weapon || 0) % 10000);
+        const style = weapon?.magic ? "magic" : weapon?.ranged ? "ranged" : "melee";
+        const sums = { accuracy: 0, strength: 0, defence: 0 };
+        for (const slot of facts.combat.gearSlots) {
+          const id = p.equipment?.[slot],
+            g = gear.get((id || 0) % 10000);
+          if (!g) continue;
+          for (const stat of Object.keys(sums))
+            sums[stat] +=
+              Math.round(
+                (g[stat] || 0) * (1 + facts.constants.toolEnhance * Math.floor(id / 10000)),
+              ) * (stat === "defence" || !g.style || g.style === style ? 1 : -1);
+        }
+        const roomDamage = facts.rooms.reduce(
+          (n, r) =>
+            n +
+            (p.houseFurniture?.[r.id] !== undefined &&
+            r.bonus.kind === "dmg" &&
+            r.bonus.skill === style
+              ? Math.min(0.5, (p.house?.[r.id] || 0) * 0.01 * (r.rate ?? 1))
+              : 0),
+          1,
+        );
+        const divisor =
+          style === "magic"
+            ? 4.5
+            : weapon?.twoHanded
+              ? 6
+              : style === "ranged" && weapon?.speed === 5
+                ? 5
+                : 8;
+        const hit = 1 + Math.floor((model.level(p.skills[style] || 0) + sums.strength) / divisor);
+        return (tick) => {
+          const mult =
+            (1 +
+              0.1 * model.brew(p, "warrior", tick) +
+              ((p.brews?.fed || 0) > tick ? facts.food.damage : 0)) *
+            roomDamage *
+            model.master(p, "maxhit");
+          return {
+            style,
+            accuracy: Math.round(
+              (10 +
+                model.level(p.skills[style] || 0) +
+                sums.accuracy +
+                Math.round(10 * model.brew(p, "warrior", tick))) *
+                model.master(p, "accuracy"),
+            ),
+            defence: 10 + model.level(p.skills.defence || 0) + sums.defence,
+            maxHit: mult > 1 ? Math.ceil(hit * mult) : hit,
+            maxHp: Math.floor(model.level(p.skills.hitpoints || 0) * model.master(p, "hp")),
+            speed: p.equipment?.weapon == null ? 5 : weapon?.speed || 4,
+            attackStep: Math.round(1000 * (1 + 0.2 * model.brew(p, "haste", tick))),
+          };
+        };
+      }
+      function stats(model, p, tick = p.lastTick) {
+        return buildStats(model, p)(tick);
+      }
+      function killXp(model, p, monster, tick, windows, style = stats(model, p, tick).style) {
+        const base =
+            model.xpMultiplier(p, { skill: "combat", inputs: [{}] }, tick, windows) +
+            model.home(p, "combatXp"),
+          third = Math.max(1, Math.floor(monster.xp / 3));
+        return {
+          [style]: Math.round(monster.xp * (base + model.home(p, "skillXp", style))),
+          defence: Math.round(third * (base + model.home(p, "skillXp", "defence"))),
+          hitpoints: Math.round(third * base),
+        };
+      }
+      // Independently implemented from the audited public client 1.0.2443.
+      // Same combat/route transitions; expected loot is valued separately from
+      // sampled inventory drops, so a lucky rare drop cannot dominate the ranking.
+      function mix(x) {
+        x = (x ^ (x >>> 16)) >>> 0;
+        x = Math.imul(x, 2246822507) >>> 0;
+        x = (x ^ (x >>> 13)) >>> 0;
+        x = Math.imul(x, 3266489909) >>> 0;
+        return (x ^ (x >>> 16)) >>> 0;
+      }
+      // Native 1.0.2612 G$/t$: five-by-five room plots, six tiles apart,
+      // with a one-tile doorway. Only a local collision copy is changed.
+      function homeRouteModel(model, p) {
+        const world = model.data.world,
+          region = world.regions.find((r) => r.name === "Home");
+        if (!region || !Array.isArray(p.houseCells))
+          throw new Error("缺少家园布局数据，暂无法模拟出门路线");
+        const cells = new Set(p.houseCells),
+          collision = [...world.collision],
+          has = (x, y) => x >= 0 && y >= 0 && x < 5 && y < 5 && cells.has(y * 5 + x);
+        for (let y = region.y; y < region.y + region.height; y++)
+          for (let x = region.x; x < region.x + region.width; x++) {
+            const dx = x - region.x - 1,
+              dy = y - region.y - 1,
+              vertical = dx % 6 === 0,
+              horizontal = dy % 6 === 0;
+            let floor = false;
+            if (dx >= 0 && dy >= 0 && dx <= 30 && dy <= 30) {
+              if (!vertical && !horizontal) floor = has(Math.floor(dx / 6), Math.floor(dy / 6));
+              else if (vertical && !horizontal)
+                floor =
+                  has(dx / 6 - 1, Math.floor(dy / 6)) &&
+                  has(dx / 6, Math.floor(dy / 6)) &&
+                  dy % 6 === 3;
+              else if (horizontal && !vertical)
+                floor =
+                  has(Math.floor(dx / 6), dy / 6 - 1) &&
+                  has(Math.floor(dx / 6), dy / 6) &&
+                  dx % 6 === 3;
+            }
+            const i = y * world.width + x;
+            collision[i] = floor && world.collision[i] !== 1 ? 0 : 1;
+          }
+        return core.create({ ...model.data, world: { ...world, collision } });
+      }
+      function runRoute(model, options) {
+        const p = JSON.parse(JSON.stringify(options.player)),
+          facts = model.data;
+        const zone = facts.world.zones.find(
+          (z) =>
+            z.id ===
+            (options.zoneId ??
+              facts.world.zones.find((z) => z.monsterId === options.monsterId)?.id),
+        );
+        const monster = zone && facts.combat.monsters.find((m) => m.id === zone.monsterId);
+        if (!monster) throw new Error("Unknown monster");
+        if (!Number.isInteger(p.x) || !Number.isInteger(p.y) || !Number.isFinite(p.hp))
+          throw new Error("等待角色血量与位置数据");
+        const atHome = () =>
+          facts.world.regions.some(
+            (r) =>
+              r.name === "Home" &&
+              p.x >= r.x &&
+              p.y >= r.y &&
+              p.x < r.x + r.width &&
+              p.y < r.y + r.height,
+          );
+        const homeModel = atHome() ? homeRouteModel(model, p) : null;
+        const start = p.lastTick,
+          ticks = Math.max(
+            1,
+            Math.min(options.progression ? 144000 : 6000, Math.floor(options.ticks || 6000)),
+          ),
+          seed = options.seed ?? 1337;
+        p.pack ||= [];
+        p.bank ||= {};
+        p.overflow ||= {};
+        p.brews ||= {};
+        p.skills ||= {};
+        p.perks ||= {};
+        p.equipment ||= {};
+        p.foodMaxTier ??= 0;
+        p.foodPerTrip ??= 20;
+        p.eatAt ??= 0.5;
         const r = {
-          attempts: 0,
-          successes: 0,
-          burnt: 0,
-          caught: 0,
-          ticks: 0,
+          ticks,
+          outputs: {},
+          inputs: {},
+          bySkill: {},
+          food: {},
+          kills: 0,
+          attacks: 0,
+          deaths: 0,
           workTicks: 0,
           walkTicks: 0,
           bankTicks: 0,
-          stunTicks: 0,
-          inputs: {},
-          outputs: {},
-          xp: 0,
+          drinkTicks: 0,
+          idleTicks: 0,
+          stoppedTicks: 0,
           trips: 0,
+          stop: null,
         };
-        const seedId = identity(j.inputs[0].itemId, rarity);
-        let seedStock = options.finiteStock ? (p.bank[seedId] || 0) + held(p, seedId) : 0;
-        function advance(ticks) {
-          const n = Math.min(ticks, end - p.lastTick);
-          p.lastTick += n;
-          r.workTicks += n;
-          return n === ticks;
-        }
-        while (p.lastTick < end && (mode === "hour" || p.skills.farming < target)) {
-          if (r.attempts >= (options.maxAttempts || 150000)) throw new Error("种植目标过大");
-          const seed = identity(j.inputs[0].itemId, rarity),
-            cost = j.inputs[0].qty;
-          if (seedStock < cost) {
-            if (options.finiteStock) {
-              r.stop = "materials";
-              break;
-            }
-            add(r.inputs, seed, cost - seedStock);
-            seedStock = cost;
+        const add = (out, id, n) => {
+          if (n) out[id] = (out[id] || 0) + n;
+        };
+        let getStats = buildStats(model, p),
+          phase = "toWork",
+          activity = "idle",
+          route = null,
+          pathIndex = 0,
+          stride = 0,
+          strideSpeed = 1000,
+          attackClock = 0,
+          foeClock = 0,
+          foeHp = 0,
+          drinkClock = 0,
+          killRoll = p.rollIndex?.kill || 0;
+        const cap = () => facts.constants.packSlots + (p.perks.pockets || 0);
+        const eligible = (id) =>
+          (model.item(id)?.heals || 0) > 0 &&
+          (model.tier(id) <= p.foodMaxTier || id === p.foodItemId);
+        const packFood = () =>
+          p.foodItemId > 0 && p.pack.some((s) => s.itemId === p.foodItemId && s.qty > 0)
+            ? p.foodItemId
+            : (p.pack.find((s) => s.qty > 0 && eligible(s.itemId))?.itemId ?? null);
+        const bankFoods = () => {
+          const ids = Object.keys(p.bank)
+            .map(Number)
+            .filter((id) => p.bank[id] > 0 && eligible(id))
+            .sort(
+              (a, b) =>
+                (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
+                a - b,
+            );
+          if (p.foodItemId > 0 && p.bank[p.foodItemId] > 0) {
+            const i = ids.indexOf(p.foodItemId);
+            if (i >= 0) ids.splice(i, 1);
+            ids.unshift(p.foodItemId);
           }
-          if (options.finiteStock) add(r.inputs, seed, cost);
-          seedStock -= cost;
-          const planted = p.lastTick;
-          if (!advance(1)) break;
-          const grow = Math.round(j.grow / (1 + home(p, "gatherSpeed", "farming"))),
-            maxWater = Math.floor(j.grow / 40),
-            trimEach = Math.round(20 * (1 + bonus(p.equipment?.hoe)));
-          let trim = 0,
-            watered = 0;
-          while (p.lastTick < planted + grow - Math.min(trim, Math.floor(grow / 2))) {
-            const mature = planted + grow - Math.min(trim, Math.floor(grow / 2)),
-              next = (Math.floor(p.lastTick / 100) + 1) * 100;
-            if (watered < maxWater && next < mature) {
-              if (!advance(next - p.lastTick)) break;
-              watered++;
-              trim += trimEach;
-              const gain = Math.max(
-                1,
-                Math.round(j.xp * 0.1 * xpMultiplier(p, j, p.lastTick, options.windows, true)),
-              );
-              p.skills.farming += gain;
-              r.xp += gain;
-              if (mode !== "hour" && p.skills.farming >= target) break;
+          return ids;
+        };
+        const bankFood = () => bankFoods()[0] ?? null;
+        const danger = () =>
+          p.hp <= 0
+            ? "dead"
+            : p.eatAt > 0 &&
+                (p.hp <= getStats(p.lastTick).maxHp * p.eatAt ||
+                  p.hp <= getStats(p.lastTick).maxHp / 3) &&
+                packFood() === null &&
+                bankFood() !== null
+              ? "restock"
+              : p.hp <= getStats(p.lastTick).maxHp / 3 && (p.eatAt <= 0 || packFood() === null)
+                ? "fountain"
+                : null;
+        const stop = (reason) => {
+          r.stop = reason;
+          activity = "stopped";
+        };
+        const inZone = () =>
+          p.x >= zone.x && p.y >= zone.y && p.x < zone.x + zone.width && p.y < zone.y + zone.height;
+        const near = (site) => Math.abs(p.x - site.x) <= 1 && Math.abs(p.y - site.y) <= 1;
+        function walk(point) {
+          if (!point) {
+            stop("unreachable");
+            return;
+          }
+          let routing = model;
+          if (atHome()) {
+            const out = facts.world.sites.find((s) => s.look === "portal-out"),
+              exit = out && homeModel.adjacent(out);
+            if (!exit) {
+              stop("unreachable");
+              return;
+            }
+            if (p.x !== exit.x || p.y !== exit.y) {
+              point = exit;
+              routing = homeModel;
             } else {
-              advance(mature - p.lastTick);
-              break;
+              const portal =
+                  facts.world.sites.find(
+                    (s) => s.look === "portal:" + (p.homeBank ?? facts.world.banks[0]?.id ?? 1),
+                  ) ||
+                  facts.world.sites.find(
+                    (s) => s.look === "portal:" + (facts.world.banks[0]?.id ?? 1),
+                  ),
+                arrival = portal && model.adjacent(portal);
+              if (!arrival) {
+                stop("unreachable");
+                return;
+              }
+              Object.assign(p, arrival);
             }
           }
-          if (p.lastTick >= end || (mode !== "hour" && p.skills.farming >= target)) break;
-          if (!advance(1)) break;
-          r.attempts++;
-          r.successes++;
-          const lev = level(p.skills.farming),
-            count =
-              3 +
-              Math.floor(random() * 3) +
-              Math.floor(lev / 100) +
-              (random() < (lev / 100) % 1 ? 1 : 0);
-          add(r.outputs, identity(j.output.itemId, rarity), count);
-          const gain = xp(p, j, p.lastTick, options.windows, rarity);
-          p.skills.farming += gain;
-          r.xp += gain;
-          if (options.onCollected) options.onCollected(p, identity(j.output.itemId, rarity), count);
-          for (let k = 0; k < cost; k++) {
-            const rt = draw(rarityProbabilities(p, j, p.lastTick, options.windows, true), random);
-            const id = identity(j.inputs[0].itemId, rt);
-            if (rt === rarity) {
-              seedStock++;
-              if (options.finiteStock) add(r.outputs, id, 1);
-            } else add(r.outputs, id, 1);
+          route = routing.path(p.x, p.y, point.x, point.y, true);
+          pathIndex = 0;
+          if (!route) {
+            stop("unreachable");
+            return;
           }
+          if (!route.length) {
+            activity = "idle";
+            return;
+          }
+          stride = 0;
+          strideSpeed = Math.round(
+            (1000 + Math.round((model.tool(p.equipment.mount)?.bonus || 0) * 1000)) *
+              (1 + 0.2 * model.brew(p, "swift", p.lastTick)) *
+              model.master(p, "move"),
+          );
+          activity = "walking";
+        }
+        function healing(id) {
+          return Math.floor(
+            model.item(id).heals *
+              (1 + 0.025 * (p.perks.meals || 0) + 0.25 * model.brew(p, "nourish", p.lastTick)),
+          );
+        }
+        function consume(id, fromBank = false) {
+          if (fromBank) {
+            if (--p.bank[id] <= 0) delete p.bank[id];
+          } else {
+            const at = p.pack.findIndex((x) => x.itemId === id);
+            if (--p.pack[at].qty <= 0) p.pack.splice(at, 1);
+          }
+          p.hp = Math.min(getStats(p.lastTick).maxHp, p.hp + healing(id));
+          add(r.food, id, 1);
+          add(r.inputs, id, 1);
+          const food = facts.food.variants.find((x) => x.id === id);
+          for (const key of ["fed", "rooted"])
+            if (food?.[key + "Ticks"])
+              p.brews[key] = Math.max(p.lastTick, p.brews[key] || 0) + food[key + "Ticks"];
+          return true;
+        }
+        function eat() {
+          const s = getStats(p.lastTick);
+          if (p.eatAt <= 0 || p.hp <= 0 || p.hp > s.maxHp * p.eatAt) return false;
+          const id = packFood();
+          if (id === null) return false;
+          return consume(id);
+        }
+        function put(id, qty) {
+          if (options.onCollected) options.onCollected(p, id, qty);
+          if (model.item(id)?.stackable) {
+            const s = p.pack.find((x) => x.itemId === id);
+            if (s) {
+              s.qty += qty;
+              return;
+            }
+            if (p.pack.length < cap()) {
+              p.pack.push({ itemId: id, qty });
+              return;
+            }
+          } else if (p.pack.length + qty <= cap()) {
+            for (let i = 0; i < qty; i++) p.pack.push({ itemId: id, qty: 1 });
+            return;
+          }
+          add(p.bank, id, qty); // Native combat loot falls straight into the bank if it does not fit.
+        }
+        function bank() {
+          const slots =
+            75 +
+            (p.bankSlotsBought || 0) +
+            facts.rooms
+              .filter((x) => x.bonus.kind === "bankSlots")
+              .reduce((n, x) => n + Math.floor((p.house?.[x.id] || 0) / 2), 0);
+          const petIds = new Set(facts.constants.petIds || []);
+          const bankCount = () =>
+            Object.entries(p.bank).filter(
+              ([id, n]) =>
+                n > 0 && !(facts.constants.petsNoBankSlots && petIds.has(Number(id) % 10000)),
+            ).length;
+          const fits = (id) =>
+            (facts.constants.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
+            p.unlimitedBank ||
+            (p.brews.blessing || 0) > p.lastTick ||
+            p.bank[id] > 0 ||
+            bankCount() < slots;
+          for (const [id, n] of Object.entries(p.overflow))
+            if (n > 0 && fits(id)) {
+              add(p.bank, id, n);
+              delete p.overflow[id];
+            }
+          p.pack = p.pack.filter((s) => {
+            if (fits(s.itemId)) {
+              add(p.bank, s.itemId, s.qty);
+              return false;
+            }
+            if (
+              p.overflow[s.itemId] > 0 ||
+              Object.values(p.overflow).filter((n) => n > 0).length < 10
+            ) {
+              add(p.overflow, s.itemId, s.qty);
+              return false;
+            }
+            return true;
+          });
+          if (p.pack.length) {
+            stop("storageFull");
+            return;
+          }
+          if (facts.combat.balance?.bankPreheal && p.eatAt > 0)
+            for (let i = 0; i < facts.combat.balance.bankPrehealLimit; i++) {
+              const id = bankFood();
+              if (id === null || p.hp + healing(id) > getStats(p.lastTick).maxHp) break;
+              consume(id, true);
+            }
+          const target =
+            p.foodPerTrip === -1
+              ? cap()
+              : p.foodPerTrip === -2
+                ? Math.max(1, cap() - 1)
+                : Math.max(0, p.foodPerTrip);
+          let taken = 0;
+          for (const id of bankFoods()) {
+            const n = Math.max(0, Math.min(target - taken, p.bank[id], cap() - p.pack.length));
+            if (!n) continue;
+            p.bank[id] -= n;
+            if (!p.bank[id]) delete p.bank[id];
+            for (let i = 0; i < n; i++) p.pack.push({ itemId: id, qty: 1 });
+            taken += n;
+            if (taken >= target) break;
+          }
+          // 1.0.2331 eats before leaving the bank, up to 64 attempts.
+          for (let i = 0; i < 64; i++) {
+            const old = p.hp;
+            eat();
+            if (p.hp === old) break;
+          }
+          r.trips++;
+          activity = "idle";
+        }
+        const roll = (salt, tick) => mix(core.hash(seed ^ salt, p.id, tick)) / 4294967296;
+        const secret = (salt, index) =>
+          mix(core.hash(mix(core.hash(seed, salt, 625341585)), p.id, index));
+        function killed() {
+          r.kills++;
+          killRoll++;
+          if (options.recordCoins) {
+            const range = monster.gold[1] - monster.gold[0] + 1;
+            p.coins =
+              (p.coins || 0) +
+              Math.floor(
+                (monster.gold[0] + (secret(1280266068, killRoll) % range)) *
+                  (1 + facts.combat.abyssalCoins * model.brew(p, "abyssal", p.lastTick)),
+              );
+          }
+          for (const [id, n] of Object.entries(
+            combat.loot(model, p, monster, p.lastTick, options.windows || []),
+          ))
+            add(r.outputs, id, n);
+          const probs = model.rarityProbabilities(
+              p,
+              { skill: "combat", inputs: [] },
+              p.lastTick,
+              options.windows || [],
+            ),
+            u = secret(1146244944, killRoll) / 4294967296;
+          if (secret(1212761157, killRoll) / 4294967296 < (monster.dropChance ?? 1)) {
+            let tier = 0,
+              total = 0;
+            for (let i = 4; i >= 1; i--) {
+              total += probs[i];
+              if (u < total) {
+                tier = i;
+                break;
+              }
+            }
+            put(monster.drop + tier * 1000, 1);
+          }
+          const loot = combat.loot(model, p, monster, p.lastTick, options.windows || []);
+          if (
+            monster.bonus &&
+            secret(1380012613, killRoll) / 4294967296 < (loot[monster.bonus.itemId] || 0)
+          )
+            put(monster.bonus.itemId, 1);
+          if (
+            secret(1448036676, killRoll) / 4294967296 <
+            Math.min(0.2, 0.08 + monster.level * 0.0013)
+          )
+            put(facts.combat.shardId, 1 + Math.floor(monster.level / 30));
+          if (secret(1346720801, killRoll) / 4294967296 < facts.combat.petChance)
+            put(facts.combat.pets[monster.id], 1);
+          foeHp = 0;
+          foeClock = 0;
+        }
+        function fight() {
+          if (foeHp <= 0) {
+            foeHp = monster.hp;
+            foeClock = 0;
+            attackClock = 0;
+          }
+          const s = getStats(p.lastTick);
+          let acted = false;
+          attackClock += s.attackStep;
+          if (attackClock >= s.speed * 1000) {
+            attackClock -= s.speed * 1000;
+            acted = true;
+            r.attacks++;
+            for (const [id, n] of Object.entries(combat.mountLoot(model, p, s.speed)))
+              add(r.outputs, id, n);
+            if (
+              roll(1398230599, p.lastTick) <
+              s.accuracy /
+                (s.accuracy +
+                  10 +
+                  monster.defence *
+                    (facts.combat.balance?.defence?.[
+                      s.style === "magic"
+                        ? "magic"
+                        : s.speed === 5 && s.style === "ranged"
+                          ? "longbow"
+                          : model.data.gear.find(
+                                (g) => g.itemId === (p.equipment.weapon || 0) % 10000,
+                              )?.twoHanded
+                            ? "twoHanded"
+                            : "other"
+                    ] ?? (s.style === "magic" ? 0.5 : 1)))
+            ) {
+              const damageFactor = facts.combat.balance
+                ? monster.fears === s.style
+                  ? facts.combat.balance.weakness
+                  : monster.strongAgainst === s.style
+                    ? facts.combat.balance.resistance
+                    : 1
+                : 1;
+              const maxHit =
+                damageFactor === 1 ? s.maxHit : Math.max(1, Math.round(s.maxHit * damageFactor));
+              const old = foeHp;
+              foeHp = Math.max(0, foeHp - 1 - Math.floor(roll(1145915201, p.lastTick) * maxHit));
+              let leveled = false;
+              for (const [skill, total] of Object.entries(
+                killXp(model, p, monster, p.lastTick, options.windows || [], s.style),
+              )) {
+                const xp =
+                    Math.round((total * (monster.hp - foeHp)) / monster.hp) -
+                    Math.round((total * (monster.hp - old)) / monster.hp),
+                  before = model.level(p.skills[skill] || 0);
+                p.skills[skill] = (p.skills[skill] || 0) + xp;
+                add(r.bySkill, skill, xp);
+                if (model.level(p.skills[skill]) > before) leveled = true;
+              }
+              if (leveled) getStats = buildStats(model, p);
+              if (foeHp === 0) {
+                killed();
+                return;
+              }
+            }
+          }
+          if (++foeClock >= monster.speed) {
+            foeClock = 0;
+            acted = true;
+            if (
+              roll(1179600211, p.lastTick) <
+              (10 + monster.attack) / (10 + monster.attack + getStats(p.lastTick).defence)
+            ) {
+              const raw = 1 + Math.floor(roll(1179600196, p.lastTick) * monster.maxHit);
+              p.hp = Math.max(
+                0,
+                p.hp -
+                  Math.max(
+                    1,
+                    Math.floor(
+                      raw * ((p.brews.rooted || 0) > p.lastTick ? 1 - facts.food.reduction : 1),
+                    ),
+                  ),
+              );
+            }
+          }
+          if (acted) eat();
+        }
+        if (p.eatAt > 0 && packFood() === null && bankFood() !== null) phase = "toBank";
+        for (let step = 1; step <= ticks; step++) {
+          p.lastTick = start + step;
+          if (options.onAdvance?.(p, p.lastTick - 1, p.lastTick, r))
+            getStats = buildStats(model, p);
+          if (p.lastTick % 100 === 0 && p.hp > 0 && activity !== "working")
+            p.hp = Math.min(getStats(p.lastTick).maxHp, p.hp + 1);
+          if (activity === "stopped") r.stoppedTicks++;
+          else if (activity === "walking") {
+            r.walkTicks++;
+            stride += strideSpeed;
+            while (stride >= 1000 && pathIndex < route.length) {
+              stride -= 1000;
+              Object.assign(p, route[pathIndex++]);
+            }
+            if (pathIndex >= route.length) activity = "idle";
+          } else if (activity === "working") {
+            r.workTicks++;
+            fight();
+            if (danger() !== null) activity = "idle";
+          } else if (activity === "banking") {
+            r.bankTicks++;
+            bank();
+          } else if (activity === "drinking") {
+            r.drinkTicks++;
+            const max = getStats(p.lastTick).maxHp;
+            if (p.hp >= max || (p.eatAt > 0 && (packFood() !== null || bankFood() !== null))) {
+              drinkClock = 0;
+              activity = "idle";
+            } else if (++drinkClock >= 8 - (p.perks.rest || 0)) {
+              drinkClock = 0;
+              p.hp++;
+              if (p.hp >= max) activity = "idle";
+            }
+          } else {
+            r.idleTicks++;
+            if (phase === "toWork") {
+              if (inZone()) phase = "working";
+              else
+                walk({
+                  x: zone.x + 2 + (core.hash(p.id, zone.id, 1) % Math.max(1, zone.width - 4)),
+                  y: zone.y + 2 + (core.hash(p.id, zone.id, 2) % Math.max(1, zone.height - 4)),
+                });
+            } else if (phase === "working") {
+              const why = danger();
+              if (why === "dead") {
+                r.deaths++;
+                if (options.onLost)
+                  for (const item of p.pack) options.onLost(item.itemId, item.qty);
+                if (options.progression) p.pack = [];
+                stop("died");
+              } else if (why === "restock") phase = "toBank";
+              else if (why === "fountain") phase = "toFountain";
+              else if (!inZone()) phase = "toWork";
+              else activity = "working";
+            } else if (phase === "toBank") {
+              const distance = (b) => {
+                  const x = Math.abs(p.x - b.x),
+                    y = Math.abs(p.y - b.y);
+                  return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
+                },
+                b =
+                  model.nearestBank(p) ||
+                  (atHome()
+                    ? [...facts.world.banks].sort(
+                        (a, b) => distance(a) - distance(b) || a.id - b.id,
+                      )[0]
+                    : null);
+              if (!b) stop("unreachable");
+              else if (near(b)) {
+                phase = "banking";
+                activity = "banking";
+              } else walk(model.adjacent(b));
+            } else if (phase === "toFountain") {
+              const distance = (s) => {
+                const x = Math.abs(p.x - s.x),
+                  y = Math.abs(p.y - s.y);
+                return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
+              };
+              const f = facts.world.sites
+                .filter((s) => s.kind === "fountain")
+                .sort((a, b) => distance(a) - distance(b) || a.id - b.id)[0];
+              if (!f) stop("unreachable");
+              else if (near(f)) {
+                phase = "drinking";
+                activity = "drinking";
+                drinkClock = 0;
+                attackClock = 0;
+              } else walk(model.adjacent(f, p.id));
+            } else phase = "toWork";
+          }
+          if (options.onTickEnd) options.onTickEnd(p, r);
+          if (options.onTick)
+            options.onTick({
+              tick: p.lastTick,
+              x: p.x,
+              y: p.y,
+              hp: p.hp,
+              activity,
+              phase,
+              kills: r.kills,
+              food: { ...r.food },
+              skills: { ...p.skills },
+            });
+          if (options.stopWhen?.(p, r) || (options.stopOnStop && r.stop)) break;
         }
         r.ticks = p.lastTick - start;
-        if (options.finiteStock) {
-          p.pack = p.pack.filter((s) => s.itemId !== seedId);
-          p.bank[seedId] = seedStock;
-        }
+        const potion =
+          options.includePotions === false
+            ? {}
+            : combat.potionFlow(model, options.player, start, start + ticks);
+        for (const [id, n] of Object.entries(potion)) add(r.inputs, id, n);
+        r.xp = Object.values(r.bySkill).reduce((n, x) => n + x, 0);
+        r.potions = potion;
         if (options.returnPlayer) r.endPlayer = p;
         return r;
       }
-      const quantile = (values, q) => {
-        const xs = [...values].sort((a, b) => a - b);
-        return xs[Math.min(xs.length - 1, Math.ceil(q * xs.length) - 1)] || 0;
-      };
-      function summarize(runs) {
-        const result = {};
-        for (const k of [
-          "attempts",
-          "successes",
-          "burnt",
-          "caught",
-          "ticks",
-          "workTicks",
-          "walkTicks",
-          "bankTicks",
-          "stunTicks",
-          "xp",
-          "trips",
-        ])
-          result[k] = sum(runs.map((x) => x[k])) / runs.length;
-        for (const k of ["inputs", "outputs"]) {
-          result[k] = {};
-          for (const r of runs)
-            for (const [id, n] of Object.entries(r[k])) add(result[k], id, n / runs.length);
-        }
-        result.seconds = (result.ticks * c.tickMs) / 1000;
-        result.secondsP05 = quantile(
-          runs.map((r) => (r.ticks * c.tickMs) / 1000),
-          0.05,
-        );
-        result.secondsP95 = quantile(
-          runs.map((r) => (r.ticks * c.tickMs) / 1000),
-          0.95,
-        );
-        result.attemptsP95 = quantile(
-          runs.map((r) => r.attempts),
-          0.95,
-        );
-        result.materialsP95 = {};
-        for (const id of Object.keys(result.inputs))
-          result.materialsP95[id] = quantile(
-            runs.map((r) => r.inputs[id] || 0),
-            0.95,
-          );
-        return result;
-      }
-      function forecast(options) {
-        if (
-          !Number.isSafeInteger(options.player?.lastTick) ||
-          !Number.isFinite(options.player?.skills?.[jobs.get(Number(options.jobId))?.skill])
-        )
-          throw new Error("等待有效角色快照");
-        if (
-          jobs.get(Number(options.jobId)).grow === undefined &&
-          map.regions?.some(
-            (r) =>
-              r.name === "Home" &&
-              options.player.x >= r.x &&
-              options.player.y >= r.y &&
-              options.player.x < r.x + r.width &&
-              options.player.y < r.y + r.height,
-          )
-        )
-          throw new Error("动态家园路线尚未校准；请返回主地图后计算完整时间");
-        const current = level(options.player.skills[jobs.get(Number(options.jobId)).skill]);
-        if (
-          !Number.isInteger(options.targetLevel) ||
-          options.targetLevel < 1 ||
-          options.targetLevel >= data.xpTable.length
-        )
-          throw new Error(`目标等级须为 1–${data.xpTable.length - 1} 的整数`);
-        const count = clamp(options.samples || 32, 8, 128),
-          planRuns = [],
-          hourRuns = [];
-        for (let i = 0; i < count; i++) {
-          planRuns.push(run(options, rng(7919 * (i + 1)), "target"));
-          hourRuns.push(run(options, rng(104729 * (i + 1)), "hour"));
-        }
-        const plan = summarize(planRuns),
-          hour = summarize(hourRuns);
-        const materials = Object.entries(plan.inputs).map(([id, mean]) => {
-          id = Number(id);
-          const owned =
-            (options.player.bank?.[id] || 0) +
-            held({ ...options.player, pack: options.player.pack || [] }, id);
-          return {
-            id,
-            mean,
-            p95: plan.materialsP95[id],
-            owned,
-            shortage: Math.max(0, Math.ceil(mean) - owned),
-            shortageP95: Math.max(0, Math.ceil(plan.materialsP95[id]) - owned),
+      function forecast(model, options) {
+        const samples = Math.max(1, Math.min(32, Math.floor(options.samples || 16))),
+          hour = {
+            ticks: 6000,
+            outputs: {},
+            inputs: {},
+            xp: 0,
+            bySkill: {},
+            food: {},
+            potions: {},
           };
-        });
+        const time = { combat: 0, travel: 0, bank: 0, recovery: 0, transition: 0, stopped: 0 },
+          stops = {};
+        let kills = 0,
+          deaths = 0,
+          trips = 0,
+          minKills = Infinity,
+          maxKills = 0;
+        for (let sample = 0; sample < samples; sample++) {
+          const r = runRoute(model, {
+            ...options,
+            ticks: 6000,
+            onTick: undefined,
+            seed: options.seed ?? core.hash(1337, sample, 9047),
+          });
+          for (const key of ["outputs", "inputs", "bySkill", "food", "potions"])
+            for (const [id, n] of Object.entries(r[key]))
+              hour[key][id] = (hour[key][id] || 0) + n / samples;
+          for (const [key, field] of Object.entries({
+            combat: "workTicks",
+            travel: "walkTicks",
+            bank: "bankTicks",
+            recovery: "drinkTicks",
+            transition: "idleTicks",
+            stopped: "stoppedTicks",
+          }))
+            time[key] += r[field] / samples;
+          kills += r.kills / samples;
+          deaths += r.deaths / samples;
+          trips += r.trips / samples;
+          minKills = Math.min(minKills, r.kills);
+          maxKills = Math.max(maxKills, r.kills);
+          if (r.stop) stops[r.stop] = (stops[r.stop] || 0) + 1;
+        }
+        hour.xp = Object.values(hour.bySkill).reduce((a, b) => a + b, 0);
         return {
-          jobId: Number(options.jobId),
-          currentLevel: current,
-          targetLevel: options.targetLevel,
-          xpLeft: Math.max(
-            0,
-            data.xpTable[options.targetLevel] -
-              options.player.skills[jobs.get(Number(options.jobId)).skill],
-          ),
-          samples: count,
-          plan,
           hour,
-          materials,
-          farming: jobs.get(Number(options.jobId)).grow !== undefined,
-          build: data.version.version,
+          kills,
+          deaths,
+          samples,
+          trips,
+          time,
+          stops,
+          killRange: [minKills, maxKills],
+          monsterId: options.monsterId,
+          continuous: false,
+          clientVersion: factsVersion(model),
         };
       }
-      function forecastHour(options) {
-        const j = jobs.get(Number(options.jobId));
-        if (
-          !j ||
-          !Number.isSafeInteger(options.player?.lastTick) ||
-          !Number.isFinite(options.player.skills?.[j.skill])
-        )
-          throw new Error("等待有效角色快照");
-        if (
-          j.grow === undefined &&
-          map.regions?.some(
-            (r) =>
-              r.name === "Home" &&
-              options.player.x >= r.x &&
-              options.player.y >= r.y &&
-              options.player.x < r.x + r.width &&
-              options.player.y < r.y + r.height,
-          )
-        )
-          throw new Error("家园路线尚未校准");
-        const count = clamp(options.samples || 8, 8, 128),
-          runs = [];
-        for (let i = 0; i < count; i++) runs.push(run(options, rng(104729 * (i + 1)), "hour"));
-        return {
-          jobId: j.id,
-          hour: summarize(runs),
-          samples: count,
-          farming: j.grow !== undefined,
-        };
+      const factsVersion = (model) => model.data.version;
+      return { stats, killXp, homeRouteModel, runRoute, forecast };
+    });
+
+    let model;
+    self.onmessage = function (e) {
+      try {
+        if (e.data.kind === "init") {
+          model = self.DVIPlannerCore.create(e.data.data);
+          return;
+        }
+        const o = e.data.options;
+        const result =
+          e.data.kind === "food"
+            ? self.DVIBuffs.bestDaily(model, o.books, o.kind, o.now)
+            : self.DVIBattleForecast.forecast(model, o);
+        self.postMessage({ id: e.data.id, result });
+      } catch (error) {
+        self.postMessage({ id: e.data.id, error: error.message });
       }
-      return {
-        data,
-        jobs,
-        item,
-        level,
-        base,
-        tier,
-        inputs,
-        bestRarity,
-        tool,
-        brew,
-        brewTier,
-        master,
-        home,
-        rotation,
-        xpMultiplier,
-        xp,
-        rarityProbabilities,
-        chance,
-        failure,
-        path,
-        adjacent,
-        nearestBank,
-        nearestSite,
-        workSite,
-        farmingStatus,
-        forecast,
-        forecastHour,
-        run,
-        summarize,
-        rng,
-      };
-    }
-    function fillBook(levels, qty, side, taxBp = 0) {
-      let left = qty,
-        gross = 0;
-      const fills = [];
-      for (const l of [...levels]
-        .filter((l) => l.price > 0 && l.qty > 0)
-        .sort((a, b) => (side === "buy" ? a.price - b.price : b.price - a.price))) {
-        const n = Math.min(left, l.qty);
-        if (n <= 0) break;
-        left -= n;
-        gross += n * l.price;
-        fills.push({ price: l.price, qty: n });
-      }
-      return {
-        gross,
-        net: side === "sell" ? gross * (1 - taxBp / 10000) : gross,
-        filled: qty - left,
-        left,
-        fills,
-      };
-    }
-    function vendorPrice(id, books, pricing = {}) {
-      // Enhancements do not change buyback value; received server floors take precedence.
-      const plain = id % 10000,
-        price = books[id]?.floor ?? pricing.vendorPrices?.[plain];
-      return price > 0 ? price : null;
-    }
-    function valueFlows(flow, books, mode, taxBp, now = Date.now(), pricing = {}) {
-      const missing = [],
-        stale = [],
-        partial = [],
-        details = [],
-        estimated = [];
-      let total = 0,
-        unknownTax = false;
-      const put = (id, qty, price, source, extra = {}) => {
-        if (qty <= 1e-9) return;
-        const taxed = source === "market" && mode !== "buy";
-        if (taxed && taxBp == null) unknownTax = true;
-        const value = qty * price * (taxed ? 1 - (taxBp ?? 0) / 10000 : 1);
-        total += value;
-        details.push({ id, qty, value, price, source, ...extra });
-      };
-      for (const [key, qty] of Object.entries(flow)) {
-        const id = Number(key);
-        if (!(qty > 0)) continue;
-        if (id === 200) {
-          put(id, qty, 1, "coins");
-          continue;
-        }
-        const b = books[id] || {},
-          sell = mode !== "buy",
-          vendor = sell ? vendorPrice(id, books, pricing) : pricing.vendorBuys?.[id],
-          factor = sell ? 1 - (taxBp ?? 0) / 10000 : 1;
-        const quote =
-          mode === "buy" ? b.ask : mode === "sell" ? b.bid : mode === "list" ? b.ask : null;
-        const side = mode === "sell" ? "bid" : "ask",
-          quoteAt = b[side + "At"] ?? b.at,
-          depthAt = b[side + "DepthAt"] ?? b.depthAt;
-        if (mode !== "vendor" && quote > 0 && now - (quoteAt || 0) > 300000) stale.push(id);
-        const levels = mode === "buy" ? b.asks : mode === "sell" ? b.bids : null;
-        let left = qty;
-        if (mode !== "vendor" && Array.isArray(levels)) {
-          const old = now - (depthAt || 0) > 300000;
-          const useful = levels.filter(
-            (x) => !(vendor > 0) || (sell ? x.price * factor > vendor : x.price < vendor),
-          );
-          const fill = fillBook(useful, qty, mode, taxBp ?? 0);
-          for (const f of fill.fills)
-            put(id, f.qty, f.price, "market", { depth: !old, estimated: old, quoteAt: depthAt });
-          if (old && fill.filled > 0) estimated.push(id);
-          left = fill.left;
-        } else if (
-          mode !== "vendor" &&
-          quote > 0 &&
-          (!(vendor > 0) || (sell ? quote * factor > vendor : quote < vendor))
-        ) {
-          const old = now - (quoteAt || 0) > 300000,
-            available =
-              mode === "list"
-                ? qty
-                : Number.isFinite(b[side + "Qty"])
-                  ? Math.max(0, b[side + "Qty"])
-                  : qty,
-            filled = Math.min(qty, available);
-          put(id, filled, quote, "market", { depth: false, estimated: old, quoteAt });
-          if (old && filled > 0) estimated.push(id);
-          left = qty - filled;
-        }
-        if (left > 1e-9 && vendor > 0) {
-          put(id, left, vendor, "vendor");
-          left = 0;
-        }
-        // Restored asks are short-lived cost estimates, never executable orders.
-        // Prefer more recent trade history when it supersedes the cached ask.
-        const history =
-          mode === "buy" &&
-          b.history?.price > 0 &&
-          Number.isFinite(b.history.tradeAt) &&
-          b.history.tradeAt <= now &&
-          now - b.history.tradeAt <= 7 * 86400000
-            ? b.history
-            : null;
-        const cached =
-          mode === "buy" &&
-          Number.isFinite(b.purchaseCache?.price) &&
-          b.purchaseCache.price > 0 &&
-          Number.isFinite(b.purchaseCache.at) &&
-          b.purchaseCache.at <= now &&
-          now - b.purchaseCache.at <= 86400000
-            ? b.purchaseCache
-            : null;
-        if (left > 1e-9 && (cached || history)) {
-          if (cached && (!history || cached.at > history.tradeAt))
-            put(id, left, cached.price, "cached", { estimated: true, cachedAt: cached.at });
-          else
-            put(id, left, history.price, "history", { estimated: true, tradeAt: history.tradeAt });
-          estimated.push(id);
-          left = 0;
-        }
-        // Known nontradable outputs have no cash resale value, rather than an unknown price.
-        if (
-          left > 1e-9 &&
-          sell &&
-          Object.hasOwn(pricing.vendorPrices || {}, id % 10000) &&
-          pricing.vendorPrices[id % 10000] === null
-        ) {
-          put(id, left, 0, "nontradable");
-          left = 0;
-        }
-        if (left > 1e-9) {
-          if (left < qty) partial.push({ id, unfilled: left, filled: qty - left });
-          else missing.push(id);
-          details.push({ id, qty: left, value: null, source: "missing" });
-        }
-      }
-      return {
-        total: missing.length || partial.length || unknownTax ? null : total,
-        pricedSubtotal: total,
-        missing,
-        stale,
-        partial,
-        details,
-        estimated,
-        unknownTax,
-        vendorSubtotal: sum(details.filter((x) => x.source === "vendor").map((x) => x.value)),
-        coinSubtotal: sum(details.filter((x) => x.source === "coins").map((x) => x.value)),
-      };
-    }
-    function profits(hour, books, taxBp, now, pricing = {}) {
-      const cost = valueFlows(hour.inputs, books, "buy", taxBp, now, pricing),
-        immediate = valueFlows(hour.outputs, books, "sell", taxBp, now, pricing),
-        listing = valueFlows(hour.outputs, books, "list", taxBp, now, pricing),
-        vendor = valueFlows(hour.outputs, books, "vendor", taxBp, now, pricing);
-      const net = (revenue) =>
-        revenue.total !== null && cost.total !== null ? revenue.total - cost.total : null;
-      return {
-        cost,
-        immediate,
-        listing,
-        vendor,
-        immediateProfit: net(immediate),
-        listingProfit: net(listing),
-        vendorProfit: net(vendor),
-        immediateKnownNet: immediate.pricedSubtotal - cost.pricedSubtotal,
-        listingKnownNet: listing.pricedSubtotal - cost.pricedSubtotal,
-        vendorKnownNet: vendor.pricedSubtotal - cost.pricedSubtotal,
-      };
-    }
-    function dailyProfits(hour, books, taxBp, now, pricing) {
-      const daily = { inputs: {}, outputs: {} };
-      for (const kind of ["inputs", "outputs"])
-        for (const [id, n] of Object.entries(hour[kind] || {})) daily[kind][id] = n * 24;
-      // Quote depth is consumed once across the whole projected day.
-      return profits(daily, books, taxBp, now, pricing);
-    }
-    function formatNumber(n, d = 0) {
-      if (!Number.isFinite(n)) return "—";
-      const units = ["", "K", "M", "B"];
-      let i = Math.min(3, Math.max(0, Math.floor(Math.log10(Math.max(1, Math.abs(n))) / 3)));
-      let scaled = n / 1000 ** i;
-      if (i && Math.abs(Number(scaled.toFixed(2))) >= 1000 && i < 3) {
-        i++;
-        scaled = n / 1000 ** i;
-      }
-      const text = scaled.toLocaleString("en-US", { maximumFractionDigits: i ? 2 : d });
-      return (text === "-0" ? "0" : text) + units[i];
-    }
-    return {
-      create,
-      hash,
-      rng,
-      fillBook,
-      vendorPrice,
-      valueFlows,
-      profits,
-      dailyProfits,
-      formatNumber,
     };
-  });
+  }
+  const INSIGHT_WORKER_SOURCE =
+    "(" + installPlannerCore.toString() + ")();(" + runInsightWorker.toString() + ")();";
+  // ---- End local forecast worker ----
+
+  // ---- src/core.js ----
+  installPlannerCore();
 
   // ---- src/inventory.js ----
   /* Local liquidation estimates; no market requests or inventory writes. */
@@ -1430,7 +2650,12 @@ SOFTWARE.
       if (!ironman && Number.isFinite(taxBp)) {
         const quoteAt = book.bidAt ?? book.at,
           depthAt = book.bidDepthAt ?? book.depthAt;
-        if (Number.isFinite(quoteAt) && quoteAt <= now && now - quoteAt <= 300000)
+        if (
+          !book.bidPublic &&
+          Number.isFinite(quoteAt) &&
+          quoteAt <= now &&
+          now - quoteAt <= 300000
+        )
           Object.assign(received, { bid: book.bid, bidQty: book.bidQty, at: quoteAt });
         if (
           Array.isArray(book.bids) &&
@@ -1543,6 +2768,7 @@ SOFTWARE.
         receivedAt: null,
         revision: 0,
         quoteRevision: 0,
+        sessionRevision: 0,
         offline: null,
         seen: null,
         marketAway: [],
@@ -1566,7 +2792,15 @@ SOFTWARE.
           : null;
       }
       const listeners = new Set(),
-        batchListeners = new Set();
+        batchListeners = new Set(),
+        combatListeners = new Set();
+      const combatEvent = (event) => {
+        for (const listener of combatListeners) {
+          try {
+            listener(event);
+          } catch {}
+        }
+      };
       const histories = {};
       for (const [id, h] of Object.entries(
         cache && typeof cache === "object" && !Array.isArray(cache) ? cache : {},
@@ -1673,8 +2907,12 @@ SOFTWARE.
               delete old[quote + "More"];
             }
           }
-          if (copy[quote] !== undefined || copy[quote + "Qty"] !== undefined)
+          if (copy[quote] !== undefined || copy[quote + "Qty"] !== undefined) {
+            if (old[quote + "Public"] && copy[quote + "Qty"] === undefined)
+              delete old[quote + "Qty"];
             copy[quote + "At"] = now();
+            delete old[quote + "Public"];
+          }
         }
         // A restored cost estimate is not an order. Any explicit fresh ask replaces
         // it, including an empty market; known finite depth stays finite.
@@ -1718,7 +2956,10 @@ SOFTWARE.
           switch (m.t) {
             case "welcome":
               if (!validPlayer(m.you)) break;
+              state.sessionRevision++;
               state.player = m.you;
+              state.boss = null;
+              state.combatHp = null;
               state.orders = Array.isArray(m.orders) ? m.orders : [];
               state.books = {};
               restoreHistory();
@@ -1750,6 +2991,7 @@ SOFTWARE.
               state.lastDropTick = null;
               state.guild = guildView(m.guild);
               state.guildRevision++;
+              combatEvent({ kind: "reset", tick: frame.tick });
               changed = true;
               break;
             case "guild":
@@ -1757,8 +2999,46 @@ SOFTWARE.
               state.guildRevision++;
               changed = true;
               break;
+            case "bossRose":
+              if (typeof m.name === "string" && Number.isSafeInteger(m.until)) {
+                state.boss = { name: m.name, x: m.x, y: m.y, until: m.until };
+                combatEvent({ kind: "bossGone", tick: frame.tick });
+                changed = true;
+              }
+              break;
+            case "bossGone":
+              state.boss = null;
+              combatEvent({ kind: "bossGone", tick: frame.tick });
+              changed = true;
+              break;
+            case "raidHit":
+              if (Number.isFinite(m.damage) && m.damage >= 0) {
+                combatEvent({ kind: "raidHit", damage: m.damage, tick: frame.tick });
+                changed = true;
+              }
+              break;
+            case "bossStruck":
+              if (state.player && Number.isFinite(m.hp) && m.hp >= 0) {
+                state.combatHp = { hp: m.hp, tick: frame.tick };
+                combatEvent({
+                  kind: "bossStruck",
+                  damage: m.damage,
+                  tick: frame.tick,
+                  died: m.died === true,
+                });
+                changed = true;
+              }
+              break;
             case "batch":
               if (Array.isArray(m.e)) {
+                for (const e of m.e)
+                  if (
+                    e?.kind === "hit" &&
+                    e.by === "monster" &&
+                    Number.isFinite(e.damage) &&
+                    e.damage >= 0
+                  )
+                    combatEvent({ kind: "hit", by: e.by, damage: e.damage, tick: frame.tick });
                 if (m.e.some((e) => e?.kind === "dropped")) state.lastDropTick = frame.tick;
                 const events = m.e
                   .filter(
@@ -1858,6 +3138,8 @@ SOFTWARE.
                 changed = true;
                 recordPurchase(m.itemId, ask);
                 delete state.books[m.itemId].purchaseCache;
+                delete state.books[m.itemId].bidPublic;
+                delete state.books[m.itemId].askPublic;
                 recordHistory(m.itemId, m.trades, frame.tick, "trades");
               }
               break;
@@ -1909,13 +3191,15 @@ SOFTWARE.
                 delete b.purchaseCache;
                 delete b.bids;
                 delete b.asks;
+                delete b.bidPublic;
+                delete b.askPublic;
                 b.bid = null;
                 b.ask = null;
                 delete b.bidQty;
                 delete b.askQty;
-                b.bidAt = 0;
-                b.askAt = 0;
-                b.at = 0;
+                b.bidAt = now();
+                b.askAt = now();
+                b.at = now();
                 changed = true;
               }
               break;
@@ -1949,6 +3233,16 @@ SOFTWARE.
       return {
         state,
         receive,
+        refreshBooks(books) {
+          state.books = books;
+          state.quoteRevision++;
+          state.revision++;
+          for (const listener of listeners) {
+            try {
+              listener(state);
+            } catch {}
+          }
+        },
         exportPurchases() {
           return Object.fromEntries(
             Object.entries(purchases)
@@ -1974,6 +3268,10 @@ SOFTWARE.
         subscribeBatches(fn) {
           batchListeners.add(fn);
           return () => batchListeners.delete(fn);
+        },
+        subscribeCombat(fn) {
+          combatListeners.add(fn);
+          return () => combatListeners.delete(fn);
         },
       };
     }
@@ -2332,14 +3630,7 @@ SOFTWARE.
           foodQty: owned[foodId] || 0,
           foods,
           foodSeconds: foodRate > 0 ? ((owned[foodId] || 0) / foodRate) * 3600 : null,
-          potions: kinds
-            .filter((kind) => (p.brews?.[kind] || 0) > p.lastTick)
-            .map((kind) => ({
-              kind,
-              tier: model.brewTier(p, kind, p.lastTick),
-              seconds: (p.brews[kind] - p.lastTick) * 0.6,
-              currentTierSeconds: currentTierTicks(model, p, kind) * 0.6,
-            })),
+          potions: activePotions(model, p),
         };
       }
       return { sample, report, reset };
@@ -2354,6 +3645,19 @@ SOFTWARE.
         p.brews[kind] - p.lastTick,
         p.brews[kind] - buckets.reduce((a, b) => a + b, 0) + sum - p.lastTick,
       );
+    }
+    function activePotions(model, p) {
+      return [...new Set(model.data.potions.map((x) => x.kind))]
+        .filter((kind) => (p.brews?.[kind] || 0) > p.lastTick)
+        .map((kind) => ({
+          kind,
+          tier: model.brewTier(p, kind, p.lastTick),
+          seconds: (p.brews[kind] - p.lastTick) * 0.6,
+          currentTierSeconds: currentTierTicks(model, p, kind) * 0.6,
+        }))
+        .sort(
+          (a, b) => a.currentTierSeconds - b.currentTierSeconds || a.kind.localeCompare(b.kind),
+        );
     }
     function levelEstimate(model, player, hour, skill, target) {
       if (
@@ -2372,7 +3676,17 @@ SOFTWARE.
         rate: rate > 0 ? rate : 0,
       };
     }
-    return { create, loot, mountLoot, potionFlow, inventory, selectedFood, kinds, levelEstimate };
+    return {
+      create,
+      loot,
+      mountLoot,
+      potionFlow,
+      inventory,
+      selectedFood,
+      kinds,
+      levelEstimate,
+      activePotions,
+    };
   });
 
   // ---- src/buffs.js ----
@@ -2737,6 +4051,32 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      "含公开行情估价；仅最优报价，无完整深度，批量成交可能不同。":
+        "Includes public snapshot estimates: top prices only, no full depth; bulk execution may differ.",
+      下次播种: "Next crop",
+      随当前任务: "Follow current task",
+      "缺少家园布局数据，暂无法模拟出门路线":
+        "Home layout unavailable; cannot simulate the exit route yet",
+      "承伤/s": "Taken/s",
+      近一分钟承伤: "Damage taken over the last minute",
+      "DPS 按有效掉血统计，含走路与补给；承伤按已收到的受击事件统计，缺数据时显示 —。重连后重新观测。":
+        "DPS measures effective HP loss including travel and supply. Damage taken uses received hit events; missing data shows —. Resets on reconnect.",
+      生命值: "HP",
+      战斗统计: "Combat stats",
+      近一分钟伤害: "Damage over the last minute",
+      观测时长: "Observed duration",
+      成品单价参考: "Crafted unit prices",
+      "材料/件": "Materials/ea",
+      "即卖/件": "Sell now/ea",
+      "挂售/件": "List/ea",
+      "单位：金币/件。当前等级材料成本含烧毁、不含药水；出售税后，缺求购按商人价。":
+        "Coins/ea. Current-level material cost includes burns, excludes potions. Revenue is after tax; unfilled bids use vendor value.",
+      房间建造: "Building a room",
+      "{name} · {level}→{next}级": "{name} · Lv {level}→{next}",
+      家园建造完成: "Home construction complete",
+      "{name} 已升至 {level}级": "{name} reached Lv {level}",
+      新房间已建成: "New room completed",
+      关闭建造提醒: "Dismiss construction notice",
       每天检查插件更新: "Check for plugin updates daily",
       "更新到 {version}": "Update to {version}",
       "当前版本 {version}": "Version {version}",
@@ -3058,6 +4398,22 @@ SOFTWARE.
         if (s < 86400) return `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`;
         return `${Math.floor(s / 86400)} 天 ${Math.floor((s % 86400) / 3600)} 小时`;
       }
+      function remainingDuration(seconds) {
+        if (!Number.isFinite(seconds)) return "—";
+        const s = Math.max(0, Math.floor(seconds));
+        const units = ["d", "h", "m", "s"];
+        if (s < 60) return s + units[3];
+        const base = s >= 86400 ? 86400 : s >= 3600 ? 3600 : 60,
+          index = s >= 86400 ? 0 : s >= 3600 ? 1 : 2,
+          next = index === 2 ? 1 : base / (index === 0 ? 24 : 60);
+        return (
+          Math.floor(s / base) +
+          units[index] +
+          " " +
+          Math.floor((s % base) / next) +
+          units[index + 1]
+        );
+      }
       function compactDuration(seconds) {
         if (!Number.isFinite(seconds)) return "—";
         const s = Math.max(0, Math.floor(seconds));
@@ -3078,6 +4434,7 @@ SOFTWARE.
         error,
         duration,
         compactDuration,
+        remainingDuration,
         refresh() {
           const next = resolve(environment),
             changed = next !== language;
@@ -15325,6 +16682,41 @@ SOFTWARE.
       waterXp: 0.1,
       harvestMin: 3,
       harvestMax: 5,
+      gardens: [
+        {
+          fieldId: 387,
+          name: "The Glade",
+          skill: "woodcutting",
+          level: 75,
+          obstacle: "a fallen oak",
+          xp: 32,
+        },
+        {
+          fieldId: 389,
+          name: "The Fen garden",
+          skill: "fishing",
+          level: 75,
+          obstacle: "a flooded ditch",
+          xp: 32,
+        },
+        {
+          fieldId: 391,
+          name: "The Archer's ledge",
+          skill: "fletching",
+          level: 70,
+          obstacle: "a narrow gorge",
+          across: true,
+          xp: 160,
+        },
+        {
+          fieldId: 393,
+          name: "The Deep garden",
+          skill: "mining",
+          level: 85,
+          obstacle: "a fallen boulder",
+          xp: 36,
+        },
+      ],
     },
     world: {
       width: 288,
@@ -15388,7 +16780,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -15397,7 +16789,7 @@ SOFTWARE.
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
@@ -15406,7 +16798,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15415,7 +16807,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15425,7 +16817,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0,
-        0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1,
@@ -15453,7 +16845,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1,
@@ -15462,7 +16854,7 @@ SOFTWARE.
         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0,
@@ -15471,7 +16863,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15481,7 +16873,7 @@ SOFTWARE.
         0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1,
@@ -15490,7 +16882,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15499,7 +16891,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
@@ -15509,7 +16901,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1,
@@ -15518,7 +16910,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15527,7 +16919,7 @@ SOFTWARE.
         0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15536,7 +16928,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
@@ -15546,7 +16938,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
         0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
@@ -15555,7 +16947,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15564,7 +16956,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
@@ -15574,7 +16966,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
-        1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0,
+        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1,
@@ -15583,7 +16975,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
@@ -15593,7 +16985,7 @@ SOFTWARE.
         0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -15602,46 +16994,46 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
         1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0,
         0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0,
-        0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1,
         1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
@@ -15650,7 +17042,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15660,7 +17052,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -15739,7 +17131,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15748,7 +17140,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
@@ -15802,7 +17194,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-        1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15811,7 +17203,7 @@ SOFTWARE.
         1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15821,7 +17213,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15848,7 +17240,7 @@ SOFTWARE.
         1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15858,7 +17250,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15867,7 +17259,7 @@ SOFTWARE.
         1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
         0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15886,7 +17278,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16422,7 +17814,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -16432,7 +17824,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-        0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16441,7 +17833,7 @@ SOFTWARE.
         0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
@@ -16450,7 +17842,7 @@ SOFTWARE.
         1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -16581,7 +17973,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16637,7 +18029,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16646,7 +18038,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16655,7 +18047,7 @@ SOFTWARE.
         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
         1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16665,7 +18057,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16674,7 +18066,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16683,7 +18075,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16692,8 +18084,8 @@ SOFTWARE.
         1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16814,7 +18206,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16833,7 +18225,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16842,7 +18234,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16852,7 +18244,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16861,7 +18253,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16870,7 +18262,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16879,7 +18271,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16889,7 +18281,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -16898,7 +18290,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17006,7 +18398,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0,
-        0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17075,35 +18467,35 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0,
-        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
-        1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0,
         0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17112,7 +18504,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1,
         1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17121,7 +18513,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17131,22 +18523,22 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0,
+        0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
@@ -17164,7 +18556,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17173,7 +18565,7 @@ SOFTWARE.
         0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17182,8 +18574,8 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17192,7 +18584,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0,
-        1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17436,7 +18828,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17445,7 +18837,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
         0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17518,8 +18910,8 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17528,7 +18920,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
@@ -17537,7 +18929,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -17602,7 +18994,7 @@ SOFTWARE.
         1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -17649,7 +19041,7 @@ SOFTWARE.
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -17658,7 +19050,7 @@ SOFTWARE.
         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0,
@@ -17667,7 +19059,7 @@ SOFTWARE.
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -18174,6 +19566,41 @@ SOFTWARE.
         { id: 381, x: 272, y: 17, kind: "scenery", jobIds: [], look: "portal-out" },
         { id: 382, x: 211, y: 76, kind: "scenery", jobIds: [], look: "portal:1" },
         { id: 383, x: 113, y: 178, kind: "scenery", jobIds: [], look: "portal:2" },
+        { id: 384, x: 170, y: 244, kind: "fountain", jobIds: [] },
+        { id: 385, x: 241, y: 159, kind: "fountain", jobIds: [] },
+        { id: 386, x: 237, y: 194, kind: "fountain", jobIds: [] },
+        {
+          id: 387,
+          x: 152,
+          y: 32,
+          kind: "field",
+          jobIds: [160, 161, 162, 163, 164, 165, 210, 211, 212],
+        },
+        { id: 388, x: 152, y: 35, kind: "scenery", jobIds: [], look: "ob-oak" },
+        {
+          id: 389,
+          x: 180,
+          y: 118,
+          kind: "field",
+          jobIds: [160, 161, 162, 163, 164, 165, 210, 211, 212],
+        },
+        { id: 390, x: 178, y: 120, kind: "scenery", jobIds: [], look: "ob-ditch" },
+        {
+          id: 391,
+          x: 208,
+          y: 30,
+          kind: "field",
+          jobIds: [160, 161, 162, 163, 164, 165, 210, 211, 212],
+        },
+        { id: 392, x: 208, y: 32, kind: "scenery", jobIds: [], look: "ob-gorge" },
+        {
+          id: 393,
+          x: 251,
+          y: 51,
+          kind: "field",
+          jobIds: [160, 161, 162, 163, 164, 165, 210, 211, 212],
+        },
+        { id: 394, x: 251, y: 49, kind: "scenery", jobIds: [], look: "ob-crystal" },
       ],
       banks: [
         { id: 1, x: 200, y: 82 },
@@ -18266,8 +19693,8 @@ SOFTWARE.
           name: "The Glass Flats",
           monsterId: 9,
           population: 12,
-          x: 92,
-          y: 51,
+          x: 172,
+          y: 238,
           width: 12,
           height: 12,
         },
@@ -18276,8 +19703,8 @@ SOFTWARE.
           name: "Frostwild Hollow",
           monsterId: 10,
           population: 12,
-          x: 12,
-          y: 128,
+          x: 243,
+          y: 158,
           width: 12,
           height: 12,
         },
@@ -18286,8 +19713,8 @@ SOFTWARE.
           name: "Rimeholt",
           monsterId: 11,
           population: 12,
-          x: 14,
-          y: 100,
+          x: 239,
+          y: 188,
           width: 12,
           height: 12,
         },
@@ -18986,3878 +20413,162 @@ SOFTWARE.
       Gritmaw: "砂喉",
       Hollowbarrow: "空冢",
       "The Chalk Steps": "白垩阶",
+      "The Glade": "林间空地",
+      "The Fen garden": "沼泽花园",
+      "The Archer's ledge": "弓手崖台",
+      "The Deep garden": "深岩花园",
     },
     version: {
-      version: "1.0.2612",
+      version: "1.0.2704",
       env: "live",
-      commit: "7ea9defb",
+      commit: "7d0b258b",
       branch: "test-all",
-      subject: "1.0.1189 changelog: smoother bosses, no more rubberbanding (EN+ZH)",
-      committedAt: "2026-10-14T10:32:47+02:00",
-      dirty: false,
-      builtAt: "2026-10-14T08:38:43.792Z",
+      subject: "1.0.1190 changelog: drop the unlock lists line",
+      committedAt: "2026-10-15T19:11:29+02:00",
+      dirty: true,
+      builtAt: "2026-10-15T17:22:22.610Z",
     },
-    clientAsset: "index-CU7zVxCz.js",
-    sourceSha256: "5063145e2917c592231f2cb5d94e6d3cc98dedcbb5edf0f4c4ef48af083fb3dd",
+    clientAsset: "index-DAY9oe71.js",
+    sourceSha256: "c61c0f23060ecb43ebc22d6e2e1742b16c265383a1dc1b2860357b341047aeb5",
   };
 
-  // ---- Local forecast worker ----
-  function runForecastWorker() {
-    /* Independent calculator. No browser, game requests or game-state writes. */
-    (function (root, factory) {
-      if (typeof module === "object" && module.exports) module.exports = factory();
-      else root.DVIPlannerCore = factory();
-    })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-      "use strict";
-      const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-      const sum = (xs) => xs.reduce((a, b) => a + b, 0);
-      const add = (obj, key, value) => {
-        obj[key] = (obj[key] || 0) + value;
-      };
-      const clone = (x) => JSON.parse(JSON.stringify(x));
-      const neighbors = [
-        [0, 1],
-        [1, 0],
-        [0, -1],
-        [-1, 0],
-        [1, 1],
-        [-1, 1],
-        [1, -1],
-        [-1, -1],
-      ];
-      const skillSlots = {
-        mining: "pickaxe",
-        fishing: "rod",
-        woodcutting: "axe",
-        thieving: "gloves",
-        cooking: "pan",
-        smithing: "hammer",
-        fletching: "knife",
-        crafting: "needle",
-        herblore: "mortar",
-        farming: "hoe",
-      };
-      const gathers = new Set(["mining", "fishing", "woodcutting", "thieving", "farming"]);
-      function hash(a, b, c) {
-        let x = (a ^ 2654435769) >>> 0;
-        x = Math.imul(x ^ (b >>> 0), 2246822507) >>> 0;
-        x = (x ^ (x >>> 13)) >>> 0;
-        x = Math.imul(x ^ (c >>> 0), 3266489909) >>> 0;
-        return (x ^ (x >>> 16)) >>> 0;
-      }
-      function rng(seed) {
-        let x = seed >>> 0;
-        const random = () => {
-          x = (x + 0x6d2b79f5) >>> 0;
-          let t = Math.imul(x ^ (x >>> 15), 1 | x);
-          t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-        random.getState = () => x;
-        random.setState = (value) => {
-          x = value >>> 0;
-        };
-        return random;
-      }
-      class Heap {
-        constructor(compare) {
-          this.q = [];
-          this.compare = compare;
-        }
-        push(v) {
-          const q = this.q;
-          let i = q.length;
-          q.push(v);
-          while (i) {
-            const p = (i - 1) >> 1;
-            if (this.compare(q[p], v) <= 0) break;
-            q[i] = q[p];
-            i = p;
+  // ---- src/public-market.js ----
+  /* Official public price snapshots; never executable order depth. */
+  (function (root, factory) {
+    if (typeof module === "object" && module.exports) module.exports = factory();
+    else root.DVIPublicMarket = factory();
+  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+    "use strict";
+    const INTERVAL = 300000,
+      MAX_AGE = 900000,
+      KEY = "dvi-insights.public-market.v1";
+    function snapshot(value, now) {
+      const at = Date.parse(value?.generatedAt);
+      if (
+        value?.game !== "Deep Vein Idle" ||
+        !Number.isFinite(at) ||
+        at > now ||
+        now - at > MAX_AGE ||
+        !value.items ||
+        Array.isArray(value.items)
+      )
+        return null;
+      const items = {};
+      for (const [id, q] of Object.entries(value.items)) {
+        if (!/^\d+$/.test(id) || !Number.isSafeInteger(+id) || +id <= 0 || !q) continue;
+        const row = {};
+        for (const [price, qty] of [
+          ["highestBuy", "buyQty"],
+          ["lowestSell", "sellQty"],
+        ]) {
+          if (
+            (q[price] === null || (Number.isFinite(q[price]) && q[price] > 0)) &&
+            Number.isSafeInteger(q[qty]) &&
+            q[qty] >= 0 &&
+            (q[price] === null ? q[qty] === 0 : q[qty] > 0)
+          ) {
+            row[price] = q[price];
+            row[qty] = q[qty];
           }
-          q[i] = v;
         }
-        pop() {
-          const q = this.q,
-            v = q[0],
-            last = q.pop();
-          if (q.length) {
-            let i = 0;
-            while (i * 2 + 1 < q.length) {
-              let j = i * 2 + 1;
-              if (j + 1 < q.length && this.compare(q[j + 1], q[j]) < 0) j++;
-              if (this.compare(last, q[j]) <= 0) break;
-              q[i] = q[j];
-              i = j;
-            }
-            q[i] = last;
+        if (Object.keys(row).length) items[id] = row;
+      }
+      return Object.keys(items).length
+        ? { game: value.game, generatedAt: new Date(at).toISOString(), items }
+        : null;
+    }
+    function merge(books, value, now, orders = []) {
+      const valid = snapshot(value, now),
+        at = valid ? Date.parse(valid.generatedAt) : 0,
+        out = { ...books };
+      let changed = false;
+      for (const id of new Set([...Object.keys(books), ...Object.keys(valid?.items || {})])) {
+        const old = books[id] || {},
+          q = valid?.items[id],
+          book = { ...old };
+        let dirty = false;
+        for (const [side, price, qty, depth, orderSide] of [
+          ["bid", "highestBuy", "buyQty", "bids", "buy"],
+          ["ask", "lowestSell", "sellQty", "asks", "sell"],
+        ]) {
+          const stamp = old[side + "At"] ?? old.at ?? 0;
+          if (old[side + "Public"] && now - stamp > MAX_AGE) {
+            delete book[side + "Public"];
+            delete book[side + "Qty"];
+            book[side] = null;
+            book[side + "At"] = 0;
+            dirty = true;
           }
-          return v;
+          if (!q || !Object.hasOwn(q, price) || at <= stamp) continue;
+          const own = orders
+            .filter((o) => o.itemId === +id && o.side === orderSide && o.price === q[price])
+            .reduce((n, o) => n + (o.qtyRemaining || 0), 0);
+          const count = Math.max(0, q[qty] - own);
+          book[side] = count ? q[price] : null;
+          book[side + "Qty"] = count;
+          book[side + "At"] = at;
+          book[side + "Public"] = true;
+          delete book[depth];
+          delete book[side + "DepthAt"];
+          delete book[side + "More"];
+          if (side === "ask") delete book.purchaseCache;
+          dirty = true;
+        }
+        if (dirty) {
+          book.at = Math.max(book.bidAt || 0, book.askAt || 0);
+          out[id] = book;
+          changed = true;
         }
       }
-      const octile = (ax, ay, bx, by) => {
-        const x = Math.abs(ax - bx),
-          y = Math.abs(ay - by);
-        return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
-      };
-      function create(data) {
-        const jobs = new Map(data.jobs.map((x) => [x.id, x])),
-          items = new Map(data.items.map((x) => [x.id, x]));
-        const tools = new Map(data.tools.map((x) => [x.itemId, x])),
-          gear = new Map(data.gear.map((x) => [x.itemId, x]));
-        const mastery = new Map(data.masteries.map((x) => [x.id, x.perRank]));
-        const eligible = new Set(data.rarityEligible),
-          seeds = new Set(data.seedIds),
-          map = data.world;
-        const c = data.constants,
-          paths = new Map(),
-          bankFields = new Map(),
-          rotations = [];
-        function level(xp) {
-          let lo = 1,
-            hi = data.xpTable.length - 1;
-          while (lo < hi) {
-            const mid = Math.ceil((lo + hi) / 2);
-            if (data.xpTable[mid] <= xp) lo = mid;
-            else hi = mid - 1;
-          }
-          return lo;
-        }
-        const base = (id) => (id % 10000) % 1000,
-          tier = (id) => Math.floor((id % 10000) / 1000);
-        const identity = (id, t) => id + t * 1000;
-        const item = (id) => items.get(id % 10000) || items.get(base(id));
-        function tool(id) {
-          if (id == null) return null;
-          const t = tools.get(id % 10000);
-          return t
-            ? {
-                ...t,
-                bonus:
-                  t.bonus *
-                  (1 +
-                    (t.slot === "mount" ? c.mountEnhance : c.toolEnhance) * Math.floor(id / 10000)),
-              }
-            : null;
-        }
-        const bonus = (id) => tool(id)?.bonus || 0;
-        function luck(p) {
-          const id = p.equipment?.amulet;
-          if (id == null) return 0;
-          return (gear.get(id % 10000)?.luck || 0) * (1 + c.toolEnhance * Math.floor(id / 10000));
-        }
-        const master = (p, k) => 1 + (p.masteries?.[k] || 0) * (mastery.get(k) || 0);
-        function brewTier(p, k, tick) {
-          const buckets = p.brewBuckets?.[k];
-          if (buckets?.length) {
-            const elapsed = Math.max(0, tick - ((p.brews?.[k] || 0) - sum(buckets)));
-            let used = 0;
-            for (let i = buckets.length - 1; i >= 0; i--) {
-              used += buckets[i];
-              if (elapsed < used) return clamp(i, 0, 4);
-            }
-          }
-          return clamp(p.brewTier?.[k] || 0, 0, 4);
-        }
-        const brew = (p, k, tick) =>
-          (p.brews?.[k] || 0) > tick ? c.brewStrength[brewTier(p, k, tick)] : 0;
-        const active = (p, k, tick) => (p.brews?.[k] || 0) > tick;
-        function home(p, kind, skill) {
-          let n = 0;
-          for (const r of data.rooms)
-            if (
-              p.houseFurniture?.[r.id] !== undefined &&
-              r.bonus.kind === kind &&
-              (!skill || r.bonus.skill === skill)
-            )
-              n += (p.house?.[r.id] || 0) * 0.01 * (r.rate ?? 1);
-          return n;
-        }
-        function rotation(tick) {
-          const kinds = [
-            "mining",
-            "fishing",
-            "woodcutting",
-            "farming",
-            "thieving",
-            "cooking",
-            "smithing",
-            "fletching",
-            "herblore",
-            "crafting",
-            "enhancing",
-            "combat",
-          ];
-          const index = Math.floor(tick / 3000);
-          for (let i = rotations.length; i <= index; i++) {
-            let k = hash(i, 1, 1213158433) % kinds.length;
-            if (i && k === rotations[i - 1]) k = (k + 1) % kinds.length;
-            rotations.push(k);
-          }
-          const skill = kinds[rotations[index]],
-            rare =
-              ["mining", "fishing", "woodcutting", "farming", "combat"].includes(skill) &&
-              hash(index, 2, 1213158433) % 3 === 0;
-          return {
-            skill,
-            kind: rare ? "rarity" : "xp",
-            mult: rare ? 1.25 : 1.2,
-            until: (index + 1) * 3000,
-          };
-        }
-        function world(windows, tick, key) {
-          let value = 1;
-          for (const w of windows || [])
-            if (tick >= w.fromTick && tick <= w.toTick) value += (w[key] ?? 1) - 1;
-          return value;
-        }
-        function xpMultiplier(p, job, tick, windows, watering = false) {
-          const gathering = job.inputs.length === 0 || job.grow !== undefined;
-          const r = rotation(tick);
-          return (
-            world(windows, tick, "xpMult") +
-            0.1 * brew(p, "elixir", tick) +
-            (gathering ? 0.1 * brew(p, "gatherer", tick) : 0) +
-            (active(p, "blessing", tick) ? 0.05 : 0) +
-            (p.guildBonus || 0) +
-            (master(p, "xp") - 1) +
-            (!watering && r.skill === job.skill && r.kind === "xp" ? r.mult - 1 : 0)
-          );
-        }
-        const xp = (p, j, t, windows, rarity) =>
-          Math.round(j.xp * c.xpRarity[rarity] * xpMultiplier(p, j, t, windows));
-        function rarityProbabilities(p, j, t, windows, seedReturn = false) {
-          const r = rotation(t),
-            toolId = p.equipment?.[skillSlots[j.skill]],
-            toolLuck = seedReturn ? 0 : c.toolLuck[tier(toolId || 0)] || 0;
-          const multiplier =
-            world(windows, t, "rarityMult") +
-            0.25 * brew(p, "hunter", t) +
-            (active(p, "blessing", t) ? 0.1 : 0) +
-            (r.skill === j.skill && r.kind === "rarity" ? r.mult - 1 : 0) +
-            home(p, "rareChance") +
-            master(p, "rare") -
-            1;
-          const factor = (1 + luck(p) + toolLuck) * multiplier;
-          const thresholds = [
-            c.rareThresholds.uncommon,
-            c.rareThresholds.rare,
-            c.rareThresholds.epic,
-            c.rareThresholds.legendary,
-          ].map((x) => clamp(x * factor, 0, 1));
-          return [
-            1 - thresholds[0],
-            thresholds[0] - thresholds[1],
-            thresholds[1] - thresholds[2],
-            thresholds[2] - thresholds[3],
-            thresholds[3],
-          ];
-        }
-        function draw(probs, random) {
-          let u = random();
-          for (let i = 0; i < probs.length; i++) {
-            u -= probs[i];
-            if (u < 0) return i;
-          }
-          return probs.length - 1;
-        }
-        function chance(p, j) {
-          const lev = level(p.skills[j.skill]);
-          const equipped = tool(p.equipment?.[skillSlots[j.skill]]);
-          return Math.min(
-            1,
-            ((1 + Math.max(0, lev - j.levelReq) * 0.005) *
-              (1 + (equipped?.slot === skillSlots[j.skill] ? equipped.bonus : 0)) *
-              (1 +
-                0.005 * (p.perks?.quick || 0) +
-                home(p, gathers.has(j.skill) ? "gatherSpeed" : "craftSpeed", j.skill)) *
-              master(p, gathers.has(j.skill) ? "gather" : "craft")) /
-              j.baseTicks,
-          );
-        }
-        function failure(p, j) {
-          const f = j.burn || j.caught;
-          return f
-            ? clamp(
-                f.chanceAtReq *
-                  (1 - (level(p.skills[j.skill]) - j.levelReq) / (f.safeAtLevel - j.levelReq)) *
-                  (1 - 0.03 * (p.perks?.hands || 0)),
-                0,
-                1,
-              )
-            : 0;
-        }
-        function inputs(j, rarity) {
-          return j.inputs.map((x) => ({
-            ...x,
-            itemId:
-              rarity &&
-              eligible.has(x.itemId) &&
-              x.itemId !== 5 &&
-              !(x.itemId >= 201 && x.itemId <= 207)
-                ? identity(x.itemId, rarity)
-                : x.itemId,
-          }));
-        }
-        const walkable = (x, y) =>
-          x >= 0 &&
-          y >= 0 &&
-          x < map.width &&
-          y < map.height &&
-          map.collision[y * map.width + x] === 0;
-        function canStep(x, y, nx, ny) {
-          return walkable(nx, ny) && (x === nx || y === ny || (walkable(nx, y) && walkable(x, ny)));
-        }
-        function adjacent(site, id = 0) {
-          const points = neighbors
-            .map(([dx, dy]) => ({ x: site.x + dx, y: site.y + dy }))
-            .filter((p) => walkable(p.x, p.y));
-          return points[id === 0 ? 0 : hash(id, site.x, site.y) % points.length] || null;
-        }
-        function path(ax, ay, bx, by, nativeCombat = false) {
-          const steps = nativeCombat
-            ? [
-                [0, -1],
-                [1, -1],
-                [1, 0],
-                [1, 1],
-                [0, 1],
-                [-1, 1],
-                [-1, 0],
-                [-1, -1],
-              ]
-            : neighbors;
-          const heuristic = nativeCombat
-            ? (ax, ay, bx, by) => {
-                const x = Math.abs(ax - bx),
-                  y = Math.abs(ay - by);
-                return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
-              }
-            : octile;
-          const key = [ax, ay, bx, by, nativeCombat].join(",");
-          if (paths.has(key)) return paths.get(key);
-          if (!walkable(ax, ay) || !walkable(bx, by)) return null;
-          const width = map.width,
-            start = ay * width + ax,
-            goal = by * width + bx,
-            n = width * map.height;
-          const g = new Float64Array(n).fill(Infinity),
-            prev = new Int32Array(n).fill(-1),
-            closed = nativeCombat ? new Uint8Array(n) : null;
-          const heap = new Heap((a, b) => a.f - b.f || b.g - a.g || a.id - b.id);
-          g[start] = 0;
-          heap.push({ id: start, g: 0, f: heuristic(ax, ay, bx, by) });
-          while (heap.q.length) {
-            const u = heap.pop();
-            if (closed ? closed[u.id] : u.g !== g[u.id]) continue;
-            if (u.id === goal) {
-              const out = [];
-              for (let v = goal; v !== start; v = prev[v])
-                out.push({ x: v % width, y: Math.floor(v / width) });
-              out.reverse();
-              if (paths.size > 2048) paths.clear();
-              paths.set(key, out);
-              return out;
-            }
-            if (closed) closed[u.id] = 1;
-            const x = u.id % width,
-              y = Math.floor(u.id / width);
-            for (const [dx, dy] of steps) {
-              const nx = x + dx,
-                ny = y + dy;
-              if (!canStep(x, y, nx, ny)) continue;
-              const id = ny * width + nx,
-                ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
-              if (!closed?.[id] && ng < g[id]) {
-                g[id] = ng;
-                prev[id] = u.id;
-                heap.push({ id, g: ng, f: ng + heuristic(nx, ny, bx, by) });
-              }
-            }
-          }
-          paths.set(key, null);
+      return { books: out, changed };
+    }
+    function create({ now = Date.now, storage, fetchSnapshot, onSnapshot }) {
+      let busy = false,
+        last = -Infinity;
+      function read() {
+        try {
+          return JSON.parse(storage?.getItem(KEY) || "null");
+        } catch {
           return null;
         }
-        function bankDistance(bank, x, y) {
-          let distances = bankFields.get(bank.id);
-          if (!distances) {
-            distances = new Int32Array(map.width * map.height).fill(-1);
-            const queue = [];
-            for (const [dx, dy] of neighbors)
-              if (walkable(bank.x + dx, bank.y + dy)) {
-                const i = (bank.y + dy) * map.width + bank.x + dx;
-                distances[i] = 0;
-                queue.push(i);
-              }
-            for (let at = 0; at < queue.length; at++) {
-              const i = queue[at],
-                cx = i % map.width,
-                cy = Math.floor(i / map.width);
-              for (const [dx, dy] of neighbors) {
-                const nx = cx + dx,
-                  ny = cy + dy;
-                if (!canStep(cx, cy, nx, ny)) continue;
-                const ni = ny * map.width + nx;
-                if (distances[ni] < 0) {
-                  distances[ni] = distances[i] + 1;
-                  queue.push(ni);
-                }
-              }
-            }
-            bankFields.set(bank.id, distances);
-          }
-          const d = distances[y * map.width + x];
-          return d >= 0 ? d : Infinity;
-        }
-        function nearestBank(p) {
-          const homeBank = map.banks.find((b) => b.id === p.homeBank);
-          if (homeBank && Number.isFinite(bankDistance(homeBank, p.x, p.y))) return homeBank;
-          return (
-            [...map.banks]
-              .sort((a, b) => bankDistance(a, p.x, p.y) - bankDistance(b, p.x, p.y) || a.id - b.id)
-              .find((b) => Number.isFinite(bankDistance(b, p.x, p.y))) || null
-          );
-        }
-        function nearestSite(j, p) {
-          return map.sites
-            .filter((s) => s.jobIds?.includes(j.id))
-            .sort(
-              (a, b) => octile(a.x, a.y, p.x, p.y) - octile(b.x, b.y, p.x, p.y) || a.id - b.id,
-            )[0];
-        }
-        function workSite(j, p) {
-          // Client 1.0.2206 sends crafting work to the station nearest the preferred
-          // bank, even when the character originally selected a different station.
-          const bank =
-            j.inputs.length && j.grow === undefined
-              ? map.banks.find((b) => b.id === p.homeBank)
-              : null;
-          if (bank)
-            return map.sites
-              .filter((s) => s.jobIds?.includes(j.id))
-              .reduce(
-                (best, s) =>
-                  !best || octile(s.x, s.y, bank.x, bank.y) < octile(best.x, best.y, bank.x, bank.y)
-                    ? s
-                    : best,
-                null,
-              );
-          return (
-            (p.route?.jobId === j.id
-              ? map.sites.find((s) => s.id === p.route.siteId && s.jobIds?.includes(j.id))
-              : null) || nearestSite(j, p)
-          );
-        }
-        function farmingStatus(p) {
-          const fields = map.sites
-            .filter((s) => s.kind === "field")
-            .sort((a, b) => a.id - b.id)
-            .slice(
-              0,
-              (data.farming?.unlockLevels || [1]).filter((n) => level(p.skills.farming) >= n)
-                .length,
-            );
-          const matureAt = (plot) => {
-            const job = data.jobs.find(
-              (j) => j.grow !== undefined && j.inputs[0]?.itemId === base(plot.seedItemId),
-            );
-            if (!job) return null;
-            const grow = Math.round(job.grow / (plot.sowSpeed ?? 1)),
-              trim =
-                plot.trim ??
-                Math.min(plot.watered ?? 0, Math.floor(job.grow / 40)) *
-                  (data.farming?.waterTrim ?? 20);
-            return plot.plantedAt + grow - Math.min(trim, Math.floor(grow / 2));
-          };
-          const ready = fields.filter(
-            (s) => p.plots?.[s.id] && matureAt(p.plots[s.id]) <= p.lastTick,
-          );
-          const distance = (s) => Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y));
-          const next =
-            [...ready].sort(
-              (a, b) =>
-                (distance(a) <= 1 ? 0 : distance(a)) - (distance(b) <= 1 ? 0 : distance(b)) ||
-                a.id - b.id,
-            )[0] ||
-            fields.find((s) => !p.plots?.[s.id]) ||
-            null;
-          let stand = null;
-          if (next)
-            for (let dy = -1; dy <= 1; dy++)
-              for (let dx = -1; dx <= 1; dx++) {
-                if (!dx && !dy) continue;
-                const x = next.x + dx,
-                  y = next.y + dy;
-                if (!walkable(x, y)) continue;
-                const score = ready.filter(
-                    (s) => Math.max(Math.abs(s.x - x), Math.abs(s.y - y)) <= 1,
-                  ).length,
-                  dist = Math.max(Math.abs(p.x - x), Math.abs(p.y - y));
-                if (!stand || score > stand.score || (score === stand.score && dist < stand.dist))
-                  stand = { x, y, score, dist };
-              }
-          return {
-            fields: fields.map((s, i) => ({
-              id: s.id,
-              number: i + 1,
-              x: s.x,
-              y: s.y,
-              plot: p.plots?.[s.id] || null,
-              matureAt: p.plots?.[s.id] ? matureAt(p.plots[s.id]) : null,
-              current: s.id === p.workSiteId,
-            })),
-            nextId: next?.id ?? null,
-            stand,
-            currentId: p.workSiteId ?? null,
-            errand: !!p.route?.errand,
-          };
-        }
-        const capacity = (p) => c.packSlots + (p.perks?.pockets || 0);
-        const held = (p, id) => sum(p.pack.filter((x) => x.itemId === id).map((x) => x.qty));
-        function put(p, id, qty) {
-          if (qty <= 0) return true;
-          if (item(id)?.stackable) {
-            const entry = p.pack.find((x) => x.itemId === id);
-            if (entry) {
-              entry.qty += qty;
-              return true;
-            }
-            if (p.pack.length >= capacity(p)) return false;
-            p.pack.push({ itemId: id, qty });
-            return true;
-          }
-          if (p.pack.length + qty > capacity(p)) return false;
-          for (let i = 0; i < qty; i++) p.pack.push({ itemId: id, qty: 1 });
-          return true;
-        }
-        function remove(p, id, qty) {
-          for (let i = p.pack.length - 1; i >= 0 && qty > 0; i--) {
-            if (p.pack[i].itemId !== id) continue;
-            const take = Math.min(qty, p.pack[i].qty);
-            p.pack[i].qty -= take;
-            qty -= take;
-            if (!p.pack[i].qty) p.pack.splice(i, 1);
-          }
-        }
-        function canWork(p, j, rarity) {
-          const ins = inputs(j, rarity);
-          if (ins.some((x) => held(p, x.itemId) < x.qty)) return false;
-          if (!ins.length) return p.pack.length < capacity(p);
-          const output = identity(j.output.itemId, rarity);
-          if (j.output.itemId === c.coins || (item(output)?.stackable && held(p, output) > 0))
-            return true;
-          let freed = 0;
-          for (const x of ins)
-            freed += item(x.itemId)?.stackable ? (held(p, x.itemId) === x.qty ? 1 : 0) : x.qty;
-          return p.pack.length - freed < capacity(p);
-        }
-        function withdraw(p, j, rarity) {
-          const ins = inputs(j, rarity),
-            free = capacity(p) - p.pack.length;
-          const nonstack = sum(ins.filter((x) => !item(x.itemId)?.stackable).map((x) => x.qty)),
-            stack = ins.filter((x) => item(x.itemId)?.stackable).length,
-            outStack = !!item(j.output.itemId)?.stackable;
-          const max = nonstack
-            ? Math.floor((free - stack - (outStack ? 1 : 0)) / nonstack)
-            : outStack
-              ? free - stack - 1 >= 0
-                ? 1e9
-                : 0
-              : free - stack;
-          const n = Math.max(
-            0,
-            Math.min(
-              max,
-              ...ins.map((x) => Math.floor(((p.bank[x.itemId] || 0) + held(p, x.itemId)) / x.qty)),
-            ),
-          );
-          for (const x of ins) {
-            const q = n * x.qty;
-            add(p.bank, x.itemId, -q);
-            put(p, x.itemId, q);
-          }
-          return n;
-        }
-        function bestRarity(p, j, includePack = true) {
-          if (!j.inputs.length || j.grow !== undefined) return 0;
-          for (const rarity of [4, 3, 2, 1])
-            if (
-              inputs(j, rarity).every(
-                (x) => (p.bank?.[x.itemId] || 0) + (includePack ? held(p, x.itemId) : 0) >= x.qty,
-              )
-            )
-              return rarity;
-          return 0;
-        }
-        const petIds = new Set(c.petIds || []);
-        const bankCount = (p) =>
-          Object.entries(p.bank).filter(
-            ([id, n]) => n > 0 && !(c.petsNoBankSlots && petIds.has(Number(id) % 10000)),
-          ).length;
-        function run(options, random, mode) {
-          const j = jobs.get(Number(options.jobId));
-          if (!j || j.retired) throw new Error("工作已停用或不存在");
-          if (j.grow !== undefined) return runFarm(options, random, mode);
-          const p = clone(options.player),
-            startTick = p.lastTick,
-            best = !!options.best && j.inputs.length > 0;
-          if (level(p.skills[j.skill]) < j.levelReq) throw new Error("当前等级尚未解锁这个工作");
-          p.pack = p.pack || [];
-          p.bank = p.bank || {};
-          p.skills = p.skills || {};
-          const site = workSite(j, p);
-          if (!site) throw new Error("没有找到可用工作地点");
-          let rarity = best
-              ? p.route?.jobId === j.id && p.route.best
-                ? p.workRarity || 0
-                : bestRarity(p, j)
-              : Number(options.rarity || 0),
-            ins = inputs(j, rarity);
-          if (best) p.workRarity = rarity;
-          // Target plans assume purchases for missing materials. Best-first spends
-          // owned higher tiers, then plans plain materials; it never invents rare stock.
-          if (!options.finiteStock)
-            for (const x of best ? inputs(j, 0) : ins)
-              p.bank[x.itemId] = Math.max(p.bank[x.itemId] || 0, 1e9);
-          const onFull = options.onFull ?? p.route?.onFull ?? "bank",
-            discarding = !ins.length && onFull === "drop";
-          const gathered = new Set(
-            [j.output.itemId, ...(j.bonus ? [j.bonus.itemId] : [])].map(base),
-          );
-          const target = options.targetLevel == null ? Infinity : data.xpTable[options.targetLevel],
-            deadline =
-              mode === "hour"
-                ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
-                : Infinity;
-          const r = {
-            attempts: 0,
-            successes: 0,
-            burnt: 0,
-            caught: 0,
-            ticks: 0,
-            workTicks: 0,
-            walkTicks: 0,
-            bankTicks: 0,
-            stunTicks: 0,
-            inputs: {},
-            outputs: {},
-            xp: 0,
-            trips: 0,
-          };
-          function deposit(id, qty) {
-            if (!options.finiteStock) {
-              add(p.bank, id, qty);
-              return true;
-            }
-            p.overflow ||= {};
-            const slots =
-                75 +
-                (p.bankSlotsBought || 0) +
-                data.rooms
-                  .filter((x) => x.bonus.kind === "bankSlots")
-                  .reduce((n, x) => n + Math.floor((p.house?.[x.id] || 0) / 2), 0),
-              fits =
-                p.unlimitedBank ||
-                (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
-                (p.brews?.blessing || 0) > p.lastTick ||
-                p.bank[id] > 0 ||
-                bankCount(p) < slots;
-            if (fits) {
-              add(p.bank, id, qty);
-              return true;
-            }
-            if (p.overflow[id] > 0 || Object.values(p.overflow).filter((n) => n > 0).length < 10) {
-              add(p.overflow, id, qty);
-              return true;
-            }
-            return false;
-          }
-          const matching =
-            p.route?.jobId === j.id &&
-            !!p.route.best === best &&
-            p.workRarity === rarity &&
-            (p.route.onFull ?? "bank") === onFull;
-          if (mode !== "hour" && p.skills[j.skill] >= target) return r;
-          let phase = matching
-            ? p.route.phase
-            : canWork(p, j, rarity) &&
-                !(discarding && p.pack.some((x) => !gathered.has(base(x.itemId))))
-              ? "toWork"
-              : "toBank";
-          let alreadyWorking = matching && p.activity === "working" && phase === "working";
-          const near = (s) => Math.abs(p.x - s.x) <= 1 && Math.abs(p.y - s.y) <= 1;
-          function advance(ticks, kind) {
-            const used = Math.min(ticks, deadline - p.lastTick),
-              before = p.lastTick;
-            p.lastTick += used;
-            r[kind] += used;
-            if (options.onAdvance) options.onAdvance(p, before, p.lastTick, r);
-            return used === ticks;
-          }
-          function travel(destination, id) {
-            if (near(destination)) return true;
-            const end = adjacent(destination, id);
-            if (!end) throw new Error("目标地点不可达");
-            const route = path(p.x, p.y, end.x, end.y);
-            if (!route) throw new Error("无法寻路；请在主地图上再计算");
-            if (!advance(1, "bankTicks")) return false;
-            const speed = Math.round(
-              (1000 + Math.round(bonus(p.equipment?.mount) * 1000)) *
-                (1 + 0.2 * brew(p, "swift", p.lastTick)) *
-                master(p, "move"),
-            );
-            if (!advance(Math.ceil((route.length * 1000) / speed), "walkTicks")) return false;
-            p.x = end.x;
-            p.y = end.y;
-            return true;
-          }
-          // Resume the game's already planned walk, with its recorded speed/stride.
-          if (matching && p.activity === "walking" && p.path?.length) {
-            const remaining = p.path.length - (p.pathIndex || 0),
-              ticks = Math.max(
-                0,
-                Math.ceil((remaining * 1000 - (p.stride || 0)) / (p.strideSpeed || 1000)),
-              );
-            if (advance(ticks, "walkTicks")) Object.assign(p, p.path.at(-1));
-          }
-          while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
-            if (options.stopWhen?.(p, r)) break;
-            if (r.attempts >= (options.maxAttempts || 150000))
-              throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
-            if (phase === "toWork") {
-              if (!travel(site, p.id)) break;
-              if (!advance(1, "bankTicks")) break;
-              phase = "working";
-              alreadyWorking = false;
-              continue;
-            }
-            if (phase === "toBank") {
-              const bank = nearestBank(p);
-              if (!bank) throw new Error("找不到可达仓库");
-              if (!travel(bank, 0)) break;
-              if (!advance(1, "bankTicks")) break;
-              phase = "banking";
-              continue;
-            }
-            if (phase === "banking") {
-              if (!advance(1, "bankTicks")) break;
-              const remaining = [];
-              for (const x of p.pack) if (!deposit(x.itemId, x.qty)) remaining.push(x);
-              p.pack = remaining;
-              if (remaining.length) {
-                r.stop = "storageFull";
-                break;
-              }
-              if (options.finiteStock) {
-                const slots =
-                  75 + (p.bankSlotsBought || 0) + Math.floor((p.house?.storeroom || 0) / 2);
-                for (const [id, n] of Object.entries(p.overflow || {}))
-                  if (
-                    n > 0 &&
-                    (p.unlimitedBank ||
-                      (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
-                      (p.brews?.blessing || 0) > p.lastTick ||
-                      p.bank[id] > 0 ||
-                      bankCount(p) < slots)
-                  ) {
-                    add(p.bank, id, n);
-                    delete p.overflow[id];
-                  }
-              }
-              if (best) {
-                rarity = bestRarity(p, j, false);
-                p.workRarity = rarity;
-                ins = inputs(j, rarity);
-              }
-              if (ins.length && !withdraw(p, j, rarity)) {
-                if (options.finiteStock) {
-                  r.stop = "materials";
-                  break;
-                }
-                throw new Error("背包无法容纳这份配方");
-              }
-              r.trips++;
-              if (!advance(1, "bankTicks")) break;
-              phase = "toWork";
-              continue;
-            }
-            if (!canWork(p, j, rarity)) {
-              if (!advance(1, "bankTicks")) break;
-              if (discarding) {
-                const previous = p.pack.length;
-                p.pack = p.pack.filter((x) => !gathered.has(base(x.itemId)));
-                if (p.pack.length < previous) {
-                  alreadyWorking = true;
-                  continue;
-                }
-              }
-              phase = "toBank";
-              alreadyWorking = false;
-              continue;
-            }
-            if (!alreadyWorking) {
-              if (!advance(1, "bankTicks")) break;
-              alreadyWorking = true;
-            }
-            if (
-              (p.stunUntil || 0) > p.lastTick + 1 &&
-              !advance(p.stunUntil - p.lastTick - 1, "stunTicks")
-            )
-              break;
-            const probability = j.inputs.length === 0 && p.skills[j.skill] === 0 ? 1 : chance(p, j);
-            const wait =
-              probability === 1
-                ? 1
-                : Math.floor(Math.log(1 - random()) / Math.log(1 - probability)) + 1;
-            const boundary = options.nextBoundary?.(p);
-            if (
-              Number.isFinite(boundary) &&
-              boundary > p.lastTick &&
-              wait > boundary - p.lastTick
-            ) {
-              if (!advance(boundary - p.lastTick, "workTicks")) break;
-              continue;
-            }
-            if (!advance(wait, "workTicks")) break;
-            r.attempts++;
-            for (const x of ins) {
-              remove(p, x.itemId, x.qty);
-              add(r.inputs, x.itemId, x.qty);
-            }
-            if (random() < failure(p, j)) {
-              if (j.burn) {
-                r.burnt++;
-                put(p, j.burn.itemId, 1);
-                add(r.outputs, j.burn.itemId, 1);
-              } else {
-                r.caught++;
-                p.stunUntil = p.lastTick + j.caught.stunTicks;
-              }
-              if (options.onAttempt) options.onAttempt(p, j, r, !j.caught);
-              continue;
-            }
-            r.successes++;
-            const gathering = !ins.length && j.output.itemId !== c.coins;
-            const outputProbs = gathering
-              ? rarityProbabilities(p, j, p.lastTick, options.windows)
-              : null;
-            const rt = gathering ? draw(outputProbs, random) : rarity;
-            const output = j.output.itemId === c.coins ? c.coins : identity(j.output.itemId, rt),
-              gain = xp(p, j, p.lastTick, options.windows, rt);
-            p.skills[j.skill] += gain;
-            r.xp += gain;
-            if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
-            if (options.onCollected && output !== c.coins)
-              options.onCollected(p, output, j.output.qty);
-            // Price every rarity by its conditional expectation, including very rare tiers
-            // which a small timing simulation may never actually draw.
-            if (outputProbs)
-              for (let t = 0; t < 5; t++)
-                add(r.outputs, identity(j.output.itemId, t), outputProbs[t] * j.output.qty);
-            else add(r.outputs, output, j.output.qty);
-            if (
-              output !== c.coins &&
-              !put(p, output, j.output.qty) &&
-              !deposit(output, j.output.qty)
-            ) {
-              r.stop = "storageFull";
-              break;
-            }
-            if (j.bonus) {
-              const probs = eligible.has(j.bonus.itemId)
-                ? rarityProbabilities(p, j, p.lastTick, options.windows)
-                : [1, 0, 0, 0, 0];
-              const bonusTier = draw(probs, random);
-              // Expected auxiliary loot is priced separately, avoiding rare-drop sample noise.
-              const id = identity(
-                j.bonus.itemId,
-                seeds.has(j.bonus.itemId) ? Math.max(1, bonusTier) : bonusTier,
-              );
-              for (let t = 0; t < 5; t++)
-                if (probs[t] > 0)
-                  add(
-                    r.outputs,
-                    identity(j.bonus.itemId, seeds.has(j.bonus.itemId) ? Math.max(1, t) : t),
-                    probs[t] * j.bonus.chance,
-                  );
-              if (random() < j.bonus.chance) {
-                const stored = put(p, id, 1);
-                if (
-                  options.onCollected &&
-                  stored &&
-                  (!seeds.has(j.bonus.itemId) || options.recordSeeds)
-                )
-                  options.onCollected(p, id, 1);
-              }
-            }
-            if (options.onAttempt) options.onAttempt(p, j, r, true);
-          }
-          r.ticks = p.lastTick - startTick;
-          if (options.returnPlayer) r.endPlayer = p;
-          return r;
-        }
-        function runFarm(options, random, mode) {
-          // A single selected field: explicitly labelled in the UI. Other plots remain untouched.
-          const j = jobs.get(Number(options.jobId)),
-            p = clone(options.player),
-            rarity = Number(options.rarity || 0),
-            start = p.lastTick,
-            target = data.xpTable[options.targetLevel];
-          if (level(p.skills.farming) < j.levelReq) throw new Error("当前等级尚未解锁这项种植");
-          const end =
-            mode === "hour"
-              ? start + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
-              : Infinity;
-          const r = {
-            attempts: 0,
-            successes: 0,
-            burnt: 0,
-            caught: 0,
-            ticks: 0,
-            workTicks: 0,
-            walkTicks: 0,
-            bankTicks: 0,
-            stunTicks: 0,
-            inputs: {},
-            outputs: {},
-            xp: 0,
-            trips: 0,
-          };
-          const seedId = identity(j.inputs[0].itemId, rarity);
-          let seedStock = options.finiteStock ? (p.bank[seedId] || 0) + held(p, seedId) : 0;
-          function advance(ticks) {
-            const n = Math.min(ticks, end - p.lastTick);
-            p.lastTick += n;
-            r.workTicks += n;
-            return n === ticks;
-          }
-          while (p.lastTick < end && (mode === "hour" || p.skills.farming < target)) {
-            if (r.attempts >= (options.maxAttempts || 150000)) throw new Error("种植目标过大");
-            const seed = identity(j.inputs[0].itemId, rarity),
-              cost = j.inputs[0].qty;
-            if (seedStock < cost) {
-              if (options.finiteStock) {
-                r.stop = "materials";
-                break;
-              }
-              add(r.inputs, seed, cost - seedStock);
-              seedStock = cost;
-            }
-            if (options.finiteStock) add(r.inputs, seed, cost);
-            seedStock -= cost;
-            const planted = p.lastTick;
-            if (!advance(1)) break;
-            const grow = Math.round(j.grow / (1 + home(p, "gatherSpeed", "farming"))),
-              maxWater = Math.floor(j.grow / 40),
-              trimEach = Math.round(20 * (1 + bonus(p.equipment?.hoe)));
-            let trim = 0,
-              watered = 0;
-            while (p.lastTick < planted + grow - Math.min(trim, Math.floor(grow / 2))) {
-              const mature = planted + grow - Math.min(trim, Math.floor(grow / 2)),
-                next = (Math.floor(p.lastTick / 100) + 1) * 100;
-              if (watered < maxWater && next < mature) {
-                if (!advance(next - p.lastTick)) break;
-                watered++;
-                trim += trimEach;
-                const gain = Math.max(
-                  1,
-                  Math.round(j.xp * 0.1 * xpMultiplier(p, j, p.lastTick, options.windows, true)),
-                );
-                p.skills.farming += gain;
-                r.xp += gain;
-                if (mode !== "hour" && p.skills.farming >= target) break;
-              } else {
-                advance(mature - p.lastTick);
-                break;
-              }
-            }
-            if (p.lastTick >= end || (mode !== "hour" && p.skills.farming >= target)) break;
-            if (!advance(1)) break;
-            r.attempts++;
-            r.successes++;
-            const lev = level(p.skills.farming),
-              count =
-                3 +
-                Math.floor(random() * 3) +
-                Math.floor(lev / 100) +
-                (random() < (lev / 100) % 1 ? 1 : 0);
-            add(r.outputs, identity(j.output.itemId, rarity), count);
-            const gain = xp(p, j, p.lastTick, options.windows, rarity);
-            p.skills.farming += gain;
-            r.xp += gain;
-            if (options.onCollected)
-              options.onCollected(p, identity(j.output.itemId, rarity), count);
-            for (let k = 0; k < cost; k++) {
-              const rt = draw(rarityProbabilities(p, j, p.lastTick, options.windows, true), random);
-              const id = identity(j.inputs[0].itemId, rt);
-              if (rt === rarity) {
-                seedStock++;
-                if (options.finiteStock) add(r.outputs, id, 1);
-              } else add(r.outputs, id, 1);
-            }
-          }
-          r.ticks = p.lastTick - start;
-          if (options.finiteStock) {
-            p.pack = p.pack.filter((s) => s.itemId !== seedId);
-            p.bank[seedId] = seedStock;
-          }
-          if (options.returnPlayer) r.endPlayer = p;
-          return r;
-        }
-        const quantile = (values, q) => {
-          const xs = [...values].sort((a, b) => a - b);
-          return xs[Math.min(xs.length - 1, Math.ceil(q * xs.length) - 1)] || 0;
-        };
-        function summarize(runs) {
-          const result = {};
-          for (const k of [
-            "attempts",
-            "successes",
-            "burnt",
-            "caught",
-            "ticks",
-            "workTicks",
-            "walkTicks",
-            "bankTicks",
-            "stunTicks",
-            "xp",
-            "trips",
-          ])
-            result[k] = sum(runs.map((x) => x[k])) / runs.length;
-          for (const k of ["inputs", "outputs"]) {
-            result[k] = {};
-            for (const r of runs)
-              for (const [id, n] of Object.entries(r[k])) add(result[k], id, n / runs.length);
-          }
-          result.seconds = (result.ticks * c.tickMs) / 1000;
-          result.secondsP05 = quantile(
-            runs.map((r) => (r.ticks * c.tickMs) / 1000),
-            0.05,
-          );
-          result.secondsP95 = quantile(
-            runs.map((r) => (r.ticks * c.tickMs) / 1000),
-            0.95,
-          );
-          result.attemptsP95 = quantile(
-            runs.map((r) => r.attempts),
-            0.95,
-          );
-          result.materialsP95 = {};
-          for (const id of Object.keys(result.inputs))
-            result.materialsP95[id] = quantile(
-              runs.map((r) => r.inputs[id] || 0),
-              0.95,
-            );
-          return result;
-        }
-        function forecast(options) {
-          if (
-            !Number.isSafeInteger(options.player?.lastTick) ||
-            !Number.isFinite(options.player?.skills?.[jobs.get(Number(options.jobId))?.skill])
-          )
-            throw new Error("等待有效角色快照");
-          if (
-            jobs.get(Number(options.jobId)).grow === undefined &&
-            map.regions?.some(
-              (r) =>
-                r.name === "Home" &&
-                options.player.x >= r.x &&
-                options.player.y >= r.y &&
-                options.player.x < r.x + r.width &&
-                options.player.y < r.y + r.height,
-            )
-          )
-            throw new Error("动态家园路线尚未校准；请返回主地图后计算完整时间");
-          const current = level(options.player.skills[jobs.get(Number(options.jobId)).skill]);
-          if (
-            !Number.isInteger(options.targetLevel) ||
-            options.targetLevel < 1 ||
-            options.targetLevel >= data.xpTable.length
-          )
-            throw new Error(`目标等级须为 1–${data.xpTable.length - 1} 的整数`);
-          const count = clamp(options.samples || 32, 8, 128),
-            planRuns = [],
-            hourRuns = [];
-          for (let i = 0; i < count; i++) {
-            planRuns.push(run(options, rng(7919 * (i + 1)), "target"));
-            hourRuns.push(run(options, rng(104729 * (i + 1)), "hour"));
-          }
-          const plan = summarize(planRuns),
-            hour = summarize(hourRuns);
-          const materials = Object.entries(plan.inputs).map(([id, mean]) => {
-            id = Number(id);
-            const owned =
-              (options.player.bank?.[id] || 0) +
-              held({ ...options.player, pack: options.player.pack || [] }, id);
-            return {
-              id,
-              mean,
-              p95: plan.materialsP95[id],
-              owned,
-              shortage: Math.max(0, Math.ceil(mean) - owned),
-              shortageP95: Math.max(0, Math.ceil(plan.materialsP95[id]) - owned),
-            };
-          });
-          return {
-            jobId: Number(options.jobId),
-            currentLevel: current,
-            targetLevel: options.targetLevel,
-            xpLeft: Math.max(
-              0,
-              data.xpTable[options.targetLevel] -
-                options.player.skills[jobs.get(Number(options.jobId)).skill],
-            ),
-            samples: count,
-            plan,
-            hour,
-            materials,
-            farming: jobs.get(Number(options.jobId)).grow !== undefined,
-            build: data.version.version,
-          };
-        }
-        function forecastHour(options) {
-          const j = jobs.get(Number(options.jobId));
-          if (
-            !j ||
-            !Number.isSafeInteger(options.player?.lastTick) ||
-            !Number.isFinite(options.player.skills?.[j.skill])
-          )
-            throw new Error("等待有效角色快照");
-          if (
-            j.grow === undefined &&
-            map.regions?.some(
-              (r) =>
-                r.name === "Home" &&
-                options.player.x >= r.x &&
-                options.player.y >= r.y &&
-                options.player.x < r.x + r.width &&
-                options.player.y < r.y + r.height,
-            )
-          )
-            throw new Error("家园路线尚未校准");
-          const count = clamp(options.samples || 8, 8, 128),
-            runs = [];
-          for (let i = 0; i < count; i++) runs.push(run(options, rng(104729 * (i + 1)), "hour"));
-          return {
-            jobId: j.id,
-            hour: summarize(runs),
-            samples: count,
-            farming: j.grow !== undefined,
-          };
-        }
-        return {
-          data,
-          jobs,
-          item,
-          level,
-          base,
-          tier,
-          inputs,
-          bestRarity,
-          tool,
-          brew,
-          brewTier,
-          master,
-          home,
-          rotation,
-          xpMultiplier,
-          xp,
-          rarityProbabilities,
-          chance,
-          failure,
-          path,
-          adjacent,
-          nearestBank,
-          nearestSite,
-          workSite,
-          farmingStatus,
-          forecast,
-          forecastHour,
-          run,
-          summarize,
-          rng,
-        };
       }
-      function fillBook(levels, qty, side, taxBp = 0) {
-        let left = qty,
-          gross = 0;
-        const fills = [];
-        for (const l of [...levels]
-          .filter((l) => l.price > 0 && l.qty > 0)
-          .sort((a, b) => (side === "buy" ? a.price - b.price : b.price - a.price))) {
-          const n = Math.min(left, l.qty);
-          if (n <= 0) break;
-          left -= n;
-          gross += n * l.price;
-          fills.push({ price: l.price, qty: n });
-        }
-        return {
-          gross,
-          net: side === "sell" ? gross * (1 - taxBp / 10000) : gross,
-          filled: qty - left,
-          left,
-          fills,
-        };
-      }
-      function vendorPrice(id, books, pricing = {}) {
-        // Enhancements do not change buyback value; received server floors take precedence.
-        const plain = id % 10000,
-          price = books[id]?.floor ?? pricing.vendorPrices?.[plain];
-        return price > 0 ? price : null;
-      }
-      function valueFlows(flow, books, mode, taxBp, now = Date.now(), pricing = {}) {
-        const missing = [],
-          stale = [],
-          partial = [],
-          details = [],
-          estimated = [];
-        let total = 0,
-          unknownTax = false;
-        const put = (id, qty, price, source, extra = {}) => {
-          if (qty <= 1e-9) return;
-          const taxed = source === "market" && mode !== "buy";
-          if (taxed && taxBp == null) unknownTax = true;
-          const value = qty * price * (taxed ? 1 - (taxBp ?? 0) / 10000 : 1);
-          total += value;
-          details.push({ id, qty, value, price, source, ...extra });
-        };
-        for (const [key, qty] of Object.entries(flow)) {
-          const id = Number(key);
-          if (!(qty > 0)) continue;
-          if (id === 200) {
-            put(id, qty, 1, "coins");
-            continue;
-          }
-          const b = books[id] || {},
-            sell = mode !== "buy",
-            vendor = sell ? vendorPrice(id, books, pricing) : pricing.vendorBuys?.[id],
-            factor = sell ? 1 - (taxBp ?? 0) / 10000 : 1;
-          const quote =
-            mode === "buy" ? b.ask : mode === "sell" ? b.bid : mode === "list" ? b.ask : null;
-          const side = mode === "sell" ? "bid" : "ask",
-            quoteAt = b[side + "At"] ?? b.at,
-            depthAt = b[side + "DepthAt"] ?? b.depthAt;
-          if (mode !== "vendor" && quote > 0 && now - (quoteAt || 0) > 300000) stale.push(id);
-          const levels = mode === "buy" ? b.asks : mode === "sell" ? b.bids : null;
-          let left = qty;
-          if (mode !== "vendor" && Array.isArray(levels)) {
-            const old = now - (depthAt || 0) > 300000;
-            const useful = levels.filter(
-              (x) => !(vendor > 0) || (sell ? x.price * factor > vendor : x.price < vendor),
-            );
-            const fill = fillBook(useful, qty, mode, taxBp ?? 0);
-            for (const f of fill.fills)
-              put(id, f.qty, f.price, "market", { depth: !old, estimated: old, quoteAt: depthAt });
-            if (old && fill.filled > 0) estimated.push(id);
-            left = fill.left;
-          } else if (
-            mode !== "vendor" &&
-            quote > 0 &&
-            (!(vendor > 0) || (sell ? quote * factor > vendor : quote < vendor))
-          ) {
-            const old = now - (quoteAt || 0) > 300000,
-              available =
-                mode === "list"
-                  ? qty
-                  : Number.isFinite(b[side + "Qty"])
-                    ? Math.max(0, b[side + "Qty"])
-                    : qty,
-              filled = Math.min(qty, available);
-            put(id, filled, quote, "market", { depth: false, estimated: old, quoteAt });
-            if (old && filled > 0) estimated.push(id);
-            left = qty - filled;
-          }
-          if (left > 1e-9 && vendor > 0) {
-            put(id, left, vendor, "vendor");
-            left = 0;
-          }
-          // Restored asks are short-lived cost estimates, never executable orders.
-          // Prefer more recent trade history when it supersedes the cached ask.
-          const history =
-            mode === "buy" &&
-            b.history?.price > 0 &&
-            Number.isFinite(b.history.tradeAt) &&
-            b.history.tradeAt <= now &&
-            now - b.history.tradeAt <= 7 * 86400000
-              ? b.history
-              : null;
-          const cached =
-            mode === "buy" &&
-            Number.isFinite(b.purchaseCache?.price) &&
-            b.purchaseCache.price > 0 &&
-            Number.isFinite(b.purchaseCache.at) &&
-            b.purchaseCache.at <= now &&
-            now - b.purchaseCache.at <= 86400000
-              ? b.purchaseCache
-              : null;
-          if (left > 1e-9 && (cached || history)) {
-            if (cached && (!history || cached.at > history.tradeAt))
-              put(id, left, cached.price, "cached", { estimated: true, cachedAt: cached.at });
-            else
-              put(id, left, history.price, "history", {
-                estimated: true,
-                tradeAt: history.tradeAt,
-              });
-            estimated.push(id);
-            left = 0;
-          }
-          // Known nontradable outputs have no cash resale value, rather than an unknown price.
-          if (
-            left > 1e-9 &&
-            sell &&
-            Object.hasOwn(pricing.vendorPrices || {}, id % 10000) &&
-            pricing.vendorPrices[id % 10000] === null
-          ) {
-            put(id, left, 0, "nontradable");
-            left = 0;
-          }
-          if (left > 1e-9) {
-            if (left < qty) partial.push({ id, unfilled: left, filled: qty - left });
-            else missing.push(id);
-            details.push({ id, qty: left, value: null, source: "missing" });
-          }
-        }
-        return {
-          total: missing.length || partial.length || unknownTax ? null : total,
-          pricedSubtotal: total,
-          missing,
-          stale,
-          partial,
-          details,
-          estimated,
-          unknownTax,
-          vendorSubtotal: sum(details.filter((x) => x.source === "vendor").map((x) => x.value)),
-          coinSubtotal: sum(details.filter((x) => x.source === "coins").map((x) => x.value)),
-        };
-      }
-      function profits(hour, books, taxBp, now, pricing = {}) {
-        const cost = valueFlows(hour.inputs, books, "buy", taxBp, now, pricing),
-          immediate = valueFlows(hour.outputs, books, "sell", taxBp, now, pricing),
-          listing = valueFlows(hour.outputs, books, "list", taxBp, now, pricing),
-          vendor = valueFlows(hour.outputs, books, "vendor", taxBp, now, pricing);
-        const net = (revenue) =>
-          revenue.total !== null && cost.total !== null ? revenue.total - cost.total : null;
-        return {
-          cost,
-          immediate,
-          listing,
-          vendor,
-          immediateProfit: net(immediate),
-          listingProfit: net(listing),
-          vendorProfit: net(vendor),
-          immediateKnownNet: immediate.pricedSubtotal - cost.pricedSubtotal,
-          listingKnownNet: listing.pricedSubtotal - cost.pricedSubtotal,
-          vendorKnownNet: vendor.pricedSubtotal - cost.pricedSubtotal,
-        };
-      }
-      function dailyProfits(hour, books, taxBp, now, pricing) {
-        const daily = { inputs: {}, outputs: {} };
-        for (const kind of ["inputs", "outputs"])
-          for (const [id, n] of Object.entries(hour[kind] || {})) daily[kind][id] = n * 24;
-        // Quote depth is consumed once across the whole projected day.
-        return profits(daily, books, taxBp, now, pricing);
-      }
-      function formatNumber(n, d = 0) {
-        if (!Number.isFinite(n)) return "—";
-        const units = ["", "K", "M", "B"];
-        let i = Math.min(3, Math.max(0, Math.floor(Math.log10(Math.max(1, Math.abs(n))) / 3)));
-        let scaled = n / 1000 ** i;
-        if (i && Math.abs(Number(scaled.toFixed(2))) >= 1000 && i < 3) {
-          i++;
-          scaled = n / 1000 ** i;
-        }
-        const text = scaled.toLocaleString("en-US", { maximumFractionDigits: i ? 2 : d });
-        return (text === "-0" ? "0" : text) + units[i];
+      function write(value) {
+        try {
+          storage?.setItem(KEY, JSON.stringify(value));
+        } catch {}
       }
       return {
-        create,
-        hash,
-        rng,
-        fillBook,
-        vendorPrice,
-        valueFlows,
-        profits,
-        dailyProfits,
-        formatNumber,
-      };
-    });
-
-    let model;
-    self.onmessage = function (e) {
-      try {
-        model = model || self.DVIPlannerCore.create(e.data.data);
-        const result = e.data.options.hourOnly
-          ? model.forecastHour(e.data.options)
-          : model.forecast(e.data.options);
-        self.postMessage({ result });
-      } catch (error) {
-        self.postMessage({ error: error.message });
-      }
-    };
-  }
-  const WORKER_SOURCE = "(" + runForecastWorker.toString() + ")();";
-  function runInsightWorker() {
-    /* Independent calculator. No browser, game requests or game-state writes. */
-    (function (root, factory) {
-      if (typeof module === "object" && module.exports) module.exports = factory();
-      else root.DVIPlannerCore = factory();
-    })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-      "use strict";
-      const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-      const sum = (xs) => xs.reduce((a, b) => a + b, 0);
-      const add = (obj, key, value) => {
-        obj[key] = (obj[key] || 0) + value;
-      };
-      const clone = (x) => JSON.parse(JSON.stringify(x));
-      const neighbors = [
-        [0, 1],
-        [1, 0],
-        [0, -1],
-        [-1, 0],
-        [1, 1],
-        [-1, 1],
-        [1, -1],
-        [-1, -1],
-      ];
-      const skillSlots = {
-        mining: "pickaxe",
-        fishing: "rod",
-        woodcutting: "axe",
-        thieving: "gloves",
-        cooking: "pan",
-        smithing: "hammer",
-        fletching: "knife",
-        crafting: "needle",
-        herblore: "mortar",
-        farming: "hoe",
-      };
-      const gathers = new Set(["mining", "fishing", "woodcutting", "thieving", "farming"]);
-      function hash(a, b, c) {
-        let x = (a ^ 2654435769) >>> 0;
-        x = Math.imul(x ^ (b >>> 0), 2246822507) >>> 0;
-        x = (x ^ (x >>> 13)) >>> 0;
-        x = Math.imul(x ^ (c >>> 0), 3266489909) >>> 0;
-        return (x ^ (x >>> 16)) >>> 0;
-      }
-      function rng(seed) {
-        let x = seed >>> 0;
-        const random = () => {
-          x = (x + 0x6d2b79f5) >>> 0;
-          let t = Math.imul(x ^ (x >>> 15), 1 | x);
-          t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-        random.getState = () => x;
-        random.setState = (value) => {
-          x = value >>> 0;
-        };
-        return random;
-      }
-      class Heap {
-        constructor(compare) {
-          this.q = [];
-          this.compare = compare;
-        }
-        push(v) {
-          const q = this.q;
-          let i = q.length;
-          q.push(v);
-          while (i) {
-            const p = (i - 1) >> 1;
-            if (this.compare(q[p], v) <= 0) break;
-            q[i] = q[p];
-            i = p;
-          }
-          q[i] = v;
-        }
-        pop() {
-          const q = this.q,
-            v = q[0],
-            last = q.pop();
-          if (q.length) {
-            let i = 0;
-            while (i * 2 + 1 < q.length) {
-              let j = i * 2 + 1;
-              if (j + 1 < q.length && this.compare(q[j + 1], q[j]) < 0) j++;
-              if (this.compare(last, q[j]) <= 0) break;
-              q[i] = q[j];
-              i = j;
-            }
-            q[i] = last;
-          }
-          return v;
-        }
-      }
-      const octile = (ax, ay, bx, by) => {
-        const x = Math.abs(ax - bx),
-          y = Math.abs(ay - by);
-        return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
-      };
-      function create(data) {
-        const jobs = new Map(data.jobs.map((x) => [x.id, x])),
-          items = new Map(data.items.map((x) => [x.id, x]));
-        const tools = new Map(data.tools.map((x) => [x.itemId, x])),
-          gear = new Map(data.gear.map((x) => [x.itemId, x]));
-        const mastery = new Map(data.masteries.map((x) => [x.id, x.perRank]));
-        const eligible = new Set(data.rarityEligible),
-          seeds = new Set(data.seedIds),
-          map = data.world;
-        const c = data.constants,
-          paths = new Map(),
-          bankFields = new Map(),
-          rotations = [];
-        function level(xp) {
-          let lo = 1,
-            hi = data.xpTable.length - 1;
-          while (lo < hi) {
-            const mid = Math.ceil((lo + hi) / 2);
-            if (data.xpTable[mid] <= xp) lo = mid;
-            else hi = mid - 1;
-          }
-          return lo;
-        }
-        const base = (id) => (id % 10000) % 1000,
-          tier = (id) => Math.floor((id % 10000) / 1000);
-        const identity = (id, t) => id + t * 1000;
-        const item = (id) => items.get(id % 10000) || items.get(base(id));
-        function tool(id) {
-          if (id == null) return null;
-          const t = tools.get(id % 10000);
-          return t
-            ? {
-                ...t,
-                bonus:
-                  t.bonus *
-                  (1 +
-                    (t.slot === "mount" ? c.mountEnhance : c.toolEnhance) * Math.floor(id / 10000)),
-              }
-            : null;
-        }
-        const bonus = (id) => tool(id)?.bonus || 0;
-        function luck(p) {
-          const id = p.equipment?.amulet;
-          if (id == null) return 0;
-          return (gear.get(id % 10000)?.luck || 0) * (1 + c.toolEnhance * Math.floor(id / 10000));
-        }
-        const master = (p, k) => 1 + (p.masteries?.[k] || 0) * (mastery.get(k) || 0);
-        function brewTier(p, k, tick) {
-          const buckets = p.brewBuckets?.[k];
-          if (buckets?.length) {
-            const elapsed = Math.max(0, tick - ((p.brews?.[k] || 0) - sum(buckets)));
-            let used = 0;
-            for (let i = buckets.length - 1; i >= 0; i--) {
-              used += buckets[i];
-              if (elapsed < used) return clamp(i, 0, 4);
-            }
-          }
-          return clamp(p.brewTier?.[k] || 0, 0, 4);
-        }
-        const brew = (p, k, tick) =>
-          (p.brews?.[k] || 0) > tick ? c.brewStrength[brewTier(p, k, tick)] : 0;
-        const active = (p, k, tick) => (p.brews?.[k] || 0) > tick;
-        function home(p, kind, skill) {
-          let n = 0;
-          for (const r of data.rooms)
-            if (
-              p.houseFurniture?.[r.id] !== undefined &&
-              r.bonus.kind === kind &&
-              (!skill || r.bonus.skill === skill)
-            )
-              n += (p.house?.[r.id] || 0) * 0.01 * (r.rate ?? 1);
-          return n;
-        }
-        function rotation(tick) {
-          const kinds = [
-            "mining",
-            "fishing",
-            "woodcutting",
-            "farming",
-            "thieving",
-            "cooking",
-            "smithing",
-            "fletching",
-            "herblore",
-            "crafting",
-            "enhancing",
-            "combat",
-          ];
-          const index = Math.floor(tick / 3000);
-          for (let i = rotations.length; i <= index; i++) {
-            let k = hash(i, 1, 1213158433) % kinds.length;
-            if (i && k === rotations[i - 1]) k = (k + 1) % kinds.length;
-            rotations.push(k);
-          }
-          const skill = kinds[rotations[index]],
-            rare =
-              ["mining", "fishing", "woodcutting", "farming", "combat"].includes(skill) &&
-              hash(index, 2, 1213158433) % 3 === 0;
-          return {
-            skill,
-            kind: rare ? "rarity" : "xp",
-            mult: rare ? 1.25 : 1.2,
-            until: (index + 1) * 3000,
-          };
-        }
-        function world(windows, tick, key) {
-          let value = 1;
-          for (const w of windows || [])
-            if (tick >= w.fromTick && tick <= w.toTick) value += (w[key] ?? 1) - 1;
-          return value;
-        }
-        function xpMultiplier(p, job, tick, windows, watering = false) {
-          const gathering = job.inputs.length === 0 || job.grow !== undefined;
-          const r = rotation(tick);
-          return (
-            world(windows, tick, "xpMult") +
-            0.1 * brew(p, "elixir", tick) +
-            (gathering ? 0.1 * brew(p, "gatherer", tick) : 0) +
-            (active(p, "blessing", tick) ? 0.05 : 0) +
-            (p.guildBonus || 0) +
-            (master(p, "xp") - 1) +
-            (!watering && r.skill === job.skill && r.kind === "xp" ? r.mult - 1 : 0)
-          );
-        }
-        const xp = (p, j, t, windows, rarity) =>
-          Math.round(j.xp * c.xpRarity[rarity] * xpMultiplier(p, j, t, windows));
-        function rarityProbabilities(p, j, t, windows, seedReturn = false) {
-          const r = rotation(t),
-            toolId = p.equipment?.[skillSlots[j.skill]],
-            toolLuck = seedReturn ? 0 : c.toolLuck[tier(toolId || 0)] || 0;
-          const multiplier =
-            world(windows, t, "rarityMult") +
-            0.25 * brew(p, "hunter", t) +
-            (active(p, "blessing", t) ? 0.1 : 0) +
-            (r.skill === j.skill && r.kind === "rarity" ? r.mult - 1 : 0) +
-            home(p, "rareChance") +
-            master(p, "rare") -
-            1;
-          const factor = (1 + luck(p) + toolLuck) * multiplier;
-          const thresholds = [
-            c.rareThresholds.uncommon,
-            c.rareThresholds.rare,
-            c.rareThresholds.epic,
-            c.rareThresholds.legendary,
-          ].map((x) => clamp(x * factor, 0, 1));
-          return [
-            1 - thresholds[0],
-            thresholds[0] - thresholds[1],
-            thresholds[1] - thresholds[2],
-            thresholds[2] - thresholds[3],
-            thresholds[3],
-          ];
-        }
-        function draw(probs, random) {
-          let u = random();
-          for (let i = 0; i < probs.length; i++) {
-            u -= probs[i];
-            if (u < 0) return i;
-          }
-          return probs.length - 1;
-        }
-        function chance(p, j) {
-          const lev = level(p.skills[j.skill]);
-          const equipped = tool(p.equipment?.[skillSlots[j.skill]]);
-          return Math.min(
-            1,
-            ((1 + Math.max(0, lev - j.levelReq) * 0.005) *
-              (1 + (equipped?.slot === skillSlots[j.skill] ? equipped.bonus : 0)) *
-              (1 +
-                0.005 * (p.perks?.quick || 0) +
-                home(p, gathers.has(j.skill) ? "gatherSpeed" : "craftSpeed", j.skill)) *
-              master(p, gathers.has(j.skill) ? "gather" : "craft")) /
-              j.baseTicks,
-          );
-        }
-        function failure(p, j) {
-          const f = j.burn || j.caught;
-          return f
-            ? clamp(
-                f.chanceAtReq *
-                  (1 - (level(p.skills[j.skill]) - j.levelReq) / (f.safeAtLevel - j.levelReq)) *
-                  (1 - 0.03 * (p.perks?.hands || 0)),
-                0,
-                1,
-              )
-            : 0;
-        }
-        function inputs(j, rarity) {
-          return j.inputs.map((x) => ({
-            ...x,
-            itemId:
-              rarity &&
-              eligible.has(x.itemId) &&
-              x.itemId !== 5 &&
-              !(x.itemId >= 201 && x.itemId <= 207)
-                ? identity(x.itemId, rarity)
-                : x.itemId,
-          }));
-        }
-        const walkable = (x, y) =>
-          x >= 0 &&
-          y >= 0 &&
-          x < map.width &&
-          y < map.height &&
-          map.collision[y * map.width + x] === 0;
-        function canStep(x, y, nx, ny) {
-          return walkable(nx, ny) && (x === nx || y === ny || (walkable(nx, y) && walkable(x, ny)));
-        }
-        function adjacent(site, id = 0) {
-          const points = neighbors
-            .map(([dx, dy]) => ({ x: site.x + dx, y: site.y + dy }))
-            .filter((p) => walkable(p.x, p.y));
-          return points[id === 0 ? 0 : hash(id, site.x, site.y) % points.length] || null;
-        }
-        function path(ax, ay, bx, by, nativeCombat = false) {
-          const steps = nativeCombat
-            ? [
-                [0, -1],
-                [1, -1],
-                [1, 0],
-                [1, 1],
-                [0, 1],
-                [-1, 1],
-                [-1, 0],
-                [-1, -1],
-              ]
-            : neighbors;
-          const heuristic = nativeCombat
-            ? (ax, ay, bx, by) => {
-                const x = Math.abs(ax - bx),
-                  y = Math.abs(ay - by);
-                return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
-              }
-            : octile;
-          const key = [ax, ay, bx, by, nativeCombat].join(",");
-          if (paths.has(key)) return paths.get(key);
-          if (!walkable(ax, ay) || !walkable(bx, by)) return null;
-          const width = map.width,
-            start = ay * width + ax,
-            goal = by * width + bx,
-            n = width * map.height;
-          const g = new Float64Array(n).fill(Infinity),
-            prev = new Int32Array(n).fill(-1),
-            closed = nativeCombat ? new Uint8Array(n) : null;
-          const heap = new Heap((a, b) => a.f - b.f || b.g - a.g || a.id - b.id);
-          g[start] = 0;
-          heap.push({ id: start, g: 0, f: heuristic(ax, ay, bx, by) });
-          while (heap.q.length) {
-            const u = heap.pop();
-            if (closed ? closed[u.id] : u.g !== g[u.id]) continue;
-            if (u.id === goal) {
-              const out = [];
-              for (let v = goal; v !== start; v = prev[v])
-                out.push({ x: v % width, y: Math.floor(v / width) });
-              out.reverse();
-              if (paths.size > 2048) paths.clear();
-              paths.set(key, out);
-              return out;
-            }
-            if (closed) closed[u.id] = 1;
-            const x = u.id % width,
-              y = Math.floor(u.id / width);
-            for (const [dx, dy] of steps) {
-              const nx = x + dx,
-                ny = y + dy;
-              if (!canStep(x, y, nx, ny)) continue;
-              const id = ny * width + nx,
-                ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
-              if (!closed?.[id] && ng < g[id]) {
-                g[id] = ng;
-                prev[id] = u.id;
-                heap.push({ id, g: ng, f: ng + heuristic(nx, ny, bx, by) });
-              }
-            }
-          }
-          paths.set(key, null);
-          return null;
-        }
-        function bankDistance(bank, x, y) {
-          let distances = bankFields.get(bank.id);
-          if (!distances) {
-            distances = new Int32Array(map.width * map.height).fill(-1);
-            const queue = [];
-            for (const [dx, dy] of neighbors)
-              if (walkable(bank.x + dx, bank.y + dy)) {
-                const i = (bank.y + dy) * map.width + bank.x + dx;
-                distances[i] = 0;
-                queue.push(i);
-              }
-            for (let at = 0; at < queue.length; at++) {
-              const i = queue[at],
-                cx = i % map.width,
-                cy = Math.floor(i / map.width);
-              for (const [dx, dy] of neighbors) {
-                const nx = cx + dx,
-                  ny = cy + dy;
-                if (!canStep(cx, cy, nx, ny)) continue;
-                const ni = ny * map.width + nx;
-                if (distances[ni] < 0) {
-                  distances[ni] = distances[i] + 1;
-                  queue.push(ni);
-                }
-              }
-            }
-            bankFields.set(bank.id, distances);
-          }
-          const d = distances[y * map.width + x];
-          return d >= 0 ? d : Infinity;
-        }
-        function nearestBank(p) {
-          const homeBank = map.banks.find((b) => b.id === p.homeBank);
-          if (homeBank && Number.isFinite(bankDistance(homeBank, p.x, p.y))) return homeBank;
-          return (
-            [...map.banks]
-              .sort((a, b) => bankDistance(a, p.x, p.y) - bankDistance(b, p.x, p.y) || a.id - b.id)
-              .find((b) => Number.isFinite(bankDistance(b, p.x, p.y))) || null
-          );
-        }
-        function nearestSite(j, p) {
-          return map.sites
-            .filter((s) => s.jobIds?.includes(j.id))
-            .sort(
-              (a, b) => octile(a.x, a.y, p.x, p.y) - octile(b.x, b.y, p.x, p.y) || a.id - b.id,
-            )[0];
-        }
-        function workSite(j, p) {
-          // Client 1.0.2206 sends crafting work to the station nearest the preferred
-          // bank, even when the character originally selected a different station.
-          const bank =
-            j.inputs.length && j.grow === undefined
-              ? map.banks.find((b) => b.id === p.homeBank)
-              : null;
-          if (bank)
-            return map.sites
-              .filter((s) => s.jobIds?.includes(j.id))
-              .reduce(
-                (best, s) =>
-                  !best || octile(s.x, s.y, bank.x, bank.y) < octile(best.x, best.y, bank.x, bank.y)
-                    ? s
-                    : best,
-                null,
-              );
-          return (
-            (p.route?.jobId === j.id
-              ? map.sites.find((s) => s.id === p.route.siteId && s.jobIds?.includes(j.id))
-              : null) || nearestSite(j, p)
-          );
-        }
-        function farmingStatus(p) {
-          const fields = map.sites
-            .filter((s) => s.kind === "field")
-            .sort((a, b) => a.id - b.id)
-            .slice(
-              0,
-              (data.farming?.unlockLevels || [1]).filter((n) => level(p.skills.farming) >= n)
-                .length,
-            );
-          const matureAt = (plot) => {
-            const job = data.jobs.find(
-              (j) => j.grow !== undefined && j.inputs[0]?.itemId === base(plot.seedItemId),
-            );
-            if (!job) return null;
-            const grow = Math.round(job.grow / (plot.sowSpeed ?? 1)),
-              trim =
-                plot.trim ??
-                Math.min(plot.watered ?? 0, Math.floor(job.grow / 40)) *
-                  (data.farming?.waterTrim ?? 20);
-            return plot.plantedAt + grow - Math.min(trim, Math.floor(grow / 2));
-          };
-          const ready = fields.filter(
-            (s) => p.plots?.[s.id] && matureAt(p.plots[s.id]) <= p.lastTick,
-          );
-          const distance = (s) => Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y));
-          const next =
-            [...ready].sort(
-              (a, b) =>
-                (distance(a) <= 1 ? 0 : distance(a)) - (distance(b) <= 1 ? 0 : distance(b)) ||
-                a.id - b.id,
-            )[0] ||
-            fields.find((s) => !p.plots?.[s.id]) ||
-            null;
-          let stand = null;
-          if (next)
-            for (let dy = -1; dy <= 1; dy++)
-              for (let dx = -1; dx <= 1; dx++) {
-                if (!dx && !dy) continue;
-                const x = next.x + dx,
-                  y = next.y + dy;
-                if (!walkable(x, y)) continue;
-                const score = ready.filter(
-                    (s) => Math.max(Math.abs(s.x - x), Math.abs(s.y - y)) <= 1,
-                  ).length,
-                  dist = Math.max(Math.abs(p.x - x), Math.abs(p.y - y));
-                if (!stand || score > stand.score || (score === stand.score && dist < stand.dist))
-                  stand = { x, y, score, dist };
-              }
-          return {
-            fields: fields.map((s, i) => ({
-              id: s.id,
-              number: i + 1,
-              x: s.x,
-              y: s.y,
-              plot: p.plots?.[s.id] || null,
-              matureAt: p.plots?.[s.id] ? matureAt(p.plots[s.id]) : null,
-              current: s.id === p.workSiteId,
-            })),
-            nextId: next?.id ?? null,
-            stand,
-            currentId: p.workSiteId ?? null,
-            errand: !!p.route?.errand,
-          };
-        }
-        const capacity = (p) => c.packSlots + (p.perks?.pockets || 0);
-        const held = (p, id) => sum(p.pack.filter((x) => x.itemId === id).map((x) => x.qty));
-        function put(p, id, qty) {
-          if (qty <= 0) return true;
-          if (item(id)?.stackable) {
-            const entry = p.pack.find((x) => x.itemId === id);
-            if (entry) {
-              entry.qty += qty;
-              return true;
-            }
-            if (p.pack.length >= capacity(p)) return false;
-            p.pack.push({ itemId: id, qty });
-            return true;
-          }
-          if (p.pack.length + qty > capacity(p)) return false;
-          for (let i = 0; i < qty; i++) p.pack.push({ itemId: id, qty: 1 });
-          return true;
-        }
-        function remove(p, id, qty) {
-          for (let i = p.pack.length - 1; i >= 0 && qty > 0; i--) {
-            if (p.pack[i].itemId !== id) continue;
-            const take = Math.min(qty, p.pack[i].qty);
-            p.pack[i].qty -= take;
-            qty -= take;
-            if (!p.pack[i].qty) p.pack.splice(i, 1);
-          }
-        }
-        function canWork(p, j, rarity) {
-          const ins = inputs(j, rarity);
-          if (ins.some((x) => held(p, x.itemId) < x.qty)) return false;
-          if (!ins.length) return p.pack.length < capacity(p);
-          const output = identity(j.output.itemId, rarity);
-          if (j.output.itemId === c.coins || (item(output)?.stackable && held(p, output) > 0))
-            return true;
-          let freed = 0;
-          for (const x of ins)
-            freed += item(x.itemId)?.stackable ? (held(p, x.itemId) === x.qty ? 1 : 0) : x.qty;
-          return p.pack.length - freed < capacity(p);
-        }
-        function withdraw(p, j, rarity) {
-          const ins = inputs(j, rarity),
-            free = capacity(p) - p.pack.length;
-          const nonstack = sum(ins.filter((x) => !item(x.itemId)?.stackable).map((x) => x.qty)),
-            stack = ins.filter((x) => item(x.itemId)?.stackable).length,
-            outStack = !!item(j.output.itemId)?.stackable;
-          const max = nonstack
-            ? Math.floor((free - stack - (outStack ? 1 : 0)) / nonstack)
-            : outStack
-              ? free - stack - 1 >= 0
-                ? 1e9
-                : 0
-              : free - stack;
-          const n = Math.max(
-            0,
-            Math.min(
-              max,
-              ...ins.map((x) => Math.floor(((p.bank[x.itemId] || 0) + held(p, x.itemId)) / x.qty)),
-            ),
-          );
-          for (const x of ins) {
-            const q = n * x.qty;
-            add(p.bank, x.itemId, -q);
-            put(p, x.itemId, q);
-          }
-          return n;
-        }
-        function bestRarity(p, j, includePack = true) {
-          if (!j.inputs.length || j.grow !== undefined) return 0;
-          for (const rarity of [4, 3, 2, 1])
-            if (
-              inputs(j, rarity).every(
-                (x) => (p.bank?.[x.itemId] || 0) + (includePack ? held(p, x.itemId) : 0) >= x.qty,
-              )
-            )
-              return rarity;
-          return 0;
-        }
-        const petIds = new Set(c.petIds || []);
-        const bankCount = (p) =>
-          Object.entries(p.bank).filter(
-            ([id, n]) => n > 0 && !(c.petsNoBankSlots && petIds.has(Number(id) % 10000)),
-          ).length;
-        function run(options, random, mode) {
-          const j = jobs.get(Number(options.jobId));
-          if (!j || j.retired) throw new Error("工作已停用或不存在");
-          if (j.grow !== undefined) return runFarm(options, random, mode);
-          const p = clone(options.player),
-            startTick = p.lastTick,
-            best = !!options.best && j.inputs.length > 0;
-          if (level(p.skills[j.skill]) < j.levelReq) throw new Error("当前等级尚未解锁这个工作");
-          p.pack = p.pack || [];
-          p.bank = p.bank || {};
-          p.skills = p.skills || {};
-          const site = workSite(j, p);
-          if (!site) throw new Error("没有找到可用工作地点");
-          let rarity = best
-              ? p.route?.jobId === j.id && p.route.best
-                ? p.workRarity || 0
-                : bestRarity(p, j)
-              : Number(options.rarity || 0),
-            ins = inputs(j, rarity);
-          if (best) p.workRarity = rarity;
-          // Target plans assume purchases for missing materials. Best-first spends
-          // owned higher tiers, then plans plain materials; it never invents rare stock.
-          if (!options.finiteStock)
-            for (const x of best ? inputs(j, 0) : ins)
-              p.bank[x.itemId] = Math.max(p.bank[x.itemId] || 0, 1e9);
-          const onFull = options.onFull ?? p.route?.onFull ?? "bank",
-            discarding = !ins.length && onFull === "drop";
-          const gathered = new Set(
-            [j.output.itemId, ...(j.bonus ? [j.bonus.itemId] : [])].map(base),
-          );
-          const target = options.targetLevel == null ? Infinity : data.xpTable[options.targetLevel],
-            deadline =
-              mode === "hour"
-                ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
-                : Infinity;
-          const r = {
-            attempts: 0,
-            successes: 0,
-            burnt: 0,
-            caught: 0,
-            ticks: 0,
-            workTicks: 0,
-            walkTicks: 0,
-            bankTicks: 0,
-            stunTicks: 0,
-            inputs: {},
-            outputs: {},
-            xp: 0,
-            trips: 0,
-          };
-          function deposit(id, qty) {
-            if (!options.finiteStock) {
-              add(p.bank, id, qty);
-              return true;
-            }
-            p.overflow ||= {};
-            const slots =
-                75 +
-                (p.bankSlotsBought || 0) +
-                data.rooms
-                  .filter((x) => x.bonus.kind === "bankSlots")
-                  .reduce((n, x) => n + Math.floor((p.house?.[x.id] || 0) / 2), 0),
-              fits =
-                p.unlimitedBank ||
-                (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
-                (p.brews?.blessing || 0) > p.lastTick ||
-                p.bank[id] > 0 ||
-                bankCount(p) < slots;
-            if (fits) {
-              add(p.bank, id, qty);
-              return true;
-            }
-            if (p.overflow[id] > 0 || Object.values(p.overflow).filter((n) => n > 0).length < 10) {
-              add(p.overflow, id, qty);
-              return true;
-            }
-            return false;
-          }
-          const matching =
-            p.route?.jobId === j.id &&
-            !!p.route.best === best &&
-            p.workRarity === rarity &&
-            (p.route.onFull ?? "bank") === onFull;
-          if (mode !== "hour" && p.skills[j.skill] >= target) return r;
-          let phase = matching
-            ? p.route.phase
-            : canWork(p, j, rarity) &&
-                !(discarding && p.pack.some((x) => !gathered.has(base(x.itemId))))
-              ? "toWork"
-              : "toBank";
-          let alreadyWorking = matching && p.activity === "working" && phase === "working";
-          const near = (s) => Math.abs(p.x - s.x) <= 1 && Math.abs(p.y - s.y) <= 1;
-          function advance(ticks, kind) {
-            const used = Math.min(ticks, deadline - p.lastTick),
-              before = p.lastTick;
-            p.lastTick += used;
-            r[kind] += used;
-            if (options.onAdvance) options.onAdvance(p, before, p.lastTick, r);
-            return used === ticks;
-          }
-          function travel(destination, id) {
-            if (near(destination)) return true;
-            const end = adjacent(destination, id);
-            if (!end) throw new Error("目标地点不可达");
-            const route = path(p.x, p.y, end.x, end.y);
-            if (!route) throw new Error("无法寻路；请在主地图上再计算");
-            if (!advance(1, "bankTicks")) return false;
-            const speed = Math.round(
-              (1000 + Math.round(bonus(p.equipment?.mount) * 1000)) *
-                (1 + 0.2 * brew(p, "swift", p.lastTick)) *
-                master(p, "move"),
-            );
-            if (!advance(Math.ceil((route.length * 1000) / speed), "walkTicks")) return false;
-            p.x = end.x;
-            p.y = end.y;
-            return true;
-          }
-          // Resume the game's already planned walk, with its recorded speed/stride.
-          if (matching && p.activity === "walking" && p.path?.length) {
-            const remaining = p.path.length - (p.pathIndex || 0),
-              ticks = Math.max(
-                0,
-                Math.ceil((remaining * 1000 - (p.stride || 0)) / (p.strideSpeed || 1000)),
-              );
-            if (advance(ticks, "walkTicks")) Object.assign(p, p.path.at(-1));
-          }
-          while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
-            if (options.stopWhen?.(p, r)) break;
-            if (r.attempts >= (options.maxAttempts || 150000))
-              throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
-            if (phase === "toWork") {
-              if (!travel(site, p.id)) break;
-              if (!advance(1, "bankTicks")) break;
-              phase = "working";
-              alreadyWorking = false;
-              continue;
-            }
-            if (phase === "toBank") {
-              const bank = nearestBank(p);
-              if (!bank) throw new Error("找不到可达仓库");
-              if (!travel(bank, 0)) break;
-              if (!advance(1, "bankTicks")) break;
-              phase = "banking";
-              continue;
-            }
-            if (phase === "banking") {
-              if (!advance(1, "bankTicks")) break;
-              const remaining = [];
-              for (const x of p.pack) if (!deposit(x.itemId, x.qty)) remaining.push(x);
-              p.pack = remaining;
-              if (remaining.length) {
-                r.stop = "storageFull";
-                break;
-              }
-              if (options.finiteStock) {
-                const slots =
-                  75 + (p.bankSlotsBought || 0) + Math.floor((p.house?.storeroom || 0) / 2);
-                for (const [id, n] of Object.entries(p.overflow || {}))
-                  if (
-                    n > 0 &&
-                    (p.unlimitedBank ||
-                      (c.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
-                      (p.brews?.blessing || 0) > p.lastTick ||
-                      p.bank[id] > 0 ||
-                      bankCount(p) < slots)
-                  ) {
-                    add(p.bank, id, n);
-                    delete p.overflow[id];
-                  }
-              }
-              if (best) {
-                rarity = bestRarity(p, j, false);
-                p.workRarity = rarity;
-                ins = inputs(j, rarity);
-              }
-              if (ins.length && !withdraw(p, j, rarity)) {
-                if (options.finiteStock) {
-                  r.stop = "materials";
-                  break;
-                }
-                throw new Error("背包无法容纳这份配方");
-              }
-              r.trips++;
-              if (!advance(1, "bankTicks")) break;
-              phase = "toWork";
-              continue;
-            }
-            if (!canWork(p, j, rarity)) {
-              if (!advance(1, "bankTicks")) break;
-              if (discarding) {
-                const previous = p.pack.length;
-                p.pack = p.pack.filter((x) => !gathered.has(base(x.itemId)));
-                if (p.pack.length < previous) {
-                  alreadyWorking = true;
-                  continue;
-                }
-              }
-              phase = "toBank";
-              alreadyWorking = false;
-              continue;
-            }
-            if (!alreadyWorking) {
-              if (!advance(1, "bankTicks")) break;
-              alreadyWorking = true;
-            }
-            if (
-              (p.stunUntil || 0) > p.lastTick + 1 &&
-              !advance(p.stunUntil - p.lastTick - 1, "stunTicks")
-            )
-              break;
-            const probability = j.inputs.length === 0 && p.skills[j.skill] === 0 ? 1 : chance(p, j);
-            const wait =
-              probability === 1
-                ? 1
-                : Math.floor(Math.log(1 - random()) / Math.log(1 - probability)) + 1;
-            const boundary = options.nextBoundary?.(p);
-            if (
-              Number.isFinite(boundary) &&
-              boundary > p.lastTick &&
-              wait > boundary - p.lastTick
-            ) {
-              if (!advance(boundary - p.lastTick, "workTicks")) break;
-              continue;
-            }
-            if (!advance(wait, "workTicks")) break;
-            r.attempts++;
-            for (const x of ins) {
-              remove(p, x.itemId, x.qty);
-              add(r.inputs, x.itemId, x.qty);
-            }
-            if (random() < failure(p, j)) {
-              if (j.burn) {
-                r.burnt++;
-                put(p, j.burn.itemId, 1);
-                add(r.outputs, j.burn.itemId, 1);
-              } else {
-                r.caught++;
-                p.stunUntil = p.lastTick + j.caught.stunTicks;
-              }
-              if (options.onAttempt) options.onAttempt(p, j, r, !j.caught);
-              continue;
-            }
-            r.successes++;
-            const gathering = !ins.length && j.output.itemId !== c.coins;
-            const outputProbs = gathering
-              ? rarityProbabilities(p, j, p.lastTick, options.windows)
-              : null;
-            const rt = gathering ? draw(outputProbs, random) : rarity;
-            const output = j.output.itemId === c.coins ? c.coins : identity(j.output.itemId, rt),
-              gain = xp(p, j, p.lastTick, options.windows, rt);
-            p.skills[j.skill] += gain;
-            r.xp += gain;
-            if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
-            if (options.onCollected && output !== c.coins)
-              options.onCollected(p, output, j.output.qty);
-            // Price every rarity by its conditional expectation, including very rare tiers
-            // which a small timing simulation may never actually draw.
-            if (outputProbs)
-              for (let t = 0; t < 5; t++)
-                add(r.outputs, identity(j.output.itemId, t), outputProbs[t] * j.output.qty);
-            else add(r.outputs, output, j.output.qty);
-            if (
-              output !== c.coins &&
-              !put(p, output, j.output.qty) &&
-              !deposit(output, j.output.qty)
-            ) {
-              r.stop = "storageFull";
-              break;
-            }
-            if (j.bonus) {
-              const probs = eligible.has(j.bonus.itemId)
-                ? rarityProbabilities(p, j, p.lastTick, options.windows)
-                : [1, 0, 0, 0, 0];
-              const bonusTier = draw(probs, random);
-              // Expected auxiliary loot is priced separately, avoiding rare-drop sample noise.
-              const id = identity(
-                j.bonus.itemId,
-                seeds.has(j.bonus.itemId) ? Math.max(1, bonusTier) : bonusTier,
-              );
-              for (let t = 0; t < 5; t++)
-                if (probs[t] > 0)
-                  add(
-                    r.outputs,
-                    identity(j.bonus.itemId, seeds.has(j.bonus.itemId) ? Math.max(1, t) : t),
-                    probs[t] * j.bonus.chance,
-                  );
-              if (random() < j.bonus.chance) {
-                const stored = put(p, id, 1);
-                if (
-                  options.onCollected &&
-                  stored &&
-                  (!seeds.has(j.bonus.itemId) || options.recordSeeds)
-                )
-                  options.onCollected(p, id, 1);
-              }
-            }
-            if (options.onAttempt) options.onAttempt(p, j, r, true);
-          }
-          r.ticks = p.lastTick - startTick;
-          if (options.returnPlayer) r.endPlayer = p;
-          return r;
-        }
-        function runFarm(options, random, mode) {
-          // A single selected field: explicitly labelled in the UI. Other plots remain untouched.
-          const j = jobs.get(Number(options.jobId)),
-            p = clone(options.player),
-            rarity = Number(options.rarity || 0),
-            start = p.lastTick,
-            target = data.xpTable[options.targetLevel];
-          if (level(p.skills.farming) < j.levelReq) throw new Error("当前等级尚未解锁这项种植");
-          const end =
-            mode === "hour"
-              ? start + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
-              : Infinity;
-          const r = {
-            attempts: 0,
-            successes: 0,
-            burnt: 0,
-            caught: 0,
-            ticks: 0,
-            workTicks: 0,
-            walkTicks: 0,
-            bankTicks: 0,
-            stunTicks: 0,
-            inputs: {},
-            outputs: {},
-            xp: 0,
-            trips: 0,
-          };
-          const seedId = identity(j.inputs[0].itemId, rarity);
-          let seedStock = options.finiteStock ? (p.bank[seedId] || 0) + held(p, seedId) : 0;
-          function advance(ticks) {
-            const n = Math.min(ticks, end - p.lastTick);
-            p.lastTick += n;
-            r.workTicks += n;
-            return n === ticks;
-          }
-          while (p.lastTick < end && (mode === "hour" || p.skills.farming < target)) {
-            if (r.attempts >= (options.maxAttempts || 150000)) throw new Error("种植目标过大");
-            const seed = identity(j.inputs[0].itemId, rarity),
-              cost = j.inputs[0].qty;
-            if (seedStock < cost) {
-              if (options.finiteStock) {
-                r.stop = "materials";
-                break;
-              }
-              add(r.inputs, seed, cost - seedStock);
-              seedStock = cost;
-            }
-            if (options.finiteStock) add(r.inputs, seed, cost);
-            seedStock -= cost;
-            const planted = p.lastTick;
-            if (!advance(1)) break;
-            const grow = Math.round(j.grow / (1 + home(p, "gatherSpeed", "farming"))),
-              maxWater = Math.floor(j.grow / 40),
-              trimEach = Math.round(20 * (1 + bonus(p.equipment?.hoe)));
-            let trim = 0,
-              watered = 0;
-            while (p.lastTick < planted + grow - Math.min(trim, Math.floor(grow / 2))) {
-              const mature = planted + grow - Math.min(trim, Math.floor(grow / 2)),
-                next = (Math.floor(p.lastTick / 100) + 1) * 100;
-              if (watered < maxWater && next < mature) {
-                if (!advance(next - p.lastTick)) break;
-                watered++;
-                trim += trimEach;
-                const gain = Math.max(
-                  1,
-                  Math.round(j.xp * 0.1 * xpMultiplier(p, j, p.lastTick, options.windows, true)),
-                );
-                p.skills.farming += gain;
-                r.xp += gain;
-                if (mode !== "hour" && p.skills.farming >= target) break;
-              } else {
-                advance(mature - p.lastTick);
-                break;
-              }
-            }
-            if (p.lastTick >= end || (mode !== "hour" && p.skills.farming >= target)) break;
-            if (!advance(1)) break;
-            r.attempts++;
-            r.successes++;
-            const lev = level(p.skills.farming),
-              count =
-                3 +
-                Math.floor(random() * 3) +
-                Math.floor(lev / 100) +
-                (random() < (lev / 100) % 1 ? 1 : 0);
-            add(r.outputs, identity(j.output.itemId, rarity), count);
-            const gain = xp(p, j, p.lastTick, options.windows, rarity);
-            p.skills.farming += gain;
-            r.xp += gain;
-            if (options.onCollected)
-              options.onCollected(p, identity(j.output.itemId, rarity), count);
-            for (let k = 0; k < cost; k++) {
-              const rt = draw(rarityProbabilities(p, j, p.lastTick, options.windows, true), random);
-              const id = identity(j.inputs[0].itemId, rt);
-              if (rt === rarity) {
-                seedStock++;
-                if (options.finiteStock) add(r.outputs, id, 1);
-              } else add(r.outputs, id, 1);
-            }
-          }
-          r.ticks = p.lastTick - start;
-          if (options.finiteStock) {
-            p.pack = p.pack.filter((s) => s.itemId !== seedId);
-            p.bank[seedId] = seedStock;
-          }
-          if (options.returnPlayer) r.endPlayer = p;
-          return r;
-        }
-        const quantile = (values, q) => {
-          const xs = [...values].sort((a, b) => a - b);
-          return xs[Math.min(xs.length - 1, Math.ceil(q * xs.length) - 1)] || 0;
-        };
-        function summarize(runs) {
-          const result = {};
-          for (const k of [
-            "attempts",
-            "successes",
-            "burnt",
-            "caught",
-            "ticks",
-            "workTicks",
-            "walkTicks",
-            "bankTicks",
-            "stunTicks",
-            "xp",
-            "trips",
-          ])
-            result[k] = sum(runs.map((x) => x[k])) / runs.length;
-          for (const k of ["inputs", "outputs"]) {
-            result[k] = {};
-            for (const r of runs)
-              for (const [id, n] of Object.entries(r[k])) add(result[k], id, n / runs.length);
-          }
-          result.seconds = (result.ticks * c.tickMs) / 1000;
-          result.secondsP05 = quantile(
-            runs.map((r) => (r.ticks * c.tickMs) / 1000),
-            0.05,
-          );
-          result.secondsP95 = quantile(
-            runs.map((r) => (r.ticks * c.tickMs) / 1000),
-            0.95,
-          );
-          result.attemptsP95 = quantile(
-            runs.map((r) => r.attempts),
-            0.95,
-          );
-          result.materialsP95 = {};
-          for (const id of Object.keys(result.inputs))
-            result.materialsP95[id] = quantile(
-              runs.map((r) => r.inputs[id] || 0),
-              0.95,
-            );
-          return result;
-        }
-        function forecast(options) {
+        async check() {
+          const time = now(),
+            cached = read(),
+            valid = snapshot(cached?.data, time);
+          if (valid) onSnapshot(valid);
           if (
-            !Number.isSafeInteger(options.player?.lastTick) ||
-            !Number.isFinite(options.player?.skills?.[jobs.get(Number(options.jobId))?.skill])
+            busy ||
+            time - last < INTERVAL ||
+            (Number.isFinite(cached?.checkedAt) &&
+              time >= cached.checkedAt &&
+              time - cached.checkedAt < INTERVAL)
           )
-            throw new Error("等待有效角色快照");
-          if (
-            jobs.get(Number(options.jobId)).grow === undefined &&
-            map.regions?.some(
-              (r) =>
-                r.name === "Home" &&
-                options.player.x >= r.x &&
-                options.player.y >= r.y &&
-                options.player.x < r.x + r.width &&
-                options.player.y < r.y + r.height,
-            )
-          )
-            throw new Error("动态家园路线尚未校准；请返回主地图后计算完整时间");
-          const current = level(options.player.skills[jobs.get(Number(options.jobId)).skill]);
-          if (
-            !Number.isInteger(options.targetLevel) ||
-            options.targetLevel < 1 ||
-            options.targetLevel >= data.xpTable.length
-          )
-            throw new Error(`目标等级须为 1–${data.xpTable.length - 1} 的整数`);
-          const count = clamp(options.samples || 32, 8, 128),
-            planRuns = [],
-            hourRuns = [];
-          for (let i = 0; i < count; i++) {
-            planRuns.push(run(options, rng(7919 * (i + 1)), "target"));
-            hourRuns.push(run(options, rng(104729 * (i + 1)), "hour"));
-          }
-          const plan = summarize(planRuns),
-            hour = summarize(hourRuns);
-          const materials = Object.entries(plan.inputs).map(([id, mean]) => {
-            id = Number(id);
-            const owned =
-              (options.player.bank?.[id] || 0) +
-              held({ ...options.player, pack: options.player.pack || [] }, id);
-            return {
-              id,
-              mean,
-              p95: plan.materialsP95[id],
-              owned,
-              shortage: Math.max(0, Math.ceil(mean) - owned),
-              shortageP95: Math.max(0, Math.ceil(plan.materialsP95[id]) - owned),
-            };
-          });
-          return {
-            jobId: Number(options.jobId),
-            currentLevel: current,
-            targetLevel: options.targetLevel,
-            xpLeft: Math.max(
-              0,
-              data.xpTable[options.targetLevel] -
-                options.player.skills[jobs.get(Number(options.jobId)).skill],
-            ),
-            samples: count,
-            plan,
-            hour,
-            materials,
-            farming: jobs.get(Number(options.jobId)).grow !== undefined,
-            build: data.version.version,
-          };
-        }
-        function forecastHour(options) {
-          const j = jobs.get(Number(options.jobId));
-          if (
-            !j ||
-            !Number.isSafeInteger(options.player?.lastTick) ||
-            !Number.isFinite(options.player.skills?.[j.skill])
-          )
-            throw new Error("等待有效角色快照");
-          if (
-            j.grow === undefined &&
-            map.regions?.some(
-              (r) =>
-                r.name === "Home" &&
-                options.player.x >= r.x &&
-                options.player.y >= r.y &&
-                options.player.x < r.x + r.width &&
-                options.player.y < r.y + r.height,
-            )
-          )
-            throw new Error("家园路线尚未校准");
-          const count = clamp(options.samples || 8, 8, 128),
-            runs = [];
-          for (let i = 0; i < count; i++) runs.push(run(options, rng(104729 * (i + 1)), "hour"));
-          return {
-            jobId: j.id,
-            hour: summarize(runs),
-            samples: count,
-            farming: j.grow !== undefined,
-          };
-        }
-        return {
-          data,
-          jobs,
-          item,
-          level,
-          base,
-          tier,
-          inputs,
-          bestRarity,
-          tool,
-          brew,
-          brewTier,
-          master,
-          home,
-          rotation,
-          xpMultiplier,
-          xp,
-          rarityProbabilities,
-          chance,
-          failure,
-          path,
-          adjacent,
-          nearestBank,
-          nearestSite,
-          workSite,
-          farmingStatus,
-          forecast,
-          forecastHour,
-          run,
-          summarize,
-          rng,
-        };
-      }
-      function fillBook(levels, qty, side, taxBp = 0) {
-        let left = qty,
-          gross = 0;
-        const fills = [];
-        for (const l of [...levels]
-          .filter((l) => l.price > 0 && l.qty > 0)
-          .sort((a, b) => (side === "buy" ? a.price - b.price : b.price - a.price))) {
-          const n = Math.min(left, l.qty);
-          if (n <= 0) break;
-          left -= n;
-          gross += n * l.price;
-          fills.push({ price: l.price, qty: n });
-        }
-        return {
-          gross,
-          net: side === "sell" ? gross * (1 - taxBp / 10000) : gross,
-          filled: qty - left,
-          left,
-          fills,
-        };
-      }
-      function vendorPrice(id, books, pricing = {}) {
-        // Enhancements do not change buyback value; received server floors take precedence.
-        const plain = id % 10000,
-          price = books[id]?.floor ?? pricing.vendorPrices?.[plain];
-        return price > 0 ? price : null;
-      }
-      function valueFlows(flow, books, mode, taxBp, now = Date.now(), pricing = {}) {
-        const missing = [],
-          stale = [],
-          partial = [],
-          details = [],
-          estimated = [];
-        let total = 0,
-          unknownTax = false;
-        const put = (id, qty, price, source, extra = {}) => {
-          if (qty <= 1e-9) return;
-          const taxed = source === "market" && mode !== "buy";
-          if (taxed && taxBp == null) unknownTax = true;
-          const value = qty * price * (taxed ? 1 - (taxBp ?? 0) / 10000 : 1);
-          total += value;
-          details.push({ id, qty, value, price, source, ...extra });
-        };
-        for (const [key, qty] of Object.entries(flow)) {
-          const id = Number(key);
-          if (!(qty > 0)) continue;
-          if (id === 200) {
-            put(id, qty, 1, "coins");
-            continue;
-          }
-          const b = books[id] || {},
-            sell = mode !== "buy",
-            vendor = sell ? vendorPrice(id, books, pricing) : pricing.vendorBuys?.[id],
-            factor = sell ? 1 - (taxBp ?? 0) / 10000 : 1;
-          const quote =
-            mode === "buy" ? b.ask : mode === "sell" ? b.bid : mode === "list" ? b.ask : null;
-          const side = mode === "sell" ? "bid" : "ask",
-            quoteAt = b[side + "At"] ?? b.at,
-            depthAt = b[side + "DepthAt"] ?? b.depthAt;
-          if (mode !== "vendor" && quote > 0 && now - (quoteAt || 0) > 300000) stale.push(id);
-          const levels = mode === "buy" ? b.asks : mode === "sell" ? b.bids : null;
-          let left = qty;
-          if (mode !== "vendor" && Array.isArray(levels)) {
-            const old = now - (depthAt || 0) > 300000;
-            const useful = levels.filter(
-              (x) => !(vendor > 0) || (sell ? x.price * factor > vendor : x.price < vendor),
-            );
-            const fill = fillBook(useful, qty, mode, taxBp ?? 0);
-            for (const f of fill.fills)
-              put(id, f.qty, f.price, "market", { depth: !old, estimated: old, quoteAt: depthAt });
-            if (old && fill.filled > 0) estimated.push(id);
-            left = fill.left;
-          } else if (
-            mode !== "vendor" &&
-            quote > 0 &&
-            (!(vendor > 0) || (sell ? quote * factor > vendor : quote < vendor))
-          ) {
-            const old = now - (quoteAt || 0) > 300000,
-              available =
-                mode === "list"
-                  ? qty
-                  : Number.isFinite(b[side + "Qty"])
-                    ? Math.max(0, b[side + "Qty"])
-                    : qty,
-              filled = Math.min(qty, available);
-            put(id, filled, quote, "market", { depth: false, estimated: old, quoteAt });
-            if (old && filled > 0) estimated.push(id);
-            left = qty - filled;
-          }
-          if (left > 1e-9 && vendor > 0) {
-            put(id, left, vendor, "vendor");
-            left = 0;
-          }
-          // Restored asks are short-lived cost estimates, never executable orders.
-          // Prefer more recent trade history when it supersedes the cached ask.
-          const history =
-            mode === "buy" &&
-            b.history?.price > 0 &&
-            Number.isFinite(b.history.tradeAt) &&
-            b.history.tradeAt <= now &&
-            now - b.history.tradeAt <= 7 * 86400000
-              ? b.history
-              : null;
-          const cached =
-            mode === "buy" &&
-            Number.isFinite(b.purchaseCache?.price) &&
-            b.purchaseCache.price > 0 &&
-            Number.isFinite(b.purchaseCache.at) &&
-            b.purchaseCache.at <= now &&
-            now - b.purchaseCache.at <= 86400000
-              ? b.purchaseCache
-              : null;
-          if (left > 1e-9 && (cached || history)) {
-            if (cached && (!history || cached.at > history.tradeAt))
-              put(id, left, cached.price, "cached", { estimated: true, cachedAt: cached.at });
-            else
-              put(id, left, history.price, "history", {
-                estimated: true,
-                tradeAt: history.tradeAt,
-              });
-            estimated.push(id);
-            left = 0;
-          }
-          // Known nontradable outputs have no cash resale value, rather than an unknown price.
-          if (
-            left > 1e-9 &&
-            sell &&
-            Object.hasOwn(pricing.vendorPrices || {}, id % 10000) &&
-            pricing.vendorPrices[id % 10000] === null
-          ) {
-            put(id, left, 0, "nontradable");
-            left = 0;
-          }
-          if (left > 1e-9) {
-            if (left < qty) partial.push({ id, unfilled: left, filled: qty - left });
-            else missing.push(id);
-            details.push({ id, qty: left, value: null, source: "missing" });
-          }
-        }
-        return {
-          total: missing.length || partial.length || unknownTax ? null : total,
-          pricedSubtotal: total,
-          missing,
-          stale,
-          partial,
-          details,
-          estimated,
-          unknownTax,
-          vendorSubtotal: sum(details.filter((x) => x.source === "vendor").map((x) => x.value)),
-          coinSubtotal: sum(details.filter((x) => x.source === "coins").map((x) => x.value)),
-        };
-      }
-      function profits(hour, books, taxBp, now, pricing = {}) {
-        const cost = valueFlows(hour.inputs, books, "buy", taxBp, now, pricing),
-          immediate = valueFlows(hour.outputs, books, "sell", taxBp, now, pricing),
-          listing = valueFlows(hour.outputs, books, "list", taxBp, now, pricing),
-          vendor = valueFlows(hour.outputs, books, "vendor", taxBp, now, pricing);
-        const net = (revenue) =>
-          revenue.total !== null && cost.total !== null ? revenue.total - cost.total : null;
-        return {
-          cost,
-          immediate,
-          listing,
-          vendor,
-          immediateProfit: net(immediate),
-          listingProfit: net(listing),
-          vendorProfit: net(vendor),
-          immediateKnownNet: immediate.pricedSubtotal - cost.pricedSubtotal,
-          listingKnownNet: listing.pricedSubtotal - cost.pricedSubtotal,
-          vendorKnownNet: vendor.pricedSubtotal - cost.pricedSubtotal,
-        };
-      }
-      function dailyProfits(hour, books, taxBp, now, pricing) {
-        const daily = { inputs: {}, outputs: {} };
-        for (const kind of ["inputs", "outputs"])
-          for (const [id, n] of Object.entries(hour[kind] || {})) daily[kind][id] = n * 24;
-        // Quote depth is consumed once across the whole projected day.
-        return profits(daily, books, taxBp, now, pricing);
-      }
-      function formatNumber(n, d = 0) {
-        if (!Number.isFinite(n)) return "—";
-        const units = ["", "K", "M", "B"];
-        let i = Math.min(3, Math.max(0, Math.floor(Math.log10(Math.max(1, Math.abs(n))) / 3)));
-        let scaled = n / 1000 ** i;
-        if (i && Math.abs(Number(scaled.toFixed(2))) >= 1000 && i < 3) {
-          i++;
-          scaled = n / 1000 ** i;
-        }
-        const text = scaled.toLocaleString("en-US", { maximumFractionDigits: i ? 2 : d });
-        return (text === "-0" ? "0" : text) + units[i];
-      }
-      return {
-        create,
-        hash,
-        rng,
-        fillBook,
-        vendorPrice,
-        valueFlows,
-        profits,
-        dailyProfits,
-        formatNumber,
-      };
-    });
-
-    /* One-food budgets for adding a day of a buff, using passive purchase quotes. */
-    (function (root, factory) {
-      if (typeof module === "object" && module.exports)
-        module.exports = factory(require("./core.js"));
-      else root.DVIBuffs = factory(root.DVIPlannerCore);
-    })(typeof globalThis !== "undefined" ? globalThis : this, function (core) {
-      "use strict";
-      function bestDaily(model, books, kind, now = Date.now()) {
-        if (kind !== "fed" && kind !== "rooted") throw new Error("Invalid food buff");
-        const day = 24 * 6000;
-        let best = { kind, hours: 24, id: null, qty: 0, cost: null, ticks: 0, estimated: false };
-        for (const food of model.data.food.variants) {
-          const ticks = food[kind + "Ticks"];
-          if (!ticks) continue;
-          const qty = Math.ceil(day / ticks);
-          // Quote the whole quantity: a cheap first ask may not cover a day's food.
-          const quote = core.valueFlows({ [food.id]: qty }, books, "buy", 0, now, model.data);
-          if (quote.total === null) continue;
-          const estimated = quote.estimated.length > 0;
-          if (
-            best.cost !== null &&
-            (quote.total > best.cost ||
-              (quote.total === best.cost &&
-                ((estimated && !best.estimated) ||
-                  (estimated === best.estimated && qty >= best.qty))))
-          )
-            continue;
-          best = {
-            kind,
-            hours: 24,
-            id: food.id,
-            qty,
-            cost: quote.total,
-            ticks: qty * ticks,
-            estimated,
-          };
-        }
-        return best;
-      }
-      function potionPrice(model, player, books, kind, now = Date.now()) {
-        const active = (player.brews?.[kind] || 0) > player.lastTick;
-        const tier = active ? model.brewTier(player, kind, player.lastTick) : 0;
-        const potion = model.data.potions.find((x) => x.kind === kind && x.tier === tier);
-        if (!potion) return null;
-        const quote = core.valueFlows({ [potion.id]: 1 }, books, "buy", 0, now, model.data);
-        return { id: potion.id, tier, cost: quote.total, estimated: quote.estimated.length > 0 };
-      }
-      return { bestDaily, potionPrice };
-    });
-
-    /* Passive current-fight sampling. Counters and inventory are copied, never changed. */
-    (function (root, factory) {
-      if (typeof module === "object" && module.exports) module.exports = factory();
-      else root.DVICombat = factory();
-    })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-      "use strict";
-      const kinds = ["warrior", "haste", "abyssal", "nourish", "hunter", "elixir", "swift"];
-      const RATE_WINDOW = 3000,
-        EPH_WINDOW = 500; // 30-minute valuation, 5-minute current encounter rate.
-      const skills = ["melee", "ranged", "magic", "defence", "hitpoints"];
-      const add = (flow, id, n) => {
-        if (n) flow[id] = (flow[id] || 0) + n;
-      };
-      function inventory(p) {
-        const counts = { ...p.bank };
-        for (const s of p.pack || []) add(counts, s.itemId, s.qty);
-        return counts;
-      }
-      function foodEligible(model, p, id) {
-        return (
-          (model.item(id)?.heals || 0) > 0 &&
-          (model.tier(id) <= (p.foodMaxTier ?? 0) || id === p.foodItemId)
-        );
-      }
-      function selectedFood(model, p) {
-        const pack = p.pack || [];
-        if (p.foodItemId > 0 && pack.some((x) => x.itemId === p.foodItemId && x.qty > 0))
-          return p.foodItemId;
-        const held = pack.find((x) => x.qty > 0 && foodEligible(model, p, x.itemId));
-        if (held) return held.itemId;
-        if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0) return p.foodItemId;
-        return (
-          Object.keys(p.bank || {})
-            .map(Number)
-            .filter((id) => p.bank[id] > 0 && foodEligible(model, p, id))
-            .sort(
-              (a, b) =>
-                (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
-                a - b,
-            )[0] ?? null
-        );
-      }
-      function potionFlow(model, p, start, end, potionKinds = kinds) {
-        const out = {};
-        for (const kind of potionKinds) {
-          let tick = start;
-          while (tick < end && (p.brews?.[kind] || 0) > tick) {
-            const tier = model.brewTier(p, kind, tick),
-              buckets = p.brewBuckets?.[kind];
-            let until = p.brews[kind];
-            if (buckets?.length) {
-              let accumulated = 0;
-              for (let i = buckets.length - 1; i >= tier; i--) accumulated += buckets[i];
-              until = Math.min(
-                until,
-                p.brews[kind] - buckets.reduce((a, b) => a + b, 0) + accumulated,
-              );
-            }
-            until = Math.min(end, until);
-            if (until <= tick) break;
-            const potion = model.data.potions.find((x) => x.kind === kind && x.tier === tier);
-            if (potion) add(out, potion.id, (until - tick) / model.data.constants.potionTicks);
-            tick = until;
-          }
-        }
-        return out;
-      }
-      function loot(model, p, monster, tick, windows = []) {
-        const out = {},
-          facts = model.data.combat;
-        let gold = 0;
-        for (let n = monster.gold[0]; n <= monster.gold[1]; n++)
-          gold += Math.floor(n * (1 + facts.abyssalCoins * model.brew(p, "abyssal", tick)));
-        add(out, 200, gold / (monster.gold[1] - monster.gold[0] + 1));
-        const probs = model.rarityProbabilities(p, { skill: "combat", inputs: [] }, tick, windows);
-        probs.forEach((prob, tier) =>
-          add(out, monster.drop + tier * 1000, (monster.dropChance ?? 1) * prob),
-        );
-        let rare = 1;
-        for (const w of windows)
-          if (tick >= w.fromTick && tick <= w.toTick) rare += (w.rarityMult ?? 1) - 1;
-        const rotation = model.rotation(tick);
-        rare +=
-          0.25 * model.brew(p, "hunter", tick) +
-          ((p.brews?.blessing || 0) > tick ? 0.1 : 0) +
-          (rotation.skill === "combat" && rotation.kind === "rarity" ? 0.25 : 0) +
-          model.master(p, "rare") -
-          1;
-        const amulet = p.equipment?.amulet || 0,
-          gear = model.data.gear.find((x) => x.itemId === amulet % 10000);
-        const luck =
-          (gear?.luck || 0) * (1 + model.data.constants.toolEnhance * Math.floor(amulet / 10000));
-        if (monster.bonus)
-          add(out, monster.bonus.itemId, Math.min(1, monster.bonus.chance * (1 + luck) * rare));
-        add(
-          out,
-          facts.shardId,
-          Math.min(0.2, 0.08 + monster.level * 0.0013) * (1 + Math.floor(monster.level / 30)),
-        );
-        add(out, facts.pets[monster.id], facts.petChance);
-        return out;
-      }
-      function mountLoot(model, p, opportunityTicks) {
-        const facts = model.data.combat.mountDrops,
-          out = {};
-        if (!facts || p.ironman || !(opportunityTicks > 0)) return out;
-        const id = p.equipment?.amulet || 0,
-          gear = model.data.gear.find((g) => g.itemId === id % 10000),
-          luck =
-            (gear?.luck || 0) * (1 + model.data.constants.toolEnhance * Math.floor(id / 10000));
-        const cumulative = ["uncommon", "rare", "epic", "legendary"].map((k) =>
-          Math.min(1, facts.thresholds[k] * (1 + luck)),
-        );
-        const probabilities = [
-            1 - cumulative[0],
-            cumulative[0] - cumulative[1],
-            cumulative[1] - cumulative[2],
-            cumulative[2] - cumulative[3],
-            cumulative[3],
-          ],
-          chance = Math.min(1, opportunityTicks / facts.chanceTicks);
-        probabilities.forEach((n, tier) => add(out, facts.itemId + tier * 1000, n * chance));
-        return out;
-      }
-      function create(model) {
-        let previous = null,
-          segments = [],
-          key = null,
-          lastFood = null,
-          reason = "等待战斗数据";
-        function reset(message) {
-          previous = null;
-          segments = [];
-          lastFood = null;
-          reason = message;
-        }
-        function sample(p, windows = []) {
-          const zone = p?.route?.zoneId;
-          if (zone == null || !p.tally?.monsters) {
-            reset("没有正在进行的普通战斗");
-            key = null;
-            return null;
-          }
-          // A change of loadout, food policy or zone starts a new measurement window.
-          const signature = JSON.stringify([
-            p.id,
-            zone,
-            p.equipment,
-            p.masteries,
-            p.perks,
-            p.house,
-            p.houseFurniture,
-            p.foodItemId,
-            p.foodMaxTier,
-            p.eatAt,
-            p.foodPerTrip,
-            !!p.ironman,
-          ]);
-          if (key !== signature) {
-            key = signature;
-            reset("刚开始观测");
-          }
-          const counts = inventory(p),
-            snap = {
-              ...p,
-              skills: { ...p.skills },
-              equipment: { ...p.equipment },
-              rollIndex: { ...p.rollIndex },
-              brews: { ...p.brews },
-              brewTier: { ...p.brewTier },
-              brewBuckets: JSON.parse(JSON.stringify(p.brewBuckets || {})),
-              tally: JSON.parse(JSON.stringify(p.tally)),
-              counts,
-              food: selectedFood(model, p),
-              windows: JSON.parse(JSON.stringify(windows)),
-            };
-          if (previous) {
-            const ticks = p.lastTick - previous.lastTick;
-            const decreased =
-              skills.some((k) => (p.skills[k] || 0) < (previous.skills[k] || 0)) ||
-              Object.entries(previous.tally.monsters).some(
-                ([id, n]) => (p.tally.monsters[id] || 0) < n,
-              ) ||
-              (p.tally.eaten || 0) < (previous.tally.eaten || 0) ||
-              (Number.isSafeInteger(p.rollIndex?.mount) &&
-                Number.isSafeInteger(previous.rollIndex?.mount) &&
-                p.rollIndex.mount < previous.rollIndex.mount);
-            if (ticks < 0 || ticks > 200 || decreased) {
-              reset("数据重同步，重新观测");
-            } else if (ticks > 0) {
-              const segment = {
-                start: previous.lastTick,
-                end: p.lastTick,
-                outputs: {},
-                inputs: potionFlow(model, previous, previous.lastTick, p.lastTick),
-                food: {},
-                xp: {},
-                kills: 0,
-                deaths: Math.max(0, (p.tally.deaths || 0) - (previous.tally.deaths || 0)),
-                unknownFood: 0,
-              };
-              if (
-                Number.isSafeInteger(previous.rollIndex?.mount) &&
-                Number.isSafeInteger(p.rollIndex?.mount)
-              ) {
-                const attacks = p.rollIndex.mount - previous.rollIndex.mount,
-                  weapon = model.data.gear.find(
-                    (g) => g.itemId === (previous.equipment?.weapon || 0) % 10000,
-                  ),
-                  attackTicks = previous.equipment?.weapon == null ? 5 : weapon?.speed || 4;
-                for (const [id, n] of Object.entries(mountLoot(model, previous, attackTicks)))
-                  add(segment.outputs, id, n * attacks);
-              }
-              for (const monster of model.data.combat.monsters) {
-                const kills =
-                  (p.tally.monsters[monster.id] || 0) - (previous.tally.monsters[monster.id] || 0);
-                if (kills <= 0) continue;
-                segment.kills += kills;
-                // Average known buffs over the sampling interval; does not invent rare drops from a small sample.
-                for (let t = previous.lastTick; t < p.lastTick; t++)
-                  for (const [id, n] of Object.entries(
-                    loot(model, previous, monster, t, previous.windows),
-                  ))
-                    add(segment.outputs, id, (n * kills) / ticks);
-              }
-              let eaten = (p.tally.eaten || 0) - (previous.tally.eaten || 0);
-              for (const [id, before] of Object.entries(previous.counts))
-                if (eaten > 0 && foodEligible(model, previous, Number(id))) {
-                  const n = Math.min(eaten, Math.max(0, before - (counts[id] || 0)));
-                  if (n) {
-                    add(segment.food, id, n);
-                    eaten -= n;
-                    lastFood = Number(id);
-                  }
-                }
-              // A concurrent purchase can conceal food consumption. Use the unchanged selected food only.
-              if (eaten > 0 && previous.food != null && previous.food === snap.food) {
-                add(segment.food, previous.food, eaten);
-                lastFood = previous.food;
-                eaten = 0;
-              }
-              segment.unknownFood = eaten;
-              for (const [id, n] of Object.entries(segment.food)) add(segment.inputs, id, n);
-              for (const skill of skills)
-                segment.xp[skill] = (p.skills[skill] || 0) - (previous.skills[skill] || 0);
-              segments.push(segment);
-              segments = segments.filter((s) => s.end > p.lastTick - RATE_WINDOW);
-              reason = "";
-            }
-          }
-          if (!previous || p.lastTick !== previous.lastTick) previous = snap;
-          return report(p);
-        }
-        function report(p) {
-          const zone = p?.route?.zoneId;
-          if (zone == null || key === null) return null;
-          const cutoff = p.lastTick - RATE_WINDOW,
-            recent = { ticks: 0, kills: 0, deaths: 0 },
-            totals = {
-              outputs: {},
-              inputs: {},
-              food: {},
-              xp: {},
-              ticks: 0,
-              kills: 0,
-              deaths: 0,
-              unknownFood: 0,
-            };
-          for (const s of segments) {
-            const ticks = s.end - s.start,
-              factor = Math.max(0, s.end - Math.max(s.start, cutoff)) / ticks;
-            totals.ticks += ticks * factor;
-            totals.kills += s.kills * factor;
-            totals.deaths += s.deaths * factor;
-            totals.unknownFood += s.unknownFood * factor;
-            const recentFactor =
-              Math.max(0, s.end - Math.max(s.start, p.lastTick - EPH_WINDOW)) / ticks;
-            recent.ticks += ticks * recentFactor;
-            recent.kills += s.kills * recentFactor;
-            recent.deaths += s.deaths * recentFactor;
-            for (const name of ["outputs", "inputs", "food", "xp"])
-              for (const [id, n] of Object.entries(s[name])) add(totals[name], id, n * factor);
-          }
-          const factor = totals.ticks ? 6000 / totals.ticks : 0,
-            hour = { ticks: 6000, outputs: {}, inputs: {}, xp: {}, food: {} };
-          for (const name of ["outputs", "inputs", "food", "xp"])
-            for (const [id, n] of Object.entries(totals[name])) hour[name][id] = n * factor;
-          const owned = inventory(p),
-            foodId = selectedFood(model, p) ?? lastFood,
-            foodRate = hour.food[foodId] || 0;
-          const foods = Object.entries(owned)
-            .filter(([id, n]) => n > 0 && foodEligible(model, p, Number(id)))
-            .map(([id, qty]) => ({ id: Number(id), qty }));
-          return {
-            zone,
-            reason,
-            seconds: totals.ticks * 0.6,
-            ready: totals.ticks >= 100,
-            hour,
-            killsPerHour: totals.kills * factor,
-            encountersPerHour: recent.ticks
-              ? ((recent.kills + recent.deaths) * 6000) / recent.ticks
-              : 0,
-            unknownFood: totals.unknownFood,
-            foodId,
-            foodQty: owned[foodId] || 0,
-            foods,
-            foodSeconds: foodRate > 0 ? ((owned[foodId] || 0) / foodRate) * 3600 : null,
-            potions: kinds
-              .filter((kind) => (p.brews?.[kind] || 0) > p.lastTick)
-              .map((kind) => ({
-                kind,
-                tier: model.brewTier(p, kind, p.lastTick),
-                seconds: (p.brews[kind] - p.lastTick) * 0.6,
-                currentTierSeconds: currentTierTicks(model, p, kind) * 0.6,
-              })),
-          };
-        }
-        return { sample, report, reset };
-      }
-      function currentTierTicks(model, p, kind) {
-        const tier = model.brewTier(p, kind, p.lastTick),
-          buckets = p.brewBuckets?.[kind];
-        if (!buckets?.length) return p.brews[kind] - p.lastTick;
-        let sum = 0;
-        for (let i = buckets.length - 1; i >= tier; i--) sum += buckets[i];
-        return Math.min(
-          p.brews[kind] - p.lastTick,
-          p.brews[kind] - buckets.reduce((a, b) => a + b, 0) + sum - p.lastTick,
-        );
-      }
-      function levelEstimate(model, player, hour, skill, target) {
-        if (
-          !["melee", "ranged", "magic", "defence", "hitpoints"].includes(skill) ||
-          !Number.isInteger(target) ||
-          target < 1 ||
-          target >= model.data.xpTable.length
-        )
-          return { error: "target" };
-        const remaining = Math.max(0, model.data.xpTable[target] - (player.skills[skill] || 0)),
-          rate = hour?.bySkill?.[skill];
-        if (!remaining) return { remaining, seconds: 0, rate: rate || 0 };
-        return {
-          remaining,
-          seconds: rate > 0 ? (remaining / rate) * 3600 : null,
-          rate: rate > 0 ? rate : 0,
-        };
-      }
-      return { create, loot, mountLoot, potionFlow, inventory, selectedFood, kinds, levelEstimate };
-    });
-
-    /* Passive route forecasts: audited native timing with independent market valuation. */
-    (function (root, factory) {
-      if (typeof module === "object" && module.exports)
-        module.exports = factory(require("./core.js"), require("./combat.js"));
-      else root.DVIBattleForecast = factory(root.DVIPlannerCore, root.DVICombat);
-    })(typeof globalThis !== "undefined" ? globalThis : this, function (core, combat) {
-      "use strict";
-      const gearMaps = new WeakMap();
-      function buildStats(model, p) {
-        const facts = model.data;
-        let gear = gearMaps.get(model);
-        if (!gear) {
-          gear = new Map(facts.gear.map((x) => [x.itemId, x]));
-          gearMaps.set(model, gear);
-        }
-        const weapon = gear.get((p.equipment?.weapon || 0) % 10000);
-        const style = weapon?.magic ? "magic" : weapon?.ranged ? "ranged" : "melee";
-        const sums = { accuracy: 0, strength: 0, defence: 0 };
-        for (const slot of facts.combat.gearSlots) {
-          const id = p.equipment?.[slot],
-            g = gear.get((id || 0) % 10000);
-          if (!g) continue;
-          for (const stat of Object.keys(sums))
-            sums[stat] +=
-              Math.round(
-                (g[stat] || 0) * (1 + facts.constants.toolEnhance * Math.floor(id / 10000)),
-              ) * (stat === "defence" || !g.style || g.style === style ? 1 : -1);
-        }
-        const roomDamage = facts.rooms.reduce(
-          (n, r) =>
-            n +
-            (p.houseFurniture?.[r.id] !== undefined &&
-            r.bonus.kind === "dmg" &&
-            r.bonus.skill === style
-              ? Math.min(0.5, (p.house?.[r.id] || 0) * 0.01 * (r.rate ?? 1))
-              : 0),
-          1,
-        );
-        const divisor =
-          style === "magic"
-            ? 4.5
-            : weapon?.twoHanded
-              ? 6
-              : style === "ranged" && weapon?.speed === 5
-                ? 5
-                : 8;
-        const hit = 1 + Math.floor((model.level(p.skills[style] || 0) + sums.strength) / divisor);
-        return (tick) => {
-          const mult =
-            (1 +
-              0.1 * model.brew(p, "warrior", tick) +
-              ((p.brews?.fed || 0) > tick ? facts.food.damage : 0)) *
-            roomDamage *
-            model.master(p, "maxhit");
-          return {
-            style,
-            accuracy: Math.round(
-              (10 +
-                model.level(p.skills[style] || 0) +
-                sums.accuracy +
-                Math.round(10 * model.brew(p, "warrior", tick))) *
-                model.master(p, "accuracy"),
-            ),
-            defence: 10 + model.level(p.skills.defence || 0) + sums.defence,
-            maxHit: mult > 1 ? Math.ceil(hit * mult) : hit,
-            maxHp: Math.floor(model.level(p.skills.hitpoints || 0) * model.master(p, "hp")),
-            speed: p.equipment?.weapon == null ? 5 : weapon?.speed || 4,
-            attackStep: Math.round(1000 * (1 + 0.2 * model.brew(p, "haste", tick))),
-          };
-        };
-      }
-      function stats(model, p, tick = p.lastTick) {
-        return buildStats(model, p)(tick);
-      }
-      function killXp(model, p, monster, tick, windows, style = stats(model, p, tick).style) {
-        const base =
-            model.xpMultiplier(p, { skill: "combat", inputs: [{}] }, tick, windows) +
-            model.home(p, "combatXp"),
-          third = Math.max(1, Math.floor(monster.xp / 3));
-        return {
-          [style]: Math.round(monster.xp * (base + model.home(p, "skillXp", style))),
-          defence: Math.round(third * (base + model.home(p, "skillXp", "defence"))),
-          hitpoints: Math.round(third * base),
-        };
-      }
-      // Independently implemented from the audited public client 1.0.2443.
-      // Same combat/route transitions; expected loot is valued separately from
-      // sampled inventory drops, so a lucky rare drop cannot dominate the ranking.
-      function mix(x) {
-        x = (x ^ (x >>> 16)) >>> 0;
-        x = Math.imul(x, 2246822507) >>> 0;
-        x = (x ^ (x >>> 13)) >>> 0;
-        x = Math.imul(x, 3266489909) >>> 0;
-        return (x ^ (x >>> 16)) >>> 0;
-      }
-      function runRoute(model, options) {
-        const p = JSON.parse(JSON.stringify(options.player)),
-          facts = model.data;
-        const zone = facts.world.zones.find(
-          (z) =>
-            z.id ===
-            (options.zoneId ??
-              facts.world.zones.find((z) => z.monsterId === options.monsterId)?.id),
-        );
-        const monster = zone && facts.combat.monsters.find((m) => m.id === zone.monsterId);
-        if (!monster) throw new Error("Unknown monster");
-        if (!Number.isInteger(p.x) || !Number.isInteger(p.y) || !Number.isFinite(p.hp))
-          throw new Error("等待角色血量与位置数据");
-        if (
-          facts.world.regions.some(
-            (r) =>
-              r.name === "Home" &&
-              p.x >= r.x &&
-              p.y >= r.y &&
-              p.x < r.x + r.width &&
-              p.y < r.y + r.height,
-          )
-        )
-          throw new Error("动态家园路线尚未校准；请返回主地图后计算完整时间");
-        const start = p.lastTick,
-          ticks = Math.max(
-            1,
-            Math.min(options.progression ? 144000 : 6000, Math.floor(options.ticks || 6000)),
-          ),
-          seed = options.seed ?? 1337;
-        p.pack ||= [];
-        p.bank ||= {};
-        p.overflow ||= {};
-        p.brews ||= {};
-        p.skills ||= {};
-        p.perks ||= {};
-        p.equipment ||= {};
-        p.foodMaxTier ??= 0;
-        p.foodPerTrip ??= 20;
-        p.eatAt ??= 0.5;
-        const r = {
-          ticks,
-          outputs: {},
-          inputs: {},
-          bySkill: {},
-          food: {},
-          kills: 0,
-          attacks: 0,
-          deaths: 0,
-          workTicks: 0,
-          walkTicks: 0,
-          bankTicks: 0,
-          drinkTicks: 0,
-          idleTicks: 0,
-          stoppedTicks: 0,
-          trips: 0,
-          stop: null,
-        };
-        const add = (out, id, n) => {
-          if (n) out[id] = (out[id] || 0) + n;
-        };
-        let getStats = buildStats(model, p),
-          phase = "toWork",
-          activity = "idle",
-          route = null,
-          pathIndex = 0,
-          stride = 0,
-          strideSpeed = 1000,
-          attackClock = 0,
-          foeClock = 0,
-          foeHp = 0,
-          drinkClock = 0,
-          killRoll = p.rollIndex?.kill || 0;
-        const cap = () => facts.constants.packSlots + (p.perks.pockets || 0);
-        const eligible = (id) =>
-          (model.item(id)?.heals || 0) > 0 &&
-          (model.tier(id) <= p.foodMaxTier || id === p.foodItemId);
-        const packFood = () =>
-          p.foodItemId > 0 && p.pack.some((s) => s.itemId === p.foodItemId && s.qty > 0)
-            ? p.foodItemId
-            : (p.pack.find((s) => s.qty > 0 && eligible(s.itemId))?.itemId ?? null);
-        const bankFoods = () => {
-          const ids = Object.keys(p.bank)
-            .map(Number)
-            .filter((id) => p.bank[id] > 0 && eligible(id))
-            .sort(
-              (a, b) =>
-                (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
-                a - b,
-            );
-          if (p.foodItemId > 0 && p.bank[p.foodItemId] > 0) {
-            const i = ids.indexOf(p.foodItemId);
-            if (i >= 0) ids.splice(i, 1);
-            ids.unshift(p.foodItemId);
-          }
-          return ids;
-        };
-        const bankFood = () => bankFoods()[0] ?? null;
-        const danger = () =>
-          p.hp <= 0
-            ? "dead"
-            : p.eatAt > 0 &&
-                (p.hp <= getStats(p.lastTick).maxHp * p.eatAt ||
-                  p.hp <= getStats(p.lastTick).maxHp / 3) &&
-                packFood() === null &&
-                bankFood() !== null
-              ? "restock"
-              : p.hp <= getStats(p.lastTick).maxHp / 3 && (p.eatAt <= 0 || packFood() === null)
-                ? "fountain"
-                : null;
-        const stop = (reason) => {
-          r.stop = reason;
-          activity = "stopped";
-        };
-        const inZone = () =>
-          p.x >= zone.x && p.y >= zone.y && p.x < zone.x + zone.width && p.y < zone.y + zone.height;
-        const near = (site) => Math.abs(p.x - site.x) <= 1 && Math.abs(p.y - site.y) <= 1;
-        function walk(point) {
-          if (!point) {
-            stop("unreachable");
             return;
-          }
-          route = model.path(p.x, p.y, point.x, point.y, true);
-          pathIndex = 0;
-          if (!route) {
-            stop("unreachable");
-            return;
-          }
-          if (!route.length) {
-            activity = "idle";
-            return;
-          }
-          stride = 0;
-          strideSpeed = Math.round(
-            (1000 + Math.round((model.tool(p.equipment.mount)?.bonus || 0) * 1000)) *
-              (1 + 0.2 * model.brew(p, "swift", p.lastTick)) *
-              model.master(p, "move"),
-          );
-          activity = "walking";
-        }
-        function healing(id) {
-          return Math.floor(
-            model.item(id).heals *
-              (1 + 0.025 * (p.perks.meals || 0) + 0.25 * model.brew(p, "nourish", p.lastTick)),
-          );
-        }
-        function consume(id, fromBank = false) {
-          if (fromBank) {
-            if (--p.bank[id] <= 0) delete p.bank[id];
-          } else {
-            const at = p.pack.findIndex((x) => x.itemId === id);
-            if (--p.pack[at].qty <= 0) p.pack.splice(at, 1);
-          }
-          p.hp = Math.min(getStats(p.lastTick).maxHp, p.hp + healing(id));
-          add(r.food, id, 1);
-          add(r.inputs, id, 1);
-          const food = facts.food.variants.find((x) => x.id === id);
-          for (const key of ["fed", "rooted"])
-            if (food?.[key + "Ticks"])
-              p.brews[key] = Math.max(p.lastTick, p.brews[key] || 0) + food[key + "Ticks"];
-          return true;
-        }
-        function eat() {
-          const s = getStats(p.lastTick);
-          if (p.eatAt <= 0 || p.hp <= 0 || p.hp > s.maxHp * p.eatAt) return false;
-          const id = packFood();
-          if (id === null) return false;
-          return consume(id);
-        }
-        function put(id, qty) {
-          if (options.onCollected) options.onCollected(p, id, qty);
-          if (model.item(id)?.stackable) {
-            const s = p.pack.find((x) => x.itemId === id);
-            if (s) {
-              s.qty += qty;
-              return;
+          busy = true;
+          last = time;
+          write({ checkedAt: time, data: valid });
+          try {
+            const data = snapshot(await fetchSnapshot(), now());
+            if (data) {
+              write({ checkedAt: time, data });
+              onSnapshot(data);
             }
-            if (p.pack.length < cap()) {
-              p.pack.push({ itemId: id, qty });
-              return;
-            }
-          } else if (p.pack.length + qty <= cap()) {
-            for (let i = 0; i < qty; i++) p.pack.push({ itemId: id, qty: 1 });
-            return;
+          } catch {
+          } finally {
+            busy = false;
           }
-          add(p.bank, id, qty); // Native combat loot falls straight into the bank if it does not fit.
-        }
-        function bank() {
-          const slots =
-            75 +
-            (p.bankSlotsBought || 0) +
-            facts.rooms
-              .filter((x) => x.bonus.kind === "bankSlots")
-              .reduce((n, x) => n + Math.floor((p.house?.[x.id] || 0) / 2), 0);
-          const petIds = new Set(facts.constants.petIds || []);
-          const bankCount = () =>
-            Object.entries(p.bank).filter(
-              ([id, n]) =>
-                n > 0 && !(facts.constants.petsNoBankSlots && petIds.has(Number(id) % 10000)),
-            ).length;
-          const fits = (id) =>
-            (facts.constants.petsNoBankSlots && petIds.has(Number(id) % 10000)) ||
-            p.unlimitedBank ||
-            (p.brews.blessing || 0) > p.lastTick ||
-            p.bank[id] > 0 ||
-            bankCount() < slots;
-          for (const [id, n] of Object.entries(p.overflow))
-            if (n > 0 && fits(id)) {
-              add(p.bank, id, n);
-              delete p.overflow[id];
-            }
-          p.pack = p.pack.filter((s) => {
-            if (fits(s.itemId)) {
-              add(p.bank, s.itemId, s.qty);
-              return false;
-            }
-            if (
-              p.overflow[s.itemId] > 0 ||
-              Object.values(p.overflow).filter((n) => n > 0).length < 10
-            ) {
-              add(p.overflow, s.itemId, s.qty);
-              return false;
-            }
-            return true;
-          });
-          if (p.pack.length) {
-            stop("storageFull");
-            return;
-          }
-          if (facts.combat.balance?.bankPreheal && p.eatAt > 0)
-            for (let i = 0; i < facts.combat.balance.bankPrehealLimit; i++) {
-              const id = bankFood();
-              if (id === null || p.hp + healing(id) > getStats(p.lastTick).maxHp) break;
-              consume(id, true);
-            }
-          const target =
-            p.foodPerTrip === -1
-              ? cap()
-              : p.foodPerTrip === -2
-                ? Math.max(1, cap() - 1)
-                : Math.max(0, p.foodPerTrip);
-          let taken = 0;
-          for (const id of bankFoods()) {
-            const n = Math.max(0, Math.min(target - taken, p.bank[id], cap() - p.pack.length));
-            if (!n) continue;
-            p.bank[id] -= n;
-            if (!p.bank[id]) delete p.bank[id];
-            for (let i = 0; i < n; i++) p.pack.push({ itemId: id, qty: 1 });
-            taken += n;
-            if (taken >= target) break;
-          }
-          // 1.0.2331 eats before leaving the bank, up to 64 attempts.
-          for (let i = 0; i < 64; i++) {
-            const old = p.hp;
-            eat();
-            if (p.hp === old) break;
-          }
-          r.trips++;
-          activity = "idle";
-        }
-        const roll = (salt, tick) => mix(core.hash(seed ^ salt, p.id, tick)) / 4294967296;
-        const secret = (salt, index) =>
-          mix(core.hash(mix(core.hash(seed, salt, 625341585)), p.id, index));
-        function killed() {
-          r.kills++;
-          killRoll++;
-          if (options.recordCoins) {
-            const range = monster.gold[1] - monster.gold[0] + 1;
-            p.coins =
-              (p.coins || 0) +
-              Math.floor(
-                (monster.gold[0] + (secret(1280266068, killRoll) % range)) *
-                  (1 + facts.combat.abyssalCoins * model.brew(p, "abyssal", p.lastTick)),
-              );
-          }
-          for (const [id, n] of Object.entries(
-            combat.loot(model, p, monster, p.lastTick, options.windows || []),
-          ))
-            add(r.outputs, id, n);
-          const probs = model.rarityProbabilities(
-              p,
-              { skill: "combat", inputs: [] },
-              p.lastTick,
-              options.windows || [],
-            ),
-            u = secret(1146244944, killRoll) / 4294967296;
-          if (secret(1212761157, killRoll) / 4294967296 < (monster.dropChance ?? 1)) {
-            let tier = 0,
-              total = 0;
-            for (let i = 4; i >= 1; i--) {
-              total += probs[i];
-              if (u < total) {
-                tier = i;
-                break;
-              }
-            }
-            put(monster.drop + tier * 1000, 1);
-          }
-          const loot = combat.loot(model, p, monster, p.lastTick, options.windows || []);
-          if (
-            monster.bonus &&
-            secret(1380012613, killRoll) / 4294967296 < (loot[monster.bonus.itemId] || 0)
-          )
-            put(monster.bonus.itemId, 1);
-          if (
-            secret(1448036676, killRoll) / 4294967296 <
-            Math.min(0.2, 0.08 + monster.level * 0.0013)
-          )
-            put(facts.combat.shardId, 1 + Math.floor(monster.level / 30));
-          if (secret(1346720801, killRoll) / 4294967296 < facts.combat.petChance)
-            put(facts.combat.pets[monster.id], 1);
-          foeHp = 0;
-          foeClock = 0;
-        }
-        function fight() {
-          if (foeHp <= 0) {
-            foeHp = monster.hp;
-            foeClock = 0;
-            attackClock = 0;
-          }
-          const s = getStats(p.lastTick);
-          let acted = false;
-          attackClock += s.attackStep;
-          if (attackClock >= s.speed * 1000) {
-            attackClock -= s.speed * 1000;
-            acted = true;
-            r.attacks++;
-            for (const [id, n] of Object.entries(combat.mountLoot(model, p, s.speed)))
-              add(r.outputs, id, n);
-            if (
-              roll(1398230599, p.lastTick) <
-              s.accuracy /
-                (s.accuracy +
-                  10 +
-                  monster.defence *
-                    (facts.combat.balance?.defence?.[
-                      s.style === "magic"
-                        ? "magic"
-                        : s.speed === 5 && s.style === "ranged"
-                          ? "longbow"
-                          : model.data.gear.find(
-                                (g) => g.itemId === (p.equipment.weapon || 0) % 10000,
-                              )?.twoHanded
-                            ? "twoHanded"
-                            : "other"
-                    ] ?? (s.style === "magic" ? 0.5 : 1)))
-            ) {
-              const damageFactor = facts.combat.balance
-                ? monster.fears === s.style
-                  ? facts.combat.balance.weakness
-                  : monster.strongAgainst === s.style
-                    ? facts.combat.balance.resistance
-                    : 1
-                : 1;
-              const maxHit =
-                damageFactor === 1 ? s.maxHit : Math.max(1, Math.round(s.maxHit * damageFactor));
-              const old = foeHp;
-              foeHp = Math.max(0, foeHp - 1 - Math.floor(roll(1145915201, p.lastTick) * maxHit));
-              let leveled = false;
-              for (const [skill, total] of Object.entries(
-                killXp(model, p, monster, p.lastTick, options.windows || [], s.style),
-              )) {
-                const xp =
-                    Math.round((total * (monster.hp - foeHp)) / monster.hp) -
-                    Math.round((total * (monster.hp - old)) / monster.hp),
-                  before = model.level(p.skills[skill] || 0);
-                p.skills[skill] = (p.skills[skill] || 0) + xp;
-                add(r.bySkill, skill, xp);
-                if (model.level(p.skills[skill]) > before) leveled = true;
-              }
-              if (leveled) getStats = buildStats(model, p);
-              if (foeHp === 0) {
-                killed();
-                return;
-              }
-            }
-          }
-          if (++foeClock >= monster.speed) {
-            foeClock = 0;
-            acted = true;
-            if (
-              roll(1179600211, p.lastTick) <
-              (10 + monster.attack) / (10 + monster.attack + getStats(p.lastTick).defence)
-            ) {
-              const raw = 1 + Math.floor(roll(1179600196, p.lastTick) * monster.maxHit);
-              p.hp = Math.max(
-                0,
-                p.hp -
-                  Math.max(
-                    1,
-                    Math.floor(
-                      raw * ((p.brews.rooted || 0) > p.lastTick ? 1 - facts.food.reduction : 1),
-                    ),
-                  ),
-              );
-            }
-          }
-          if (acted) eat();
-        }
-        if (p.eatAt > 0 && packFood() === null && bankFood() !== null) phase = "toBank";
-        for (let step = 1; step <= ticks; step++) {
-          p.lastTick = start + step;
-          if (options.onAdvance?.(p, p.lastTick - 1, p.lastTick, r))
-            getStats = buildStats(model, p);
-          if (p.lastTick % 100 === 0 && p.hp > 0 && activity !== "working")
-            p.hp = Math.min(getStats(p.lastTick).maxHp, p.hp + 1);
-          if (activity === "stopped") r.stoppedTicks++;
-          else if (activity === "walking") {
-            r.walkTicks++;
-            stride += strideSpeed;
-            while (stride >= 1000 && pathIndex < route.length) {
-              stride -= 1000;
-              Object.assign(p, route[pathIndex++]);
-            }
-            if (pathIndex >= route.length) activity = "idle";
-          } else if (activity === "working") {
-            r.workTicks++;
-            fight();
-            if (danger() !== null) activity = "idle";
-          } else if (activity === "banking") {
-            r.bankTicks++;
-            bank();
-          } else if (activity === "drinking") {
-            r.drinkTicks++;
-            const max = getStats(p.lastTick).maxHp;
-            if (p.hp >= max || (p.eatAt > 0 && (packFood() !== null || bankFood() !== null))) {
-              drinkClock = 0;
-              activity = "idle";
-            } else if (++drinkClock >= 8 - (p.perks.rest || 0)) {
-              drinkClock = 0;
-              p.hp++;
-              if (p.hp >= max) activity = "idle";
-            }
-          } else {
-            r.idleTicks++;
-            if (phase === "toWork") {
-              if (inZone()) phase = "working";
-              else
-                walk({
-                  x: zone.x + 2 + (core.hash(p.id, zone.id, 1) % Math.max(1, zone.width - 4)),
-                  y: zone.y + 2 + (core.hash(p.id, zone.id, 2) % Math.max(1, zone.height - 4)),
-                });
-            } else if (phase === "working") {
-              const why = danger();
-              if (why === "dead") {
-                r.deaths++;
-                if (options.onLost)
-                  for (const item of p.pack) options.onLost(item.itemId, item.qty);
-                if (options.progression) p.pack = [];
-                stop("died");
-              } else if (why === "restock") phase = "toBank";
-              else if (why === "fountain") phase = "toFountain";
-              else if (!inZone()) phase = "toWork";
-              else activity = "working";
-            } else if (phase === "toBank") {
-              const b = model.nearestBank(p);
-              if (!b) stop("unreachable");
-              else if (near(b)) {
-                phase = "banking";
-                activity = "banking";
-              } else walk(model.adjacent(b));
-            } else if (phase === "toFountain") {
-              const distance = (s) => {
-                const x = Math.abs(p.x - s.x),
-                  y = Math.abs(p.y - s.y);
-                return Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y);
-              };
-              const f = facts.world.sites
-                .filter((s) => s.kind === "fountain")
-                .sort((a, b) => distance(a) - distance(b) || a.id - b.id)[0];
-              if (!f) stop("unreachable");
-              else if (near(f)) {
-                phase = "drinking";
-                activity = "drinking";
-                drinkClock = 0;
-                attackClock = 0;
-              } else walk(model.adjacent(f, p.id));
-            } else phase = "toWork";
-          }
-          if (options.onTickEnd) options.onTickEnd(p, r);
-          if (options.onTick)
-            options.onTick({
-              tick: p.lastTick,
-              x: p.x,
-              y: p.y,
-              hp: p.hp,
-              activity,
-              phase,
-              kills: r.kills,
-              food: { ...r.food },
-              skills: { ...p.skills },
-            });
-          if (options.stopWhen?.(p, r) || (options.stopOnStop && r.stop)) break;
-        }
-        r.ticks = p.lastTick - start;
-        const potion =
-          options.includePotions === false
-            ? {}
-            : combat.potionFlow(model, options.player, start, start + ticks);
-        for (const [id, n] of Object.entries(potion)) add(r.inputs, id, n);
-        r.xp = Object.values(r.bySkill).reduce((n, x) => n + x, 0);
-        r.potions = potion;
-        if (options.returnPlayer) r.endPlayer = p;
-        return r;
-      }
-      function forecast(model, options) {
-        const samples = Math.max(1, Math.min(32, Math.floor(options.samples || 16))),
-          hour = {
-            ticks: 6000,
-            outputs: {},
-            inputs: {},
-            xp: 0,
-            bySkill: {},
-            food: {},
-            potions: {},
-          };
-        const time = { combat: 0, travel: 0, bank: 0, recovery: 0, transition: 0, stopped: 0 },
-          stops = {};
-        let kills = 0,
-          deaths = 0,
-          trips = 0,
-          minKills = Infinity,
-          maxKills = 0;
-        for (let sample = 0; sample < samples; sample++) {
-          const r = runRoute(model, {
-            ...options,
-            ticks: 6000,
-            onTick: undefined,
-            seed: options.seed ?? core.hash(1337, sample, 9047),
-          });
-          for (const key of ["outputs", "inputs", "bySkill", "food", "potions"])
-            for (const [id, n] of Object.entries(r[key]))
-              hour[key][id] = (hour[key][id] || 0) + n / samples;
-          for (const [key, field] of Object.entries({
-            combat: "workTicks",
-            travel: "walkTicks",
-            bank: "bankTicks",
-            recovery: "drinkTicks",
-            transition: "idleTicks",
-            stopped: "stoppedTicks",
-          }))
-            time[key] += r[field] / samples;
-          kills += r.kills / samples;
-          deaths += r.deaths / samples;
-          trips += r.trips / samples;
-          minKills = Math.min(minKills, r.kills);
-          maxKills = Math.max(maxKills, r.kills);
-          if (r.stop) stops[r.stop] = (stops[r.stop] || 0) + 1;
-        }
-        hour.xp = Object.values(hour.bySkill).reduce((a, b) => a + b, 0);
-        return {
-          hour,
-          kills,
-          deaths,
-          samples,
-          trips,
-          time,
-          stops,
-          killRange: [minKills, maxKills],
-          monsterId: options.monsterId,
-          continuous: false,
-          clientVersion: factsVersion(model),
-        };
-      }
-      const factsVersion = (model) => model.data.version;
-      return { stats, killXp, runRoute, forecast };
-    });
-
-    let model;
-    self.onmessage = function (e) {
-      try {
-        if (e.data.kind === "init") {
-          model = self.DVIPlannerCore.create(e.data.data);
-          return;
-        }
-        const o = e.data.options;
-        const result =
-          e.data.kind === "food"
-            ? self.DVIBuffs.bestDaily(model, o.books, o.kind, o.now)
-            : self.DVIBattleForecast.forecast(model, o);
-        self.postMessage({ id: e.data.id, result });
-      } catch (error) {
-        self.postMessage({ id: e.data.id, error: error.message });
-      }
-    };
-  }
-  const INSIGHT_WORKER_SOURCE = "(" + runInsightWorker.toString() + ")();";
-  // ---- End local forecast worker ----
+        },
+      };
+    }
+    return { snapshot, merge, create, INTERVAL, MAX_AGE };
+  });
 
   // ---- src/update-check.js ----
   /* Reads official public metadata only; never downloads or executes script code. */
@@ -22972,7 +20683,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.38";
+  const PLUGIN_VERSION = "0.4.45";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -25892,6 +23603,60 @@ SOFTWARE.
         "PSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI3IiB5PSIxMSIgd2lkdGg9IjMiIGhlaWdodD0iMSIgZmlsbD0iI2EyN2QyOSIvPjxyZWN0IHg9IjEwIiB5PSIxMSIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjYiIHk9IjEyIiB3aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIj",
         "MmIyNDFkIi8+PC9zdmc+",
       ].join(""),
+    220:
+      "data:image/svg+xml;base64," +
+      [
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cmVjdCB4PSI2IiB5PSIxIiB3aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJi",
+        "MjQxZCIvPjxyZWN0IHg9IjciIHk9IjIiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjMiIHdp",
+        "ZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSI5IiB5PSIzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNyIgeT0iNCIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjYiIHk9IjUiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMy",
+        "YjI0MWQiLz48cmVjdCB4PSI3IiB5PSI1IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iOSIgeT0iNSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI2IiB5PSI2IiB3",
+        "aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTAiIHk9IjYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSI3IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iNyIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0i",
+        "I2Y2ZjFlNiIvPjxyZWN0IHg9IjciIHk9IjciIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM3ZmIzNWEiLz48cmVjdCB4PSI5IiB5PSI3IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTEiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI4",
+        "IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iOCIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjYiIHk9IjgiIHdpZHRoPSI0IiBoZWlnaHQ9IjEiIGZpbGw9IiM3ZmIzNWEiLz48cmVjdCB4PSIxMCIgeT0iOCIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmls",
+        "bD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjEyIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjkiIHdpZHRoPSI4IiBoZWlnaHQ9IjEiIGZpbGw9IiM3ZmIzNWEiLz48cmVjdCB4PSIxMiIg",
+        "eT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzU5N2QzZiIvPjxyZWN0IHg9IjEzIiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMCIgd2lkdGg9IjEiIGhlaWdodD0i",
+        "MSIgZmlsbD0iI2E4Y2I4ZiIvPjxyZWN0IHg9IjUiIHk9IjEwIiB3aWR0aD0iOCIgaGVpZ2h0PSIxIiBmaWxsPSIjN2ZiMzVhIi8+PHJlY3QgeD0iMTMiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjNTk3ZDNmIi8+PHJlY3QgeD0iMTQiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJl",
+        "Y3QgeD0iMyIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4Y2I4ZiIvPjxyZWN0IHg9IjUiIHk9IjExIiB3aWR0aD0iOCIgaGVpZ2h0PSIxIiBmaWxsPSIjN2ZiMzVhIi8+PHJlY3QgeD0iMTMiIHk9IjExIiB3aWR0aD0i",
+        "MSIgaGVpZ2h0PSIxIiBmaWxsPSIjNTk3ZDNmIi8+PHJlY3QgeD0iMTQiIHk9IjExIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMiIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iIzU5",
+        "N2QzZiIvPjxyZWN0IHg9IjYiIHk9IjEyIiB3aWR0aD0iNiIgaGVpZ2h0PSIxIiBmaWxsPSIjN2ZiMzVhIi8+PHJlY3QgeD0iMTIiIHk9IjEyIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjNTk3ZDNmIi8+PHJlY3QgeD0iMTQiIHk9IjEyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0i",
+        "MTMiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI1IiB5PSIxMyIgd2lkdGg9IjgiIGhlaWdodD0iMSIgZmlsbD0iIzU5N2QzZiIvPjxyZWN0IHg9IjEzIiB5PSIxMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjE0IiB3aWR0aD0iOCIgaGVpZ2h0PSIx",
+        "IiBmaWxsPSIjMmIyNDFkIi8+PC9zdmc+",
+      ].join(""),
+    221:
+      "data:image/svg+xml;base64," +
+      [
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cmVjdCB4PSI1IiB5PSIxIiB3aWR0aD0iNiIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJi",
+        "MjQxZCIvPjxyZWN0IHg9IjYiIHk9IjIiIHdpZHRoPSI0IiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSIxMCIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjYiIHk9IjMiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI3IiB5PSIzIiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iOSIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjYiIHk9IjQiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI3IiB5PSI0IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIj",
+        "ZjZmMWU2Ii8+PHJlY3QgeD0iOSIgeT0iNCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjYiIHk9IjUiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI3IiB5PSI1IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iOSIgeT0iNSIg",
+        "d2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI2IiB5PSI2IiB3aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTAiIHk9IjYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9",
+        "IiMyYjI0MWQiLz48cmVjdCB4PSI1IiB5PSI3IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iNyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjciIHk9IjciIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNiMzhmM2EiLz48cmVjdCB4PSI5IiB5PSI3",
+        "IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTAiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI1IiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iOCIgd2lkdGg9IjQiIGhlaWdodD0iMSIgZmls",
+        "bD0iI2IzOGYzYSIvPjxyZWN0IHg9IjEwIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjYiIHk9IjkiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNjYmIzNzkiLz48cmVjdCB4PSI3IiB5",
+        "PSI5IiB3aWR0aD0iMyIgaGVpZ2h0PSIxIiBmaWxsPSIjYjM4ZjNhIi8+PHJlY3QgeD0iMTAiIHk9IjkiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiM3ZDY0MjkiLz48cmVjdCB4PSIxMSIgeT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIx",
+        "IiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNjYmIzNzkiLz48cmVjdCB4PSI3IiB5PSIxMCIgd2lkdGg9IjMiIGhlaWdodD0iMSIgZmlsbD0iI2IzOGYzYSIvPjxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzdkNjQyOSIvPjxyZWN0",
+        "IHg9IjExIiB5PSIxMCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjExIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNjYmIzNzkiLz48cmVjdCB4PSI3IiB5PSIxMSIgd2lkdGg9IjMi",
+        "IGhlaWdodD0iMSIgZmlsbD0iI2IzOGYzYSIvPjxyZWN0IHg9IjEwIiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzdkNjQyOSIvPjxyZWN0IHg9IjExIiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjEyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIy",
+        "NDFkIi8+PHJlY3QgeD0iNiIgeT0iMTIiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM3ZDY0MjkiLz48cmVjdCB4PSI4IiB5PSIxMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2IzOGYzYSIvPjxyZWN0IHg9IjkiIHk9IjEyIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjN2Q2NDI5Ii8+PHJlY3QgeD0iMTEiIHk9IjEy",
+        "IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMTMiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48L3N2Zz4=",
+      ].join(""),
+    222:
+      "data:image/svg+xml;base64," +
+      [
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cmVjdCB4PSI0IiB5PSIyIiB3aWR0aD0iOCIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJi",
+        "MjQxZCIvPjxyZWN0IHg9IjUiIHk9IjMiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSIxMSIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjQiIHdpZHRoPSI4IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI1IiB3",
+        "aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iNSIgd2lkdGg9IjgiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjEyIiB5PSI1IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMiIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0i",
+        "IzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjYiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSI1IiB5PSI2IiB3aWR0aD0iNiIgaGVpZ2h0PSIxIiBmaWxsPSIjYzk1NjNhIi8+PHJlY3QgeD0iMTEiIHk9IjYiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSIxMyIgeT0i",
+        "NiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjIiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI3IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYzk1NjNhIi8+PHJlY3QgeD0iNCIgeT0iNyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmls",
+        "bD0iI2RhOGM3OSIvPjxyZWN0IHg9IjUiIHk9IjciIHdpZHRoPSI3IiBoZWlnaHQ9IjEiIGZpbGw9IiNjOTU2M2EiLz48cmVjdCB4PSIxMiIgeT0iNyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzhkM2MyOSIvPjxyZWN0IHg9IjEzIiB5PSI3IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMiIg",
+        "eT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjgiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNkYThjNzkiLz48cmVjdCB4PSI0IiB5PSI4IiB3aWR0aD0iOCIgaGVpZ2h0PSIxIiBmaWxsPSIjYzk1NjNhIi8+PHJlY3QgeD0iMTIiIHk9IjgiIHdpZHRoPSIxIiBoZWlnaHQ9IjEi",
+        "IGZpbGw9IiM4ZDNjMjkiLz48cmVjdCB4PSIxMyIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjIiIHk9IjkiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjZGE4Yzc5Ii8+PHJlY3QgeD0i",
+        "NCIgeT0iOSIgd2lkdGg9IjgiIGhlaWdodD0iMSIgZmlsbD0iI2M5NTYzYSIvPjxyZWN0IHg9IjEyIiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjOGQzYzI5Ii8+PHJlY3QgeD0iMTMiIHk9IjkiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIyIiB5PSIxMCIgd2lkdGg9IjEiIGhlaWdo",
+        "dD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjZGE4Yzc5Ii8+PHJlY3QgeD0iNCIgeT0iMTAiIHdpZHRoPSI4IiBoZWlnaHQ9IjEiIGZpbGw9IiNjOTU2M2EiLz48cmVjdCB4PSIxMiIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiM4ZDNjMjkiLz48",
+        "cmVjdCB4PSIxMyIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIyIiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjExIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjOGQzYzI5Ii8+PHJlY3QgeD0iNSIgeT0iMTEiIHdpZHRo",
+        "PSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiNjOTU2M2EiLz48cmVjdCB4PSIxMSIgeT0iMTEiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4ZDNjMjkiLz48cmVjdCB4PSIxMyIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSIxMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0i",
+        "IzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjEyIiB3aWR0aD0iOCIgaGVpZ2h0PSIxIiBmaWxsPSIjOGQzYzI5Ii8+PHJlY3QgeD0iMTIiIHk9IjEyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48L3N2Zz4=",
+      ].join(""),
     223:
       "data:image/svg+xml;base64," +
       [
@@ -25913,6 +23678,86 @@ SOFTWARE.
         "MiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjEyIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjNjQ5NGEyIi8+PHJlY3QgeD0iNiIgeT0iMTIiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiM4ZmQzZTgiLz48cmVjdCB4PSIxMiIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEi",
         "IGZpbGw9IiM2NDk0YTIiLz48cmVjdCB4PSIxMyIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSIxIiBmaWxsPSIjNjQ5NGEyIi8+PHJlY3Qg",
         "eD0iMTMiIHk9IjEzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iMTQiIHdpZHRoPSI4IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48L3N2Zz4=",
+      ].join(""),
+    224:
+      "data:image/svg+xml;base64," +
+      [
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cmVjdCB4PSI2IiB5PSIxIiB3aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJi",
+        "MjQxZCIvPjxyZWN0IHg9IjciIHk9IjIiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjMiIHdp",
+        "ZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iNCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjQiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4",
+        "YTYyMzgiLz48cmVjdCB4PSI5IiB5PSI0IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iNSIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjUiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSI5IiB5PSI1IiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjYiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSIxMSIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0i",
+        "IzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSI3IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iNiIgeT0iNyIgd2lkdGg9IjQiIGhlaWdodD0iMSIgZmlsbD0iIzVhM2E2YSIvPjxyZWN0IHg9IjEwIiB5PSI3",
+        "IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTIiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmls",
+        "bD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjUiIHk9IjgiIHdpZHRoPSI3IiBoZWlnaHQ9IjEiIGZpbGw9IiM1YTNhNmEiLz48cmVjdCB4PSIxMiIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjEzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIg",
+        "eT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjkiIHdpZHRoPSI0IiBoZWlnaHQ9IjEiIGZpbGw9IiM1YTNhNmEiLz48cmVjdCB4PSI4IiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjM2YyOTRhIi8+PHJlY3QgeD0iOSIgeT0iOSIgd2lkdGg9IjMiIGhlaWdodD0iMSIg",
+        "ZmlsbD0iIzVhM2E2YSIvPjxyZWN0IHg9IjEyIiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMCIgd2lkdGg9IjUiIGhlaWdodD0iMSIgZmlsbD0iIzVhM2E2YSIvPjxyZWN0IHg9",
+        "IjkiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjM2YyOTRhIi8+PHJlY3QgeD0iMTAiIHk9IjEwIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjNWEzYTZhIi8+PHJlY3QgeD0iMTIiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTEiIHdpZHRoPSIxIiBo",
+        "ZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzVhM2E2YSIvPjxyZWN0IHg9IjUiIHk9IjExIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjM2YyOTRhIi8+PHJlY3QgeD0iNiIgeT0iMTEiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiM1YTNhNmEi",
+        "Lz48cmVjdCB4PSIxMSIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMzZjI5NGEiLz48cmVjdCB4PSIxMiIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSIxMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjEyIiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjNWEzYTZhIi8+PHJlY3QgeD0iNiIgeT0iMTIiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiMzZjI5NGEiLz48cmVjdCB4PSIxMSIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiM1YTNhNmEiLz48cmVjdCB4PSIxMiIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZp",
+        "bGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjEzIiB3aWR0aD0iNiIgaGVpZ2h0PSIxIiBmaWxsPSIjM2YyOTRhIi8+PHJlY3QgeD0iMTEiIHk9IjEzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0i",
+        "NSIgeT0iMTQiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48L3N2Zz4=",
+      ].join(""),
+    225:
+      "data:image/svg+xml;base64," +
+      [
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cmVjdCB4PSI2IiB5PSIxIiB3aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJi",
+        "MjQxZCIvPjxyZWN0IHg9IjciIHk9IjIiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjMiIHdp",
+        "ZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iNCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjQiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4",
+        "YTYyMzgiLz48cmVjdCB4PSI5IiB5PSI0IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iNSIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjUiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSI5IiB5PSI1IiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjYiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSIxMSIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0i",
+        "IzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSI3IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iNiIgeT0iNyIgd2lkdGg9IjQiIGhlaWdodD0iMSIgZmlsbD0iIzVhZDBiMCIvPjxyZWN0IHg9IjEwIiB5PSI3",
+        "IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTIiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmls",
+        "bD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjUiIHk9IjgiIHdpZHRoPSI3IiBoZWlnaHQ9IjEiIGZpbGw9IiM1YWQwYjAiLz48cmVjdCB4PSIxMiIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjEzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIg",
+        "eT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjkiIHdpZHRoPSI0IiBoZWlnaHQ9IjEiIGZpbGw9IiM1YWQwYjAiLz48cmVjdCB4PSI4IiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjM2Y5MjdiIi8+PHJlY3QgeD0iOSIgeT0iOSIgd2lkdGg9IjMiIGhlaWdodD0iMSIg",
+        "ZmlsbD0iIzVhZDBiMCIvPjxyZWN0IHg9IjEyIiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMCIgd2lkdGg9IjUiIGhlaWdodD0iMSIgZmlsbD0iIzVhZDBiMCIvPjxyZWN0IHg9",
+        "IjkiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjM2Y5MjdiIi8+PHJlY3QgeD0iMTAiIHk9IjEwIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjNWFkMGIwIi8+PHJlY3QgeD0iMTIiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTEiIHdpZHRoPSIxIiBo",
+        "ZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzVhZDBiMCIvPjxyZWN0IHg9IjUiIHk9IjExIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjM2Y5MjdiIi8+PHJlY3QgeD0iNiIgeT0iMTEiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiM1YWQwYjAi",
+        "Lz48cmVjdCB4PSIxMSIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMzZjkyN2IiLz48cmVjdCB4PSIxMiIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSIxMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjEyIiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjNWFkMGIwIi8+PHJlY3QgeD0iNiIgeT0iMTIiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiMzZjkyN2IiLz48cmVjdCB4PSIxMSIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiM1YWQwYjAiLz48cmVjdCB4PSIxMiIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZp",
+        "bGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjEzIiB3aWR0aD0iNiIgaGVpZ2h0PSIxIiBmaWxsPSIjM2Y5MjdiIi8+PHJlY3QgeD0iMTEiIHk9IjEzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0i",
+        "NSIgeT0iMTQiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48L3N2Zz4=",
+      ].join(""),
+    226:
+      "data:image/svg+xml;base64," +
+      [
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cmVjdCB4PSI2IiB5PSIxIiB3aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJi",
+        "MjQxZCIvPjxyZWN0IHg9IjciIHk9IjIiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjMiIHdp",
+        "ZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iNCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjQiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4",
+        "YTYyMzgiLz48cmVjdCB4PSI5IiB5PSI0IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iNSIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjUiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSI5IiB5PSI1IiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjYiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSIxMSIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0i",
+        "IzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSI3IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iNiIgeT0iNyIgd2lkdGg9IjQiIGhlaWdodD0iMSIgZmlsbD0iI2UwNmE2YSIvPjxyZWN0IHg9IjEwIiB5PSI3",
+        "IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTIiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmls",
+        "bD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjUiIHk9IjgiIHdpZHRoPSI3IiBoZWlnaHQ9IjEiIGZpbGw9IiNlMDZhNmEiLz48cmVjdCB4PSIxMiIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjEzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIg",
+        "eT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjkiIHdpZHRoPSI0IiBoZWlnaHQ9IjEiIGZpbGw9IiNlMDZhNmEiLz48cmVjdCB4PSI4IiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjOWQ0YTRhIi8+PHJlY3QgeD0iOSIgeT0iOSIgd2lkdGg9IjMiIGhlaWdodD0iMSIg",
+        "ZmlsbD0iI2UwNmE2YSIvPjxyZWN0IHg9IjEyIiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMCIgd2lkdGg9IjUiIGhlaWdodD0iMSIgZmlsbD0iI2UwNmE2YSIvPjxyZWN0IHg9",
+        "IjkiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjOWQ0YTRhIi8+PHJlY3QgeD0iMTAiIHk9IjEwIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZTA2YTZhIi8+PHJlY3QgeD0iMTIiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTEiIHdpZHRoPSIxIiBo",
+        "ZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2UwNmE2YSIvPjxyZWN0IHg9IjUiIHk9IjExIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjOWQ0YTRhIi8+PHJlY3QgeD0iNiIgeT0iMTEiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiNlMDZhNmEi",
+        "Lz48cmVjdCB4PSIxMSIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiM5ZDRhNGEiLz48cmVjdCB4PSIxMiIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSIxMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjEyIiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZTA2YTZhIi8+PHJlY3QgeD0iNiIgeT0iMTIiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiM5ZDRhNGEiLz48cmVjdCB4PSIxMSIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNlMDZhNmEiLz48cmVjdCB4PSIxMiIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZp",
+        "bGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjEzIiB3aWR0aD0iNiIgaGVpZ2h0PSIxIiBmaWxsPSIjOWQ0YTRhIi8+PHJlY3QgeD0iMTEiIHk9IjEzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0i",
+        "NSIgeT0iMTQiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48L3N2Zz4=",
+      ].join(""),
+    227:
+      "data:image/svg+xml;base64," +
+      [
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgc2hhcGUtcmVuZGVyaW5nPSJjcmlzcEVkZ2VzIj48cmVjdCB4PSI2IiB5PSIxIiB3aWR0aD0iNCIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJi",
+        "MjQxZCIvPjxyZWN0IHg9IjciIHk9IjIiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjMiIHdp",
+        "ZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4YTYyMzgiLz48cmVjdCB4PSI5IiB5PSIzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNiIgeT0iNCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjQiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiM4",
+        "YTYyMzgiLz48cmVjdCB4PSI5IiB5PSI0IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNSIgeT0iNSIgd2lkdGg9IjIiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjciIHk9IjUiIHdpZHRoPSIyIiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSI5IiB5PSI1IiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjYiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiNmNmYxZTYiLz48cmVjdCB4PSIxMSIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0i",
+        "IzJiMjQxZCIvPjxyZWN0IHg9IjMiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSI3IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iNiIgeT0iNyIgd2lkdGg9IjQiIGhlaWdodD0iMSIgZmlsbD0iI2U4YTgzOCIvPjxyZWN0IHg9IjEwIiB5PSI3",
+        "IiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZjZmMWU2Ii8+PHJlY3QgeD0iMTIiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iNCIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmls",
+        "bD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjUiIHk9IjgiIHdpZHRoPSI3IiBoZWlnaHQ9IjEiIGZpbGw9IiNlOGE4MzgiLz48cmVjdCB4PSIxMiIgeT0iOCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2Y2ZjFlNiIvPjxyZWN0IHg9IjEzIiB5PSI4IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIg",
+        "eT0iOSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjkiIHdpZHRoPSI0IiBoZWlnaHQ9IjEiIGZpbGw9IiNlOGE4MzgiLz48cmVjdCB4PSI4IiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTI3NjI3Ii8+PHJlY3QgeD0iOSIgeT0iOSIgd2lkdGg9IjMiIGhlaWdodD0iMSIg",
+        "ZmlsbD0iI2U4YTgzOCIvPjxyZWN0IHg9IjEyIiB5PSI5IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMCIgd2lkdGg9IjUiIGhlaWdodD0iMSIgZmlsbD0iI2U4YTgzOCIvPjxyZWN0IHg9",
+        "IjkiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTI3NjI3Ii8+PHJlY3QgeD0iMTAiIHk9IjEwIiB3aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZThhODM4Ii8+PHJlY3QgeD0iMTIiIHk9IjEwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0iMyIgeT0iMTEiIHdpZHRoPSIxIiBo",
+        "ZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2U4YTgzOCIvPjxyZWN0IHg9IjUiIHk9IjExIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTI3NjI3Ii8+PHJlY3QgeD0iNiIgeT0iMTEiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiNlOGE4Mzgi",
+        "Lz48cmVjdCB4PSIxMSIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhMjc2MjciLz48cmVjdCB4PSIxMiIgeT0iMTEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48cmVjdCB4PSIzIiB5PSIxMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjQiIHk9IjEyIiB3",
+        "aWR0aD0iMiIgaGVpZ2h0PSIxIiBmaWxsPSIjZThhODM4Ii8+PHJlY3QgeD0iNiIgeT0iMTIiIHdpZHRoPSI1IiBoZWlnaHQ9IjEiIGZpbGw9IiNhMjc2MjciLz48cmVjdCB4PSIxMSIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNlOGE4MzgiLz48cmVjdCB4PSIxMiIgeT0iMTIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZp",
+        "bGw9IiMyYjI0MWQiLz48cmVjdCB4PSI0IiB5PSIxMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iIzJiMjQxZCIvPjxyZWN0IHg9IjUiIHk9IjEzIiB3aWR0aD0iNiIgaGVpZ2h0PSIxIiBmaWxsPSIjYTI3NjI3Ii8+PHJlY3QgeD0iMTEiIHk9IjEzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMmIyNDFkIi8+PHJlY3QgeD0i",
+        "NSIgeT0iMTQiIHdpZHRoPSI2IiBoZWlnaHQ9IjEiIGZpbGw9IiMyYjI0MWQiLz48L3N2Zz4=",
       ].join(""),
     359:
       "data:image/svg+xml;base64," +
@@ -26222,6 +24067,12 @@ SOFTWARE.
     preferences.targets = saved.targets && typeof saved.targets === "object" ? saved.targets : {};
     preferences.potionCost = saved.potionCost !== false;
     preferences.updateReminder = saved.updateReminder !== false;
+    preferences.bossEpisodes =
+      saved.bossEpisodes &&
+      typeof saved.bossEpisodes === "object" &&
+      !Array.isArray(saved.bossEpisodes)
+        ? saved.bossEpisodes
+        : {};
   } catch {}
   function save() {
     try {
@@ -26252,6 +24103,7 @@ SOFTWARE.
       "masteries",
       "house",
       "houseFurniture",
+      "houseCells",
       "brews",
       "brewTier",
       "brewBuckets",
@@ -26278,6 +24130,7 @@ SOFTWARE.
       "eatAt",
       "foodPerTrip",
     ];
+    keys.push("plotChoice");
     const out = {};
     for (const k of keys) if (p[k] !== undefined) out[k] = p[k];
     return JSON.parse(JSON.stringify(out));
@@ -26370,6 +24223,8 @@ SOFTWARE.
               ? t("{n}小时前", { n: Math.floor(minutes / 60) })
               : t("{n}天前", { n: Math.floor(minutes / 1440) });
       };
+    if (details.some((x) => x.public))
+      parts.push(t("含公开行情估价；仅最优报价，无完整深度，批量成交可能不同。"));
     const quotes = details.map((x) => x.quoteAt).filter((x) => Number.isFinite(x) && x > 0);
     if (quotes.length) parts.push(t("报价 {age}", { age: age(Math.min(...quotes)) }));
     const history = details
@@ -26456,6 +24311,7 @@ SOFTWARE.
   ("use strict");
   const combatMonitor = globalThis.DVICombat.create(model);
   const BREW_NAMES = {
+    gatherer: "采集药剂",
     warrior: "战士",
     haste: "急速",
     abyssal: "深渊",
@@ -26469,9 +24325,11 @@ SOFTWARE.
   let combatBox = null;
   let combatLastRendered = 0,
     combatLastKey = "";
-  // Native item pixels, with the current game's item art preferred when present.
+  // Embedded native pixels remain available even when the inventory is closed.
   function actionItemIcon(id) {
     if (!Number.isSafeInteger(id) || id <= 0) return "";
+    const source = NATIVE_ITEM_ART[id % 1000];
+    if (source) return `<img class="dvi-action-icon" src="${source}" alt="" aria-hidden="true">`;
     const native = document.querySelector(
       `.slot[data-item="${id}"] i img.item-art,.slot[data-item="${id}"] i svg`,
     );
@@ -26482,16 +24340,15 @@ SOFTWARE.
       copy.setAttribute("aria-hidden", "true");
       return copy.outerHTML;
     }
-    const source = NATIVE_ITEM_ART[id % 1000];
-    return source ? `<img class="dvi-action-icon" src="${source}" alt="" aria-hidden="true">` : "";
+    return "";
   }
   function actionXpHtml(text, title = "") {
     return `<span class="dvi-action-xp"${title ? ` title="${escape(title)}"` : ""}><span class="dvi-xp-orb" style="--dvi-xp-texture:url('${UI_ASSETS["minecraft-experience-orb"]}')" aria-hidden="true"></span><span>${escape(text)}</span></span>`;
   }
   function combatPotionHtml(potions) {
     const groups = new Map();
-    for (const b of potions) {
-      const time = i18n.compactDuration(b.currentTierSeconds);
+    for (const b of [...potions].sort((a, b) => a.currentTierSeconds - b.currentTierSeconds)) {
+      const time = i18n.remainingDuration(b.currentTierSeconds);
       if (!groups.has(time)) groups.set(time, []);
       groups.get(time).push(b);
     }
@@ -26510,6 +24367,54 @@ SOFTWARE.
         return `<span class="dvi-plan-potion" title="${escape(title)}"><span>${items.map((b) => escape(brewName(b.kind))).join(" / ")}</span><span>${time}</span></span>`;
       })
       .join("");
+  }
+  function combatPotionSummary(potions) {
+    const next = potions.reduce(
+      (a, b) => (!a || b.currentTierSeconds < a.currentTierSeconds ? b : a),
+      null,
+    );
+    if (!next) return { html: "", time: "", title: "" };
+    const item = GAME_DATA.potions.find((x) => x.kind === next.kind && x.tier === next.tier);
+    return {
+      html: actionItemIcon(item?.id),
+      time: t("最短 {time}", { time: i18n.remainingDuration(next.currentTierSeconds) }),
+      title:
+        t("{tier} {name} · 当前 {current} · 总计 {total}", {
+          tier: t(TIERS[next.tier]),
+          name: brewName(next.kind),
+          current: i18n.remainingDuration(next.currentTierSeconds),
+          total: i18n.remainingDuration(next.seconds),
+        }) +
+        "\n" +
+        t("药水 {n}种", { n: potions.length }) +
+        " · " +
+        t("当前品质剩余时间"),
+    };
+  }
+  function renderActionPotions(box, potions) {
+    let panel = box.querySelector("[data-combat-brew-panel]");
+    if (!panel) {
+      if (!potions.length) return;
+      const provisions = document.createElement("div");
+      provisions.className = "dvi-plan-provisions dvi-work-provisions";
+      provisions.innerHTML =
+        '<details class="dvi-plan-brews" data-combat-brew-panel><summary><span data-combat-brew-count></span><span class="dvi-native-action" data-combat-brew-next></span></summary><div class="dvi-plan-potion-grid" data-combat-brews></div></details>';
+      box.append(provisions);
+      panel = provisions.querySelector("details");
+    }
+    const empty = potions.length === 0;
+    if (panel.hidden !== empty) panel.hidden = empty;
+    const work = box.querySelector(".dvi-work-provisions");
+    if (work && work.hidden !== empty) work.hidden = empty;
+    const next = combatPotionSummary(potions),
+      count = panel.querySelector("[data-combat-brew-count]");
+    if (count.innerHTML !== next.html) count.innerHTML = next.html;
+    setNativeText(panel.querySelector("[data-combat-brew-next]"), next.time);
+    const summary = panel.querySelector("summary");
+    if (summary.title !== next.title) summary.title = next.title;
+    const line = panel.querySelector("[data-combat-brews]"),
+      html = combatPotionHtml(potions);
+    if (line.innerHTML !== html) line.innerHTML = html;
   }
 
   function renderCombat(actual) {
@@ -26623,26 +24528,7 @@ SOFTWARE.
         `<span>${escape(t("食物 {qty} · {time}", { qty: fmt(report.foodQty), time: foodTime }))}</span>`;
     if (foodLabel.innerHTML !== foodHtml) foodLabel.innerHTML = foodHtml;
     foodLabel.title = report.foodId !== null ? itemName(report.foodId) : t("无可用食物");
-    const brewPanel = combatBox.querySelector("[data-combat-brew-panel]");
-    if (brewPanel.hidden !== (report.potions.length === 0))
-      brewPanel.hidden = report.potions.length === 0;
-    const brewCount = combatBox.querySelector("[data-combat-brew-count]"),
-      countHtml =
-        actionItemIcon(223) +
-        `<span>${escape(t("药水 {n}种", { n: report.potions.length }))}</span>`;
-    if (brewCount.innerHTML !== countHtml) brewCount.innerHTML = countHtml;
-    setNativeText(
-      combatBox.querySelector("[data-combat-brew-next]"),
-      t("最短 {time}", {
-        time: i18n.compactDuration(Math.min(...report.potions.map((b) => b.currentTierSeconds))),
-      }),
-    );
-    const brewSummary = brewPanel.querySelector("summary"),
-      brewTitle = t("当前品质剩余时间");
-    if (brewSummary.title !== brewTitle) brewSummary.title = brewTitle;
-    const brewHtml = combatPotionHtml(report.potions);
-    const brewLine = combatBox.querySelector("[data-combat-brews]");
-    if (brewLine.innerHTML !== brewHtml) brewLine.innerHTML = brewHtml;
+    renderActionPotions(combatBox, report.potions);
   }
 
   // ---- src/activity-ui.js ----
@@ -26849,6 +24735,10 @@ SOFTWARE.
         t("本次观测实际经验除以总时长"),
       );
     if (xp.innerHTML !== xpHtml) xp.innerHTML = xpHtml;
+    renderActionPotions(
+      currentWorkBox,
+      globalThis.DVICombat.activePotions(model, store.state.player),
+    );
   }
   let offlineBaseline = null,
     gameSeenBaseline = null,
@@ -27062,10 +24952,31 @@ SOFTWARE.
       }),
     );
   }
+  let idlePotionBox = null;
+  function renderIdlePotions() {
+    const host = document.querySelector("[data-plan]"),
+      p = store.state.player;
+    const potions = p ? globalThis.DVICombat.activePotions(model, p) : [];
+    if (!host || !potions.length || combatBox?.isConnected || currentWorkBox?.isConnected) {
+      idlePotionBox?.remove();
+      idlePotionBox = null;
+      return;
+    }
+    if (!idlePotionBox?.isConnected) {
+      idlePotionBox = document.createElement("div");
+      idlePotionBox.className = "dvi-native-work dvi-native-combat dvi-native-idle-buffs";
+      idlePotionBox.dataset.noI18n = "";
+      host.append(idlePotionBox);
+      for (const event of ["click", "pointerdown", "keydown"])
+        idlePotionBox.addEventListener(event, (e) => e.stopPropagation());
+    }
+    renderActionPotions(idlePotionBox, potions);
+  }
   function renderCurrentActivity() {
     const actual = activityMonitor.sample(store.state.player);
     renderCombat(actual);
     renderCurrentWork(actual);
+    renderIdlePotions();
     syncParallelEnhancement();
     renderOfflineIncome();
   }
@@ -27073,6 +24984,445 @@ SOFTWARE.
     if (e.persisted) return;
     currentWorkWorker?.terminate();
     clearTimeout(currentWorkTimeout);
+  });
+
+  // ---- src/home-ui.js ----
+  /* Read native home snapshots; preserve the native timer container and travel click. */
+  function homeTasks(player, rooms) {
+    const tasks = [];
+    if (
+      Number.isSafeInteger(player?.houseBuild?.doneTick) &&
+      Number.isSafeInteger(player.houseBuild.cell)
+    )
+      tasks.push({
+        key: "build:" + player.houseBuild.cell,
+        cell: player.houseBuild.cell,
+        doneTick: player.houseBuild.doneTick,
+      });
+    for (const room of rooms) {
+      const doneTick = player?.houseUpgrades?.[room.id];
+      if (Number.isSafeInteger(doneTick))
+        tasks.push({
+          key: "upgrade:" + room.id,
+          room: room.id,
+          level: player.house?.[room.id] || 0,
+          doneTick,
+        });
+    }
+    return tasks.sort((a, b) => a.doneTick - b.doneTick || a.key.localeCompare(b.key));
+  }
+  function createHomeTracker(rooms, saved = null) {
+    let id = saved?.id ?? null,
+      tick = saved?.tick ?? -1,
+      tasks = Array.isArray(saved?.tasks)
+        ? saved.tasks.filter(
+            (x) =>
+              x &&
+              Number.isSafeInteger(x.doneTick) &&
+              (Number.isSafeInteger(x.cell) ||
+                (rooms.some((r) => r.id === x.room) && Number.isSafeInteger(x.level))),
+          )
+        : [],
+      notices = Array.isArray(saved?.notices)
+        ? saved.notices
+            .filter(
+              (x) =>
+                x &&
+                (Number.isSafeInteger(x.cell) ||
+                  (rooms.some((r) => r.id === x.room) && Number.isSafeInteger(x.level))),
+            )
+            .slice(-32)
+        : [];
+    return {
+      sample(player) {
+        if (
+          player?.id == null ||
+          !Number.isSafeInteger(player.lastTick) ||
+          !Array.isArray(player.houseCells) ||
+          !player.house ||
+          !player.houseUpgrades
+        )
+          return;
+        if (id !== player.id) {
+          id = player.id;
+          tick = -1;
+          tasks = [];
+          notices = [];
+        }
+        if (player.lastTick < tick) return;
+        for (const task of tasks) {
+          // Elapsed time alone cannot confirm completion. Removed/cancelled builds
+          // must not announce success; native cells/levels are authoritative.
+          if (
+            task.room
+              ? (player.house[task.room] || 0) > task.level
+              : player.houseCells.includes(task.cell)
+          )
+            notices.push({ ...task, level: task.room ? task.level + 1 : undefined });
+        }
+        tick = player.lastTick;
+        tasks = homeTasks(player, rooms);
+        notices = notices.slice(-32);
+      },
+      get notices() {
+        return notices;
+      },
+      dismiss() {
+        notices = [];
+      },
+      snapshot() {
+        return { id, tick, tasks, notices };
+      },
+    };
+  }
+  const HOME_ROOM_NAMES = {
+    mine: "矿井",
+    sawmill: "锯木坊",
+    pond: "池塘",
+    garden: "菜园",
+    forge: "锻炉",
+    yard: "训练场",
+    lockbox: "开锁台",
+    range: "灶台",
+    fletchrack: "制弓架",
+    herbrack: "药草架",
+    loom: "织布机",
+    lectern: "符文书台",
+    post: "练武木桩",
+    armour: "盔甲架",
+    target: "箭靶",
+    altar: "祭坛",
+    shrine: "幸运神龛",
+    storeroom: "储藏室",
+  };
+  function homeTaskName(task) {
+    if (!task.room) return t("房间建造");
+    const room = GAME_DATA.rooms.find((r) => r.id === task.room),
+      name =
+        i18n.language === "en"
+          ? room?.name || task.room
+          : HOME_ROOM_NAMES[task.room] || room?.name || task.room;
+    return t("{name} · {level}→{next}级", { name, level: task.level, next: task.level + 1 });
+  }
+  function homeTimerHtml(tasks, tick, compact, icon = "") {
+    const rows = compact ? tasks.slice(0, 1) : tasks;
+    return rows
+      .map(
+        (task) =>
+          `<div class="away-timer-row"><i class="away-timer-icon">${icon}</i><span class="away-timer-label">${escape(homeTaskName(task))}${compact && tasks.length > 1 ? " · " + tasks.length : ""}</span><span class="away-timer-time">${i18n.compactDuration((Math.max(0, task.doneTick - tick) * GAME_DATA.constants.tickMs) / 1000)}</span></div>`,
+      )
+      .join("");
+  }
+  const homeStyle = document.createElement("style");
+  homeStyle.textContent = `
+/* World labels belong below docks (7) and modal veils (10). */
+html.dvi-insights :is(.rise-pop,.build-pop){z-index:5;}
+html.dvi-insights body:has(.veil:not([hidden])) :is(.rise-pop,.build-pop,.away-timers){visibility:hidden!important;pointer-events:none!important;}
+.dvi-home-notice{position:fixed;right:12px;bottom:18px;z-index:30;width:min(310px,calc(100vw - 24px));box-sizing:border-box;padding:12px 32px 12px 14px;border:1px solid var(--brass);border-radius:6px;background:var(--panel);color:var(--ink);box-shadow:0 3px 12px #0003;font:400 12px/1.5 var(--sans);}
+.dvi-home-notice strong{display:block;color:var(--brass);font-weight:500;}
+.dvi-home-notice ul{margin:5px 0 0;padding-left:18px;max-height:180px;overflow:auto;}
+html.dvi-insights .dvi-home-notice>button{position:absolute;top:6px;right:6px;min-width:0;min-height:0;width:22px;height:22px;padding:0;border:1px solid var(--edge);border-radius:3px;background:transparent;color:var(--ink-muted);box-shadow:none;font:400 15px/20px var(--sans);cursor:pointer;}
+.dvi-home-notice[hidden]{display:none!important;}
+html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inset-bottom,0px) + 10px);}
+`;
+  let savedHome = null;
+  try {
+    savedHome = JSON.parse(localStorage.getItem("dvi-insights.home-timers.v1") || "null");
+  } catch {}
+  const homeTracker = createHomeTracker(GAME_DATA.rooms, savedHome);
+  let homeSaved = "",
+    homeNotice = null;
+  function saveHomeTracker() {
+    const value = JSON.stringify(homeTracker.snapshot());
+    if (value === homeSaved) return;
+    try {
+      localStorage.setItem("dvi-insights.home-timers.v1", value);
+      homeSaved = value;
+    } catch {}
+  }
+  function sampleHome() {
+    homeTracker.sample(store.state.player);
+    saveHomeTracker();
+  }
+  store.subscribe(sampleHome);
+  function syncHomeTimers() {
+    if (!homeStyle.isConnected) document.documentElement.append(homeStyle);
+    sampleHome();
+    const p = store.state.player,
+      host = document.querySelector(".away-timers");
+    if (p && host) {
+      const tasks = homeTasks(p, GAME_DATA.rooms),
+        compact =
+          document.documentElement.classList.contains("m-on") ||
+          tasks.length * 20 > window.innerHeight - 192,
+        icon = host.querySelector(".away-timer-icon")?.innerHTML || "";
+      const html = homeTimerHtml(tasks, p.lastTick, compact, icon);
+      if (host.innerHTML !== html) host.innerHTML = html;
+      const title = tasks
+        .map(
+          (task) =>
+            homeTaskName(task) +
+            " · " +
+            duration((Math.max(0, task.doneTick - p.lastTick) * GAME_DATA.constants.tickMs) / 1000),
+        )
+        .join("\n");
+      if (host.title !== title) host.title = title;
+    }
+    if (p?.id !== homeTracker.snapshot().id || !homeTracker.notices.length) {
+      homeNotice?.remove();
+      homeNotice = null;
+      return;
+    }
+    if (!homeNotice?.isConnected) {
+      homeNotice = document.createElement("aside");
+      homeNotice.className = "dvi-home-notice";
+      homeNotice.dataset.noI18n = "";
+      homeNotice.innerHTML =
+        '<div role="status" aria-live="polite" data-home-notice-content></div><button type="button">×</button>';
+      homeNotice.querySelector("button").onclick = () => {
+        homeTracker.dismiss();
+        saveHomeTracker();
+        homeNotice.remove();
+        homeNotice = null;
+      };
+      document.documentElement.append(homeNotice);
+    }
+    const html =
+        "<strong>" +
+        escape(t("家园建造完成")) +
+        "</strong><ul>" +
+        homeTracker.notices
+          .map(
+            (task) =>
+              "<li>" +
+              escape(
+                task.room
+                  ? t("{name} 已升至 {level}级", {
+                      name:
+                        i18n.language === "en"
+                          ? GAME_DATA.rooms.find((r) => r.id === task.room)?.name
+                          : HOME_ROOM_NAMES[task.room],
+                      level: task.level,
+                    })
+                  : t("新房间已建成"),
+              ) +
+              "</li>",
+          )
+          .join("") +
+        "</ul>",
+      content = homeNotice.querySelector("[data-home-notice-content]");
+    if (content.innerHTML !== html) content.innerHTML = html;
+    homeNotice.querySelector("button").setAttribute("aria-label", t("关闭建造提醒"));
+  }
+
+  // ---- src/combat-metrics-ui.js ----
+  /* Effective damage from received/live client state. No game controls or requests. */
+  function createDamageMeter(data) {
+    let key = null,
+      last = null,
+      segments = [],
+      raidId = null,
+      raidStart = null,
+      raidHits = [],
+      takenHits = [],
+      takenStart = null,
+      takenKnown = false;
+    const windowTicks = 100;
+    return {
+      reset() {
+        key = null;
+        last = null;
+        segments = [];
+        raidId = null;
+        raidStart = null;
+        raidHits = [];
+        takenHits = [];
+        takenStart = null;
+        takenKnown = false;
+      },
+      taken(event) {
+        if (
+          !key ||
+          event.kind !== "hit" ||
+          event.by !== "monster" ||
+          !Number.isFinite(event.damage) ||
+          event.damage < 0
+        )
+          return;
+        takenKnown = true;
+        takenHits.push({ tick: event.tick, damage: event.damage });
+        takenHits = takenHits.filter((h) => h.tick > event.tick - windowTicks);
+      },
+      takenReport(tick) {
+        const seconds =
+            takenStart === null ? 0 : Math.max(0, Math.min(windowTicks, tick - takenStart)) * 0.6,
+          damage = takenKnown
+            ? takenHits
+                .filter((h) => h.tick > tick - windowTicks && h.tick <= tick)
+                .reduce((n, h) => n + h.damage, 0)
+            : null;
+        return { damage, dps: damage !== null && seconds >= 3 ? damage / seconds : null };
+      },
+      sample(p) {
+        const zone = data.world.zones.find((z) => z.id === p?.route?.zoneId),
+          monster = data.combat.monsters.find((m) => m.id === zone?.monsterId),
+          next = monster ? p.id + ":" + zone.id : null;
+        if (next !== key) {
+          key = next;
+          last = null;
+          segments = [];
+          takenHits = [];
+          takenStart = null;
+          takenKnown = false;
+        }
+        if (!monster) return null;
+        if (takenStart === null) takenStart = p.lastTick;
+        const progress = Number.isFinite(p.foeHp)
+          ? p.foeIndex == null
+            ? 0
+            : monster.hp - Math.max(0, Math.min(monster.hp, p.foeHp))
+          : null;
+        const snap = {
+          tick: p.lastTick,
+          progress,
+          kills: p.tally?.monsters?.[monster.id] ?? 0,
+          deaths: p.tally?.deaths ?? 0,
+          foe: p.foeIndex,
+        };
+        if (last && snap.tick !== last.tick) {
+          const dt = snap.tick - last.tick,
+            kills = snap.kills - last.kills,
+            damage = kills * monster.hp + (progress ?? 0) - (last.progress ?? 0);
+          if (dt <= 0 || dt > 200 || kills < 0 || snap.deaths !== last.deaths) {
+            segments = [];
+            takenHits = [];
+            takenStart = p.lastTick;
+            takenKnown = false;
+          } else if (
+            progress !== null &&
+            last.progress !== null &&
+            damage >= 0 &&
+            !(kills === 0 && last.foe !== snap.foe && last.progress > 0)
+          )
+            segments.push({ from: last.tick, to: snap.tick, damage });
+          else segments = [];
+        }
+        last = snap;
+        segments = segments.filter((s) => s.to > snap.tick - windowTicks);
+        let ticks = 0,
+          damage = 0;
+        for (const s of segments) {
+          const kept = s.to - Math.max(s.from, snap.tick - windowTicks);
+          ticks += kept;
+          damage += (s.damage * kept) / (s.to - s.from);
+        }
+        return { damage, seconds: ticks * 0.6, dps: ticks >= 5 ? damage / (ticks * 0.6) : null };
+      },
+      raid(event, id) {
+        if (event.kind === "bossGone" || raidId !== id) {
+          raidId = id;
+          raidStart = null;
+          raidHits = [];
+        }
+        if (event.kind !== "raidHit" || !Number.isFinite(event.damage) || event.damage < 0) return;
+        if (raidStart === null || event.tick < raidStart) {
+          raidStart = event.tick;
+          raidHits = [];
+        }
+        raidHits.push({ tick: event.tick, damage: event.damage });
+        raidHits = raidHits.filter((h) => h.tick > event.tick - windowTicks);
+      },
+      raidReport(tick) {
+        const seconds =
+            raidStart === null ? 0 : Math.max(0, Math.min(windowTicks, tick - raidStart)) * 0.6,
+          damage = raidHits
+            .filter((h) => h.tick > tick - windowTicks && h.tick <= tick)
+            .reduce((n, h) => n + h.damage, 0);
+        return { damage, seconds, dps: seconds >= 3 ? damage / seconds : null };
+      },
+    };
+  }
+  const damageMeter = createDamageMeter(GAME_DATA);
+  store.subscribeCombat((event) => {
+    if (event.kind === "reset") damageMeter.reset();
+    else if (event.kind === "hit") damageMeter.taken(event);
+    else damageMeter.raid(event, store.state.player?.id);
+  });
+  let combatMetricsBox = null;
+  function syncCombatMetrics() {
+    const p = store.state.player,
+      report = damageMeter.sample(p),
+      host = document.querySelector("[data-combat-hud]");
+    if (
+      !p ||
+      !report ||
+      document.documentElement.classList.contains("m-on") ||
+      !host ||
+      host.hidden
+    ) {
+      combatMetricsBox?.remove();
+      combatMetricsBox = null;
+      return;
+    }
+    if (!combatMetricsBox) {
+      combatMetricsBox = document.createElement("details");
+      combatMetricsBox.className = "dvi-combat-metrics";
+      combatMetricsBox.dataset.noI18n = "";
+      combatMetricsBox.innerHTML =
+        '<summary><span data-dps-value></span><span data-taken-rate></span></summary><div class="dvi-native-breakdown"><span data-damage-label></span><span data-damage-value></span><span data-taken-label></span><span data-taken-value></span><span data-measured-label></span><span data-measured-value></span></div><p class="dvi-note" data-damage-note></p>';
+      for (const event of ["click", "pointerdown", "keydown"])
+        combatMetricsBox.addEventListener(event, (e) => e.stopPropagation());
+    }
+    if (combatMetricsBox.parentElement !== host) host.append(combatMetricsBox);
+    const box = combatMetricsBox,
+      taken = damageMeter.takenReport(p.lastTick);
+    setNativeText(
+      box.querySelector("[data-dps-value]"),
+      "DPS " + (report.dps === null ? t("观测中") : fmt(report.dps, 2)),
+    );
+    setNativeText(
+      box.querySelector("[data-taken-rate]"),
+      t("承伤/s") + " " + (taken.dps === null ? "—" : fmt(taken.dps, 2)),
+    );
+    for (const [key, text] of [
+      ["damage-label", "近一分钟伤害"],
+      ["taken-label", "近一分钟承伤"],
+      ["measured-label", "观测时长"],
+    ])
+      setNativeText(box.querySelector("[data-" + key + "]"), t(text));
+    setNativeText(
+      box.querySelector("[data-damage-value]"),
+      report.seconds ? fmt(report.damage, 1) : "—",
+    );
+    setNativeText(
+      box.querySelector("[data-taken-value]"),
+      taken.damage === null ? "—" : fmt(taken.damage, 1),
+    );
+    setNativeText(
+      box.querySelector("[data-measured-value]"),
+      i18n.remainingDuration(report.seconds),
+    );
+    setNativeText(
+      box.querySelector("[data-damage-note]"),
+      t(
+        "DPS 按有效掉血统计，含走路与补给；承伤按已收到的受击事件统计，缺数据时显示 —。重连后重新观测。",
+      ),
+    );
+  }
+  const combatMetricsStyle = document.createElement("style");
+  combatMetricsStyle.textContent = `
+.combat-hud .dvi-combat-metrics{margin-top:7px;padding-top:6px;border-top:1px solid var(--edge);color:var(--ink);font:400 11px/1.4 var(--sans);font-variant-numeric:tabular-nums}
+.dvi-combat-metrics summary{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;color:var(--brass)}.dvi-combat-metrics .dvi-note{font-size:10px;color:var(--ink-muted);margin:5px 0 0}.dvi-combat-metrics .dvi-native-breakdown{margin:6px 0}
+.dvi-combat-metrics>summary:after{content:'▾';font-size:10px}.dvi-combat-metrics[open]>summary:after{transform:rotate(180deg)}
+html.m-on .dvi-combat-metrics{display:none!important}
+html.dvi-insights.m-on .m-top .health{position:relative;gap:5px}
+html.dvi-insights.m-on .m-top .health .health-bar{width:72px;height:14px;border-radius:4px}
+html.dvi-insights.m-on .m-top .health [data-health]{display:block!important;position:absolute;left:auto;right:0;bottom:auto;top:50%;transform:translateY(-50%);width:72px;text-align:center;font:500 11px/1 var(--sans);color:var(--ink);text-shadow:0 1px 1px var(--panel);white-space:nowrap;pointer-events:none;font-variant-numeric:tabular-nums}
+`;
+  document.documentElement.append(combatMetricsStyle);
+  const combatMetricsInterval = setInterval(syncCombatMetrics, 600);
+  window.addEventListener("pagehide", (e) => {
+    if (!e.persisted) clearInterval(combatMetricsInterval);
   });
 
   // ---- src/links-ui.js ----
@@ -27428,11 +25778,11 @@ html.dvi-insights:lang(en) .dvi-native-combat .dvi-plan-metric {
     font-size: 9px;
   }
   html.dvi-insights:lang(en) .dvi-plan-brews > summary {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     row-gap: 0;
   }
   html.dvi-insights:lang(en) .dvi-plan-brews > summary > .dvi-native-action {
-    margin-left: auto;
+    margin-left: 0;
   }
 }
 .dvi-insights .dvi-native-combat {
@@ -27648,6 +25998,31 @@ html.dvi-insights:lang(en) .dvi-native-combat .dvi-plan-metric {
 .dvi-insights .dvi-plan-potion > span:last-child {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+.dvi-insights .dvi-native-combat .dvi-work-provisions {
+  display: block;
+}
+.dvi-insights .dvi-work-provisions[hidden] {
+  display: none;
+}
+.dvi-insights .dvi-work-provisions .dvi-plan-brews > .dvi-plan-potion-grid {
+  width: 100%;
+  margin-left: 0;
+}
+.dvi-insights .dvi-plan-potion-grid {
+  column-gap: 8px;
+}
+.dvi-insights .dvi-plan-potion > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dvi-insights .dvi-plan-brews > summary {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+.dvi-insights .dvi-plan-brews > summary > .dvi-native-action {
+  margin-left: 0;
+  white-space: nowrap;
 }
 .dvi-insights .dvi-native-work summary {
   align-items: center;
@@ -28323,6 +26698,33 @@ html.dvi-insights .boss-bar {
   height: 5px;
   border-radius: 3px;
   overflow: hidden;
+}
+html.dvi-insights .boss-banner:has(.boss-board) .boss-bar {
+  position: relative;
+  height: 14px;
+}
+html.dvi-insights .boss-banner:has(.boss-board) :is(.boss-bar-fill, .boss-bar-ghost) {
+  height: 100%;
+}
+html.dvi-insights .boss-banner:has(.boss-board) .boss-bar-pct {
+  font-size: 10px;
+  line-height: 14px;
+}
+html.dvi-insights .boss-board-head {
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+html.dvi-insights .boss-board .boss-row {
+  grid-template-columns: 22px 10px minmax(0, 1fr) 54px 42px;
+  font-size: 11px;
+}
+html.dvi-insights .boss-board .boss-row[data-boss-row="0"] {
+  height: 34px;
+}
+html.dvi-insights .boss-board .boss-row[data-boss-row="0"] .boss-row-dmg {
+  font-size: 16px;
+  color: var(--brass);
 }
 html.dvi-insights .boss-top-wrap {
   position: relative;
@@ -29857,7 +28259,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       return true;
     }
     function candidate(target) {
-      if (!target?.closest || target.closest(".dvi-title-tooltip,.tip,.item-menu")) return null;
+      if (
+        !target?.closest ||
+        target.closest(".dvi-title-tooltip,.tip,.item-menu,.dvi-home-overview")
+      )
+        return null;
       let el = target.closest("[title]");
       while (el) {
         const text = el.getAttribute("title") || (el === active?.element ? active.text : "");
@@ -30022,11 +28428,17 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 
   // ---- src/boss-alert-ui.js ----
   /* Celebrate only the native boss-start toast. No requests or game actions. */
-  function createBossAnnouncement({ show, hide, quiet }) {
+  function createBossAnnouncement({
+    show,
+    hide,
+    quiet,
+    seenEpisode = () => false,
+    rememberEpisode = () => {},
+  }) {
     const seen = new WeakMap();
     let current = null;
     return {
-      sync(toast, visible) {
+      sync(toast, visible, episode = null) {
         if (!toast) {
           if (current) {
             hide();
@@ -30044,13 +28456,17 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           }
           return;
         }
-        const text = toast.textContent.trim();
-        if (!text || seen.get(toast) === text) return;
-        seen.set(toast, text);
+        const text = toast.textContent.trim(),
+          mark = episode ? episode + "|" + text : text;
+        if (!text || seen.get(toast) === mark) return;
+        seen.set(toast, mark);
         if (current) {
           hide();
-          if (current !== toast) quiet(current, false);
+          quiet(current, false);
+          current = null;
         }
+        if (episode && seenEpisode(episode)) return;
+        if (episode) rememberEpisode(episode);
         current = toast;
         quiet(toast, true);
         show(text);
@@ -30087,13 +28503,12 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   bossAlertStyle.textContent = `
 .dvi-boss-quiet {visibility:hidden!important;}
 .dvi-boss-celebration {position:fixed;inset:0;z-index:10000;pointer-events:none;overflow:hidden;isolation:isolate;font-family:var(--sans);animation:dvi-boss-veil 6s both;}
-.dvi-boss-celebration:before {content:"";position:absolute;inset:0;background:#080e16a3;}
 .dvi-boss-announcement {position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));text-align:center;color:#e8faff;}
 .dvi-boss-headline {display:block;width:100%;height:auto;max-height:110px;object-fit:contain;image-rendering:pixelated;}
 .dvi-boss-copy {display:flex;flex-direction:column;align-items:center;gap:9px;}
-.dvi-boss-announcement .dvi-boss-kicker {color:var(--dvi-boss-accent,#e8faff);font-size:12px;letter-spacing:2px;}
-.dvi-boss-announcement h2 {margin:0;font:500 clamp(18px,3vw,26px)/1.25 var(--sans);color:#e8faff;text-shadow:none;overflow-wrap:anywhere;}
-.dvi-boss-announcement p {margin:0;font:400 11px/1.4 var(--sans);color:#c7e4eb;}
+.dvi-boss-announcement .dvi-boss-kicker {color:color-mix(in srgb,var(--dvi-boss-accent,#e8faff) 45%,var(--ink));font-size:12px;letter-spacing:2px;}
+.dvi-boss-announcement h2 {margin:0;font:500 clamp(18px,3vw,26px)/1.25 var(--sans);color:var(--ink);text-shadow:none;overflow-wrap:anywhere;}
+.dvi-boss-announcement p {margin:0;font:400 11px/1.4 var(--sans);color:var(--ink-muted);}
 .dvi-boss-firework {position:absolute;left:var(--x);top:var(--y);width:64px;aspect-ratio:1;image-rendering:pixelated;filter:grayscale(1) brightness(1.3);opacity:0;animation:dvi-boss-burst 1.4s var(--delay) steps(6,end) both;}
 @keyframes dvi-boss-burst {0%{opacity:0;transform:translate(-50%,-50%) scale(.15)}15%{opacity:1}60%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-35%) scale(1.1)}}
 @keyframes dvi-boss-veil {0%{opacity:0}6%,78%{opacity:1}100%{opacity:0}}
@@ -30165,14 +28580,44 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     bossCelebration = overlay;
     bossCelebrationTimer = setTimeout(hideBossCelebration, 6000);
   }
+  function bossEpisodeKey(text, boss) {
+    const identity =
+      bossAnnouncementIdentity(text).boss?.key || bossAnnouncementIdentity(text).name;
+    return boss && Number.isSafeInteger(boss.until)
+      ? "event:" + identity + ":" + boss.x + ":" + boss.y + ":" + boss.until
+      : "fallback:" + identity;
+  }
   const bossAnnouncement = createBossAnnouncement({
     show: showBossCelebration,
     hide: hideBossCelebration,
     quiet: (toast, on) => toast.classList.toggle("dvi-boss-quiet", on),
+    seenEpisode: (key) => {
+      const at = preferences.bossEpisodes?.[key];
+      return (
+        Number.isFinite(at) &&
+        Date.now() >= at &&
+        Date.now() - at < (key.startsWith("event:") ? 2 * 86400000 : 600000)
+      );
+    },
+    rememberEpisode: (key) => {
+      preferences.bossEpisodes = Object.fromEntries(
+        [
+          ...Object.entries(preferences.bossEpisodes || {}).filter(
+            ([, at]) => Number.isFinite(at) && Date.now() - at < 2 * 86400000,
+          ),
+          [key, Date.now()],
+        ].slice(-64),
+      );
+      save();
+    },
   });
   function syncBossAnnouncement() {
     const toast = document.querySelector(".boss-toast");
-    bossAnnouncement.sync(toast, !!toast && !toast.hidden && toast.classList.contains("show"));
+    bossAnnouncement.sync(
+      toast,
+      !!toast && !toast.hidden && toast.classList.contains("show"),
+      toast ? bossEpisodeKey(toast.textContent, store.state.boss) : null,
+    );
   }
   document.addEventListener(
     "keydown",
@@ -30720,7 +29165,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 .dvi-buff-idle-row .buff-glyph {filter:grayscale(1);opacity:.55;width:15px;height:15px;flex-shrink:0;}
 .dvi-buff-inactive-mark {margin-left:auto;opacity:.65;}
 .dvi-insights .buff-sheet {padding:10px 12px;scrollbar-gutter:stable;}
-.dvi-insights .buff-sheet .bt-row {grid-template-columns:minmax(0,38%) minmax(0,1fr) 94px;gap:12px;min-height:46px;padding:4px 0;}
+.dvi-insights .buff-sheet .bt-row {grid-template-columns:minmax(0,38%) minmax(0,1fr) 104px;gap:12px;min-height:46px;padding:4px 0;}
 .dvi-insights .buff-sheet .bt-who {grid-template-columns:20px minmax(0,1fr);gap:8px;}
 .dvi-insights .buff-sheet .bt-name {gap:3px;line-height:1.35;}
 .dvi-insights .buff-sheet .bt-name b {font:500 13px/1.35 var(--sans);}
@@ -30733,8 +29178,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 .dvi-insights .buff-sheet .dvi-buff-price {display:block;margin-top:2px;color:var(--ink-faint);font:400 11px/1.4 var(--sans);font-variant-numeric:tabular-nums;white-space:nowrap;}
 .dvi-insights .buff-sheet .dvi-buff-idle {gap:4px 12px;padding:8px 0 0;margin-top:8px;}
  .dvi-buff-name-line {display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 7px;min-width:0;}
-.dvi-buff-food-choice {font:400 11px/1.4 var(--sans);color:var(--ink-faint);overflow-wrap:anywhere;}
-.dvi-buff-food-count {margin-left:5px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.dvi-buff-food-choice {display:inline-block;box-sizing:border-box;max-width:100%;padding:1px 5px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);border-radius:4px;background:color-mix(in srgb,currentColor 12%,var(--panel));font:500 11px/1.4 var(--sans);color:var(--ink);overflow-wrap:anywhere;}
+.dvi-buff-food-count {margin-left:6px;white-space:nowrap;font-weight:600;font-variant-numeric:tabular-nums;}
+.dvi-buff-time{display:block;white-space:nowrap;font-size:12px;font-variant-numeric:tabular-nums;}
+.dvi-insights .buff-sheet .bt-fold .bt-left{display:flex;align-items:center;justify-content:flex-end;gap:6px;}
 .dvi-buff-food-choice.rarity-uncommon {color:var(--rarity-uncommon);}
 .dvi-buff-food-choice.rarity-rare {color:var(--rarity-rare);}
 .dvi-buff-food-choice.rarity-epic {color:var(--rarity-epic);}
@@ -30742,7 +29189,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 .dvi-buff-idle-row:has(.dvi-buff-food-choice) {flex-wrap:wrap;}
 .dvi-buff-idle-row>.dvi-buff-price {margin-left:auto;}
 
-@media(max-width:550px){.dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,44%) minmax(0,1fr) 76px;gap:6px}.dvi-insights .buff-sheet .dvi-buff-idle{grid-template-columns:minmax(0,1fr)}.dvi-insights .buff-sheet .dvi-buff-price{font-size:10px}}
+@media(max-width:550px){.dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,44%) minmax(0,1fr) 96px;gap:6px}.dvi-insights .buff-sheet .dvi-buff-idle{grid-template-columns:minmax(0,1fr)}.dvi-insights .buff-sheet .dvi-buff-price{font-size:10px}}
 @media(max-width:550px){.dvi-insights .buff-sheet .bt-scale>span:not(:last-child){display:none}.dvi-insights .buff-sheet .bt-scale>span:last-child{left:50%!important;transform:translateX(-50%);font-size:10px}}
 `;
   let insightWorker = null,
@@ -30872,6 +29319,23 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     setNativeText(price, label.cost);
     if (price.title !== label.hint) price.title = label.hint;
   }
+  function updateBuffTime(row, entry, p) {
+    const target = row.querySelector(".bt-left"),
+      until = p.brews?.[entry.kind];
+    if (!target || !Number.isFinite(until)) return;
+    let label = target.querySelector(".dvi-buff-time");
+    if (!label) {
+      label = document.createElement("span");
+      label.className = "dvi-buff-time";
+      label.dataset.noI18n = "";
+      for (const node of [...target.childNodes]) if (node.nodeType === 3) node.remove();
+      target.prepend(label);
+    }
+    setNativeText(
+      label,
+      i18n.remainingDuration((Math.max(0, until - p.lastTick) * GAME_DATA.constants.tickMs) / 1000),
+    );
+  }
   function updateBuffPrice(row, entry, p) {
     if (!entry.id) return;
     const quote = globalThis.DVIBuffs.potionPrice(model, p, store.state.books, entry.kind),
@@ -30887,6 +29351,68 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     const cost =
       quote?.cost === null || !quote ? "—" : (quote.estimated ? "≈ " : "") + fmt(quote.cost);
     setNativeText(label, t("{price} 金币/瓶", { price: cost }));
+  }
+  // Match the native world's contiguous windows, including inclusive end ticks.
+  function worldBuffTimes(windows, tick) {
+    const groups = new Map();
+    for (const w of windows) {
+      if (
+        tick < w.fromTick ||
+        tick > w.toTick ||
+        !((w.xpMult && w.xpMult !== 1) || (w.rarityMult && w.rarityMult !== 1))
+      )
+        continue;
+      let end = w.toTick,
+        changed = true;
+      while (changed) {
+        changed = false;
+        for (const next of windows)
+          if (
+            next.label === w.label &&
+            next.fromTick <= end + 1 &&
+            next.toTick > end &&
+            next.xpMult === w.xpMult &&
+            next.rarityMult === w.rarityMult
+          ) {
+            end = next.toTick;
+            changed = true;
+          }
+      }
+      const name = w.label || "World buff";
+      groups.set(name, Math.max(groups.get(name) || 0, end - tick + 1));
+    }
+    return [...groups].map(([name, ticks]) => ({ name, ticks })).sort((a, b) => b.ticks - a.ticks);
+  }
+  function syncWorldBuffTimes(sheet, p) {
+    const groups = worldBuffTimes(store.state.windows, p.lastTick),
+      target = sheet.querySelector(".bt-fold .bt-left");
+    if (target && groups.length) {
+      let label = target.querySelector(".dvi-buff-time");
+      if (!label) {
+        label = document.createElement("span");
+        label.className = "dvi-buff-time";
+        label.dataset.noI18n = "";
+        for (const node of [...target.childNodes]) if (node.nodeType === 3) node.remove();
+        target.prepend(label);
+      }
+      setNativeText(label, i18n.remainingDuration(groups[0].ticks * 0.6));
+      for (const part of sheet.querySelectorAll(".buff-part:not(.buff-part-total)")) {
+        const group = groups.find(
+          (g) => g.name === part.querySelector(".buff-part-name")?.textContent,
+        );
+        if (group)
+          setNativeText(
+            part.querySelector(".buff-part-left"),
+            i18n.remainingDuration(group.ticks * 0.6),
+          );
+      }
+    }
+    const blessing = sheet.querySelector(".bt-bless-left");
+    if (blessing && Number.isFinite(p.brews?.blessing))
+      setNativeText(
+        blessing,
+        i18n.remainingDuration(Math.max(0, p.brews.blessing - p.lastTick) * 0.6),
+      );
   }
   function syncBuffs() {
     if (!buffStyle.isConnected) document.documentElement.append(buffStyle);
@@ -30909,6 +29435,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       root.append(badge);
     }
     if (sheet.hidden) return;
+    syncWorldBuffTimes(sheet, p);
     const foodQuotes = new Map(
       ["fed", "rooted"].map((kind) => [
         kind,
@@ -30922,6 +29449,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       if (!glyph) continue;
       const entry = buffKinds.find((x) => buffGlyphs.get(x.key) === glyph);
       if (entry) {
+        updateBuffTime(row, entry, p);
         updateBuffPrice(row, entry, p);
         if (foodQuotes.has(entry.kind)) updateBuffFood(row, entry, foodQuotes.get(entry.kind));
       }
@@ -30968,7 +29496,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   const battleLists = new WeakMap(),
     battleCache = new Map();
   let battlePending = false,
-    battlePlayerId = null;
+    battlePlayerId = null,
+    battleMapKey = null;
   // Keep native markup (including nested death warnings) intact. A sibling uses
   // its grid slot, so native refreshes cannot overwrite the completed estimate.
   function syncBattleXp(row, entry) {
@@ -31036,6 +29565,16 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     return restores;
   }
 
+  function battleAtHome(p) {
+    return (model.data?.world?.regions || []).some(
+      (r) =>
+        r.name === "Home" &&
+        p?.x >= r.x &&
+        p?.y >= r.y &&
+        p.x < r.x + r.width &&
+        p.y < r.y + r.height,
+    );
+  }
   function battleConfiguration(p) {
     const tick = p.lastTick || 0;
     const buffs = ["fed", "rooted", "blessing"].map((kind) => (p.brews?.[kind] || 0) > tick);
@@ -31069,6 +29608,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       p.unlimitedBank,
       activeWindows,
       model.rotation(tick),
+      battleAtHome(p) ? ["home", p.houseCells] : "world",
     ]);
   }
   function battleSignature(p) {
@@ -31103,6 +29643,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (battlePlayerId !== p.id) {
       battlePlayerId = p.id;
       battleCache.clear();
+    }
+    const mapKey = JSON.stringify([battleAtHome(p), battleAtHome(p) ? p.houseCells : null]);
+    if (mapKey !== battleMapKey) {
+      if (battleMapKey !== null) battleCache.clear();
+      battleMapKey = mapKey;
     }
     const signature = battleSignature(p),
       configuration = battleConfiguration(p);
@@ -31174,6 +29719,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         } else {
           setNativeText(summary, valid && entry.error ? t("预测暂不可用") : t("计算中…"));
           summary.title = entry?.error ? errorText(entry.error) : "";
+          if (entry?.error) setNativeText(summary, errorText(entry.error));
           const detail = record.box.querySelector("[data-battle-detail]"),
             html = battleDetail(null);
           if (detail.innerHTML !== html) detail.innerHTML = html;
@@ -31454,15 +30000,14 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         const control = e.target.closest?.(
           'button,[role="button"],input[type="button"],input[type="submit"],select',
         );
-        const view = views.get(window.querySelector(selector));
-        if (control && control !== view?.button) reset();
+        if (control?.matches("[data-bank-arrange]")) reset();
       },
       true,
     );
     window.addEventListener(
       "change",
       (e) => {
-        if (e.target.matches?.('select,input[type="checkbox"],input[type="radio"]')) reset();
+        if (e.target.matches?.("[data-market-sort]")) reset();
       },
       true,
     );
@@ -31774,6 +30319,61 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   });
   window.addEventListener("online", checkPluginUpdate);
   setInterval(checkPluginUpdate, 900000);
+
+  // ---- src/public-market-ui.js ----
+  /* Documented planner endpoint, separate from the game's private market actions. */
+  const publicMarket = globalThis.DVIPublicMarket;
+  const publicPrices = publicMarket.create({
+    storage: localStorage,
+    onSnapshot: (data) => {
+      const result = publicMarket.merge(store.state.books, data, Date.now(), store.state.orders);
+      if (result.changed) store.refreshBooks(result.books);
+    },
+    fetchSnapshot: async () => {
+      const controller = new AbortController(),
+        timer = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch("https://deepveinidle.com/api/market/prices.json", {
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          redirect: "error",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw Error("Public prices unavailable");
+        return await response.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  });
+  let publicPriceDemo = false;
+
+  function checkPublicPrices() {
+    if (
+      publicPriceDemo ||
+      !store.state.player ||
+      store.state.player.ironman ||
+      document.hidden ||
+      navigator.onLine === false
+    )
+      return;
+    const result = publicMarket.merge(store.state.books, null, Date.now());
+    if (result.changed) store.refreshBooks(result.books);
+    publicPrices.check();
+  }
+  const publicPriceInterval = setInterval(checkPublicPrices, 60000);
+  let publicPriceSession = -1;
+  store.subscribe(() => {
+    if (store.state.player && store.state.sessionRevision !== publicPriceSession) {
+      publicPriceSession = store.state.sessionRevision;
+      checkPublicPrices();
+    }
+  });
+  document.addEventListener("visibilitychange", checkPublicPrices);
+  window.addEventListener("online", checkPublicPrices);
+  window.addEventListener("pagehide", (e) => {
+    if (!e.persisted) clearInterval(publicPriceInterval);
+  });
 
   // ---- src/integrated-ui.js ----
   /* Native UI attachments. Reads stable DOM data attributes, never clicks game controls. */
@@ -32367,6 +30967,69 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       .join("");
     return `<table class="dvi-materials"><thead><tr><th>${t("材料")}</th><th>${t("总需")}<small>${t("估价")}</small></th><th>${t("需补")}<small>${t("成本")}</small></th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="2">${t("材料估价")}</td><td>${cost(price(needed))}</td></tr><tr><td colspan="2">${t("补齐成本")}</td><td>${cost(price(missing))}</td></tr></tfoot></table>`;
   }
+  function craftUnitReference(job, rarity, p, books, taxBp, now = Date.now()) {
+    const core = globalThis.DVIPlannerCore,
+      id = job.output.itemId + rarity * 1000,
+      quantity = job.output.qty * (1 - model.failure(p, job));
+    const cost = core.valueFlows(
+      model.inputs(job, rarity).reduce((flow, x) => {
+        flow[x.itemId] = (flow[x.itemId] || 0) + x.qty;
+        return flow;
+      }, {}),
+      p.ironman ? {} : books,
+      "buy",
+      0,
+      now,
+      GAME_DATA,
+    );
+    const sell = core.valueFlows(
+        { [id]: 1 },
+        p.ironman ? {} : books,
+        "sell",
+        p.ironman ? 0 : taxBp,
+        now,
+        GAME_DATA,
+      ),
+      list =
+        !p.ironman && books[id]?.ask > 0
+          ? core.valueFlows({ [id]: 1 }, books, "list", taxBp, now, GAME_DATA)
+          : null;
+    return {
+      cost: quantity > 0 && cost.total !== null ? cost.total / quantity : null,
+      sell: sell.total,
+      list: list?.total ?? null,
+      estimates: [
+        cost.estimated.length > 0,
+        sell.estimated.length > 0,
+        (list?.estimated.length || 0) > 0,
+      ],
+    };
+  }
+  function nativeUnitPriceHtml(job) {
+    const p = store.state.player;
+    if (!p || !job.inputs.length || job.grow !== undefined || job.output.itemId === 200) return "";
+    const tiers = nativeBest(job) ? [0, 1, 2, 3, 4] : [nativeRarity(job)],
+      price = (n) => (n === null ? "—" : fmt(n, 2));
+    return `<details class="dvi-unit-price"><summary>${t("成品单价参考")}<span class="dvi-native-action" aria-hidden="true"></span></summary><div style="overflow:auto"><table><thead><tr>${["稀有度", "材料/件", "即卖/件", "挂售/件"].map((x) => "<th>" + t(x) + "</th>").join("")}</tr></thead><tbody>${tiers
+      .map((tier) => {
+        const r = craftUnitReference(job, tier, p, store.state.books, store.state.taxBp);
+        return (
+          "<tr><td>" +
+          t(TIERS[tier]) +
+          "</td>" +
+          [r.cost, r.sell, r.list]
+            .map(
+              (n, index) =>
+                "<td>" + (r.estimates[index] && n !== null ? "≈ " : "") + price(n) + "</td>",
+            )
+            .join("") +
+          "</tr>"
+        );
+      })
+      .join(
+        "",
+      )}</tbody></table></div><p class="dvi-note">${t("单位：金币/件。当前等级材料成本含烧毁、不含药水；出售税后，缺求购按商人价。")}</p></details>`;
+  }
   function nativePlanHtml(result, options) {
     const r = result,
       profit = hourProfit(r, options);
@@ -32424,9 +31087,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     const p = store.state.player;
     if (!p) return "";
     const status = model.farmingStatus(p);
-    return `<details><summary>${t("当前农田")}</summary><p class="dvi-note">${t("浇水只作用于当前工作田。换田时优先成熟田；相邻成熟田同优先级，按编号选取。已有相邻站位会保留，重新寻路才挑落脚点。「收获并补种」不浇水。")}</p><table><thead><tr>${["田地", "状态", "浇水"].map((x) => `<th>${t(x)}</th>`).join("")}</tr></thead><tbody>${status.fields.map((f) => `<tr><td>${fmt(f.number)}${f.current ? " · " + t("当前") : ""}</td><td>${!f.plot ? t("空田") : f.matureAt <= p.lastTick ? t("已成熟") : duration((f.matureAt - p.lastTick) * 0.6)}</td><td>${f.plot ? fmt(f.plot.watered || 0) : "—"}</td></tr>`).join("")}</tbody></table></details>`;
+    return `<details><summary>${t("当前农田")}</summary><p class="dvi-note">${t("浇水只作用于当前工作田。换田时优先成熟田；相邻成熟田同优先级，按编号选取。已有相邻站位会保留，重新寻路才挑落脚点。「收获并补种」不浇水。")}</p><table><thead><tr>${["田地", "状态", "浇水", "下次播种"].map((x) => `<th>${t(x)}</th>`).join("")}</tr></thead><tbody>${status.fields.map((f) => `<tr><td>${f.name ? escape(nameOf(f.name)) : fmt(f.number)}${f.current ? " · " + t("当前") : ""}</td><td>${!f.plot ? t("空田") : f.matureAt <= p.lastTick ? t("已成熟") : duration((f.matureAt - p.lastTick) * 0.6)}</td><td>${f.plot ? fmt(f.plot.watered || 0) : "—"}</td><td>${f.seedChoice === null ? t("随当前任务") : escape(itemName(f.seedChoice))}</td></tr>`).join("")}</tbody></table></details>`;
   }
   function renderNative(record) {
+    const unit = record.box.querySelector("[data-native-unit-price]");
+    if (unit) updateNativeResult(unit, nativeUnitPriceHtml(record.job));
     const cached = nativeCache.get(nativeKey(record)),
       summary = record.box.querySelector("[data-native-summary]");
     let text;
@@ -32488,7 +31153,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           Number.isInteger(saved) && saved >= 1 && saved < GAME_DATA.xpTable.length
             ? saved
             : Math.min(current + 1, GAME_DATA.xpTable.length - 1);
-      box.innerHTML = `<details><summary><span class="dvi-native-summary" data-native-summary></span><span class="dvi-native-action">${t("升级计算")}</span></summary><div class="dvi-native-controls"><label><span data-native-target-label>${t("升到")}</span> <input aria-label="${escape(t("{name}目标等级", { name: nameOf(job.name) }))}" type="number" min="1" max="${GAME_DATA.xpTable.length - 1}" step="1" value="${target}"> <span data-native-level-unit>${t("级")}</span></label><button type="button">${t("计算")}</button><small data-native-rarity></small></div><div data-native-result></div></details>`;
+      box.innerHTML = `<details><summary><span class="dvi-native-summary" data-native-summary></span><span class="dvi-native-action">${t("升级计算")}</span></summary><div class="dvi-native-controls"><label><span data-native-target-label>${t("升到")}</span> <input aria-label="${escape(t("{name}目标等级", { name: nameOf(job.name) }))}" type="number" min="1" max="${GAME_DATA.xpTable.length - 1}" step="1" value="${target}"> <span data-native-level-unit>${t("级")}</span></label><button type="button">${t("计算")}</button><small data-native-rarity></small></div><div data-native-unit-price></div><div data-native-result></div></details>`;
       record = { row, box, job, list: row.closest("[data-routes]") };
       nativeRecords.set(row, record);
       row.insertAdjacentElement("afterend", box);
@@ -32535,7 +31200,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       Object.hasOwn(GAME_DATA.vendorPrices, id % 10000) &&
       GAME_DATA.vendorPrices[id % 10000] === null;
     if (id === 200) return `<span>${t("金币按面值计价")}</span>`;
-    return `<span title="${tax == null ? t("税率待接收") : t("税前 {value}", { value: fmt(b.bid, 2) })}">${t("求购")}${tax != null ? t("（税后）") : ""}: ${b.bid > 0 ? fmt(b.bid * (tax != null ? 1 - tax / 10000 : 1), 2) : "—"}</span><span title="${t("需等待买家")}">${t("挂售")}: ${b.ask > 0 ? fmt(b.ask) : "—"}</span><span title="${t("稀有度和强化不抬高商人回收价")}">${t("商人")}: ${floor ? fmt(floor) : knownNontrade ? t("不可出售") : "—"}</span>${!(b.ask > 0) && b.purchaseCache?.price > 0 && Date.now() - b.purchaseCache.at <= 86400000 ? `<span>${t("缓存买价")}: ≈ ${fmt(b.purchaseCache.price)}</span>` : ""}${GAME_DATA.vendorBuys[id] ? `<span>${t("商人买价")}: ${fmt(GAME_DATA.vendorBuys[id])}</span>` : ""}${b.at && Date.now() - b.at > 300000 ? `<small>${t("报价已过期")}</small>` : ""}`;
+    return `<span title="${tax == null ? t("税率待接收") : t("税前 {value}", { value: fmt(b.bid, 2) })}">${t("求购")}${tax != null ? t("（税后）") : ""}: ${b.bidPublic && b.bid > 0 ? "≈ " : ""}${b.bid > 0 ? fmt(b.bid * (tax != null ? 1 - tax / 10000 : 1), 2) : "—"}</span><span title="${t("需等待买家")}">${t("挂售")}: ${b.askPublic && b.ask > 0 ? "≈ " : ""}${b.ask > 0 ? fmt(b.ask) : "—"}</span><span title="${t("稀有度和强化不抬高商人回收价")}">${t("商人")}: ${floor ? fmt(floor) : knownNontrade ? t("不可出售") : "—"}</span>${!(b.ask > 0) && b.purchaseCache?.price > 0 && Date.now() - b.purchaseCache.at <= 86400000 ? `<span>${t("缓存买价")}: ≈ ${fmt(b.purchaseCache.price)}</span>` : ""}${GAME_DATA.vendorBuys[id] ? `<span>${t("商人买价")}: ${fmt(GAME_DATA.vendorBuys[id])}</span>` : ""}${b.bidPublic || b.askPublic ? `<small>${t("含公开行情估价；仅最优报价，无完整深度，批量成交可能不同。")}</small>` : ""}${b.at && Date.now() - b.at > 300000 ? `<small>${t("报价已过期")}</small>` : ""}`;
   }
   function injectItemPrices(root, id) {
     if (!root || !Number.isSafeInteger(id) || !model.item(model.base(id))) return;
@@ -32565,6 +31230,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     syncBossAnnouncement();
     mountSimulatorLinks();
     syncBuffs();
+    syncHomeTimers();
     syncInventory();
     syncMarketInventory();
     polishFields();
@@ -32609,6 +31275,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       });
     }
     renderCurrentActivity();
+    syncCombatMetrics();
     renderPluginUpdate();
     syncNativeTip();
     const menu = document.querySelector("[data-item-menu]:not([hidden])");
@@ -32691,6 +31358,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     }
     if (changes.some((change) => change.target.matches?.("[data-buffs],[data-buff-sheet]")))
       syncBuffs();
+    if (changes.some((change) => change.target.matches?.(".away-timers"))) syncHomeTimers();
     // The game's pointermove handler replaces the tooltip contents on every move.
     // Restore prices in this microtask, before paint, instead of the 80ms scan.
     if (changes.some((change) => change.target.matches?.(".tip[data-tip]"))) syncNativeTip();
