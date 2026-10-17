@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.70
+// @version      0.4.71
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -3387,8 +3387,10 @@ SOFTWARE.
               }
               break;
             case "snapshot":
+              // The client keeps stepping the player from welcome. A snapshot's you is a
+              // detached copy, so replacing it freezes lastTick and the observation clock.
               if (validPlayer(m.you)) {
-                state.player = m.you;
+                if (state.player?.id !== m.you.id) state.player = m.you;
                 if (Array.isArray(m.orders)) state.orders = m.orders;
                 if (Array.isArray(m.windows)) state.windows = m.windows;
                 changed = true;
@@ -21645,7 +21647,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.70";
+  const PLUGIN_VERSION = "0.4.71";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -23184,6 +23186,7 @@ SOFTWARE.
       combatLastRendered = 0;
       return;
     }
+    if (combatBox?.isConnected) showObservationTime(combatBox, report.seconds);
     const displayKey = `${i18n.language}:${report.zone}:${report.ready}:${store.state.quoteRevision}`;
     if (
       combatBox?.isConnected &&
