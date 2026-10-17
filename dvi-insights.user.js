@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.71
+// @version      0.4.72
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5313,6 +5313,13 @@ SOFTWARE.
           units[index + 1]
         );
       }
+      function clockDuration(seconds) {
+        if (!Number.isFinite(seconds)) return "—";
+        const s = Math.max(0, Math.floor(seconds));
+        if (s >= 86400) return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
+        if (s >= 3600) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+        return Math.floor(s / 60) + "m " + (s % 60) + "s";
+      }
       function compactDuration(seconds) {
         if (!Number.isFinite(seconds)) return "—";
         const s = Math.max(0, Math.floor(seconds));
@@ -5334,6 +5341,7 @@ SOFTWARE.
         duration,
         compactDuration,
         remainingDuration,
+        clockDuration,
         refresh() {
           const next = resolve(environment),
             changed = next !== language;
@@ -21647,7 +21655,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.71";
+  const PLUGIN_VERSION = "0.4.72";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -23335,12 +23343,35 @@ SOFTWARE.
     else box.insertAdjacentHTML("afterbegin", html);
     box.querySelector(".dvi-income-heading").dataset.dviIncomeLocale = i18n.language;
   }
+  let observationPace = null;
+  function pacedObservationSeconds(key, seconds, now, hidden, pace) {
+    const safe = Number.isFinite(seconds) ? seconds : 0;
+    if (!key) return { seconds: safe, pace };
+    if (!pace || pace.key !== key) pace = { key, base: safe, shown: safe, at: now };
+    else if (safe > pace.base + 0.05) {
+      const shown = Math.max(safe, pace.shown);
+      pace = { key, base: safe, shown, at: now - (shown - safe) * 1000 };
+    } else if (hidden) pace = { ...pace, at: now - (pace.shown - pace.base) * 1000 };
+    else pace = { ...pace, shown: pace.base + (now - pace.at) / 1000 };
+    return { seconds: pace.shown, pace };
+  }
   function showObservationTime(box, seconds) {
     const note = box.querySelector(".dvi-income-observation");
     if (!note) return;
+    const p = store.state.player,
+      route = p?.route,
+      key = route ? `${p.id}:${route.zoneId ?? "job"}:${route.jobId ?? ""}` : null;
+    const paced = pacedObservationSeconds(
+      key,
+      seconds || 0,
+      Date.now(),
+      document.hidden,
+      observationPace,
+    );
+    observationPace = paced.pace;
     setNativeText(
       note.querySelector("[data-observation-time]"),
-      t("观测 {time}", { time: i18n.remainingDuration(seconds || 0) }),
+      t("观测 {time}", { time: i18n.clockDuration(paced.seconds) }),
     );
     const hint = t("近12小时内续记有效观测；切换任务与未观测的断线时间不计入分母。");
     if (note.title !== hint) note.title = hint;
@@ -23797,6 +23828,19 @@ SOFTWARE.
     renderOfflineIncome();
     saveObservations();
   }
+  function refreshObservationClock() {
+    const p = store.state.player;
+    if (!p?.route) return;
+    const actual = activityMonitor.sample(p),
+      report = p.route.zoneId != null ? combatMonitor.sample(p, store.state.windows) : null;
+    const box = report ? combatBox : currentWorkBox,
+      seconds = report ? report.seconds : actual?.seconds;
+    if (box?.isConnected && seconds != null) showObservationTime(box, seconds);
+  }
+  const observationClock = setInterval(refreshObservationClock, 1000);
+  window.addEventListener("pagehide", (e) => {
+    if (!e.persisted) clearInterval(observationClock);
+  });
   window.addEventListener("pagehide", (e) => {
     if (e.persisted) return;
     currentWorkWorker?.terminate();

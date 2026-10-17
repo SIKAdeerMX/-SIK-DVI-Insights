@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.71
+# [SIK] DVI Insights 0.4.72
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
