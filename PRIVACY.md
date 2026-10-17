@@ -27,17 +27,14 @@ Ten local storage entries are used on the game origin:
 | `dvi-insights.update-check.v1` | Last check attempt/success times, a failure flag, latest public version and dismissed version; no character data |
 | `dvi-insights.observations.v1` | Up to 1,440 observation buckets from the last 12 hours: internal character ID, task/configuration signature, observed duration, item/XP/consumption counters; no unobserved time or coordinates |
 | `dvi-insights.boss-records.v1` | Up to 30 personal boss results: internal character ID, boss identity, received own rank/damage, completion flag, loot system-notice payload and timestamps; no other players' identities or ordinary chat |
-| `dvi-insights.guild-ledger.v1` | Up to 5,000 received guild bank events: internal character/guild IDs, event ID or deduplication key, tick/receipt time, member name, deposit/withdraw direction, exact item variant and quantity; retained for 90 days after receipt, with no guild chat, notices or private messages |
 
 The offline baseline is overwritten with the latest snapshot. It contains no character name, account credentials, chat, or movement history. Market settlement records used to reconcile an in-tab away report stay in page memory and are reset on a new welcome message. Public historical estimates expire after seven days; cached ask estimates expire after one day. Each saved price cache is limited to 2,000 variants.
 
 Observation history uses observed active time only; it excludes task-switch and unobserved disconnect gaps. Offline settlements are shown separately. Records are isolated by internal character ID. Expected combat samples are also isolated by zone, equipment and food settings. Observation buckets expire after twelve hours; the boss ledger keeps only the latest thirty results. All remain on the current game origin and are never uploaded.
 
-Guild statistics retain only already received bank deposit/withdrawal facts, isolated by character and guild. Current member names used to include members without recorded actions stay in memory. No log queries or guild operations are sent. Item artwork reuses embedded or already rendered native SVG sprites in memory; missing artwork uses a neutral marker without fetching assets.
+The script reads the game’s existing `deepvein.locale` language setting without writing to it. It also reads the game's existing `deepvein-seen` record to align the native away summary. It does not write to that entry. To remove the script's saved data, disable the script and remove only its nine entries listed above from the site's local storage. Uninstalling a userscript may leave site local storage behind.
 
-The script reads the game’s existing `deepvein.locale` language setting without writing to it. It also reads the game's existing `deepvein-seen` record to align the native away summary. It does not write to that entry. To remove the script's saved data, disable the script and remove only its ten entries listed above from the site's local storage. Uninstalling a userscript may leave site local storage behind.
-
-脚本在本机读取游戏已收到的数据并计算，同时匿名读取官方明确公开的规划器行情快照；不查询其他游戏接口，不操作工作或交易，不上传角色数据。离线核算需要在游戏域名的本地存储中保留最近一次角色库存、金币、收集计数和药水状态；旧快照会被覆盖。家园提醒另保留最近角色的内部 ID、工程与未关闭的完工提醒，用于重连和离线补报。以上表格列出了全部持久缓存。删除缓存时只删插件自己的十项，保留游戏的 `deepvein-seen`。插件还只读游戏已有的 `deepvein.locale` 以跟随界面语言，不写入该项。
+脚本在本机读取游戏已收到的数据并计算，同时匿名读取官方明确公开的规划器行情快照；不查询其他游戏接口，不操作工作或交易，不上传角色数据。离线核算需要在游戏域名的本地存储中保留最近一次角色库存、金币、收集计数和药水状态；旧快照会被覆盖。家园提醒另保留最近角色的内部 ID、工程与未关闭的完工提醒，用于重连和离线补报。以上表格列出了全部持久缓存。删除缓存时只删插件自己的九项，保留游戏的 `deepvein-seen`。插件还只读游戏已有的 `deepvein.locale` 以跟随界面语言，不写入该项。
 
 近 12 小时任务观测保存内部角色 ID、任务配置和产出/经验/消耗计数，最多 1,440 个观测桶，不保存坐标；只累计已观测的有效时间，切换与断线空档不计时，离线结算单列。Boss 记录最多保留最近 30 场本人的已收到名次、伤害及掉落；系统消息仅接受 The Deep 发出的原生个人掉落格式，不保存普通聊天、私信或其他玩家身份。装备和房屋估值只在内存计算。上述数据均不上报。
 
@@ -53,4 +50,3 @@ Public market prices are fetched only from https://deepveinidle.com/api/market/p
 
 公开行情只匿名 GET 官方固定地址，每 5 分钟检查一次，跨标签共享缓存；失败同样冷却。后台、离线及铁人模式暂停，超过 15 分钟的公开快照失效。不带 Cookie、来源页面、角色参数，不跟随重定向；服务器会收到通常的 IP 等连接信息。只验证价格数据，不运行远程代码，不主动查询游戏私有市场接口。
 
-公会仓库存取统计只保存已收到的存入/取出记录（成员名、物品与品质、数量、方向、时间及角色/公会内部 ID），按角色和公会隔离，最多 5,000 条，接收后保存 90 天；不保存公会聊天、公告或私信。未接收到的历史不会主动补查。原生物品 SVG 只在内存复用，缺素材时使用中性标记，不请求额外图片。

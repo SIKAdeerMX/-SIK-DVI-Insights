@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.69
+# [SIK] DVI Insights 0.4.70
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -10,7 +10,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
 - 装备标题栏显示穿戴装备价格 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；总分与分项为完整整数、加千位逗号。查看其他玩家时只显示总分。原生 combat 是技能计算的战斗等级，与该评分不同。
 - 保存最近 30 场本人的已收到 Boss 排名和掉落，聊天区独立“掉落日志”按实际品质显示名称、数量和颜色；原生结算缺少个人名次时补充，未收到的排行明确标注。记录仅存本机，不补发查询。手机家园计时只在地图页显示，弹窗打开时隐藏。
-- 公会日志保留原生列表，并提供统计按钮。弹窗里每位成员一行，左边存入、右边取出，每边横排 3 项。原生默认只发来一页，搜索过的成员会补进统计；本地最多 5,000 条、90 天，不主动逐个查询。成员、日志和公会列表不再铺浅色白底。公会首页在「捐献积分」按钮右侧显示当前挂售价下每分金币最少的捐献物品名称。日志统计在每人名字右侧显示「捐献估算：」，按当前最划算挂售价把已收到的存入积分换算成金币。成员按名字字母顺序排列。
+- 公会日志保持原生日志，不再附加统计。成员、日志和公会列表不再铺浅色白底。公会首页在「捐献积分」按钮右侧显示当前挂售价下每分金币最少的捐献物品名称。
 
 - 工作列表显示 XP/h 和期望日利，点击“升级计算”查看目标等级的工作次数、耗时与材料缺口；材料表补充逐项估价、材料总估价和补齐成本，按买价与订单深度计算；收支只用箭头展开。
 - 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
@@ -51,7 +51,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Active tasks show observed duration and resume matching samples from the last twelve hours across task switches, stops and reloads. Combat expectations separate zone, equipment and food configurations. Unobserved gaps are excluded; offline settlements remain separate and show a daily profit estimate over effective duration, or income only when costs are incomplete.
 - Equipment score appears in the equipment header as worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Totals and parts are complete integers with thousands separators. Inspecting another player shows only the total. Native combat is an independent skill-based level.
 - A separate chat Loot log preserves the latest thirty received personal boss rewards, with exact rarities, quantities and colors. Empty native personal results can be supplemented with received ranks; missing ranks remain unknown. No recovery queries are sent. Mobile Home timers stay on the map tab and hide under dialogs.
-- The guild log keeps the native list and adds a Statistics button. Each member is one row: deposits on the left and withdrawals on the right, three items across in each half. The game first sends one page; members you search are added. The local cache holds up to 5,000 events for ninety days and does not look up each member. Member, log and guild-list pages no longer use the light paper background. The guild home page shows the best-value donation item immediately to the right of Donate points. Log statistics show “Donation estimate:” beside each name. Members are listed in alphabetical order.
+- The guild log stays native and no longer adds statistics. Member, log and guild-list pages no longer use the light paper background. The guild home page shows the best-value donation item immediately to the right of Donate points.
 
 
 [SIK] DVI Insights adds XP, material, time and income information to Deep Vein Idle's existing interface, using the game's theme colors.

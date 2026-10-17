@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.69
+// @version      0.4.70
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -3263,23 +3263,23 @@ SOFTWARE.
               changed = true;
               break;
             case "guildLog":
-              if (Array.isArray(m.lines))
-                for (const fn of guildLogListeners) {
-                  try {
-                    fn({
-                      account: state.player?.id,
-                      guild: state.guild?.id,
-                      lines: m.lines.map((r) => ({
-                        id: r?.id,
-                        tick: r?.tick,
-                        name: r?.name,
-                        what: r?.what,
-                        itemId: r?.itemId,
-                        qty: r?.qty,
-                      })),
-                    });
-                  } catch {}
-                }
+              if (!Array.isArray(m.lines) || !guildLogListeners.size) break;
+              for (const fn of guildLogListeners) {
+                try {
+                  fn({
+                    account: state.player?.id,
+                    guild: state.guild?.id,
+                    lines: m.lines.map((r) => ({
+                      id: r?.id,
+                      tick: r?.tick,
+                      name: r?.name,
+                      what: r?.what,
+                      itemId: r?.itemId,
+                      qty: r?.qty,
+                    })),
+                  });
+                } catch {}
+              }
               changed = true;
               break;
             case "bossRose":
@@ -4771,145 +4771,6 @@ SOFTWARE.
     return { create, formatScore };
   });
 
-  // ---- src/guild-ledger.js ----
-  /* Received guild bank events only; no log queries or guild operations. */
-  (function (root, factory) {
-    if (typeof module === "object" && module.exports) module.exports = factory();
-    else root.DVIGuildLedger = factory();
-  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-    const LIMIT = 5000,
-      AGE = 90 * 86400000;
-    function clean(r) {
-      return r &&
-        ["in", "out"].includes(r.what) &&
-        typeof r.name === "string" &&
-        r.name.length <= 64 &&
-        Number.isSafeInteger(r.tick) &&
-        Number.isSafeInteger(r.itemId) &&
-        r.itemId > 0 &&
-        Number.isSafeInteger(r.qty) &&
-        r.qty > 0
-        ? {
-            tick: r.tick,
-            name: r.name,
-            what: r.what,
-            itemId: r.itemId,
-            qty: r.qty,
-            ...(Number.isSafeInteger(r.id) ? { id: r.id } : {}),
-          }
-        : null;
-    }
-    function create(saved, now = Date.now) {
-      let rows = Array.isArray(saved?.rows)
-        ? saved.rows
-            .filter(
-              (r) =>
-                Number.isSafeInteger(r.account) &&
-                Number.isSafeInteger(r.guild) &&
-                Number.isFinite(r.at) &&
-                r.at <= now() &&
-                now() - r.at < AGE &&
-                typeof r.key === "string" &&
-                r.key.length < 250 &&
-                clean(r),
-            )
-            .slice(-LIMIT)
-            .map((r) => ({ ...clean(r), account: r.account, guild: r.guild, at: r.at, key: r.key }))
-        : [];
-      function prune() {
-        rows = rows.filter((r) => now() - r.at < AGE).slice(-LIMIT);
-      }
-      return {
-        receive(account, guild, lines) {
-          if (
-            !Number.isSafeInteger(account) ||
-            !Number.isSafeInteger(guild) ||
-            !Array.isArray(lines)
-          )
-            return false;
-          prune();
-          const keys = new Set(rows.map((r) => r.account + ":" + r.guild + ":" + r.key)),
-            copies = new Map();
-          let changed = false;
-          for (const raw of lines) {
-            const r = clean(raw);
-            if (!r) continue;
-            const base = JSON.stringify([r.tick, r.name, r.what, r.itemId, r.qty]),
-              n = (copies.get(base) || 0) + 1;
-            copies.set(base, n);
-            const key = r.id != null ? "id:" + r.id : base + ":" + n,
-              full = account + ":" + guild + ":" + key;
-            if (keys.has(full)) continue;
-            keys.add(full);
-            rows.push({ ...r, key, account, guild, at: now() });
-            changed = true;
-          }
-          prune();
-          return changed;
-        },
-        members(account, guild, names = []) {
-          prune();
-          const people = new Map(names.map((name) => [name, new Map()]));
-          for (const r of rows) {
-            if (r.account !== account || r.guild !== guild) continue;
-            if (!people.has(r.name)) people.set(r.name, new Map());
-            const acts = people.get(r.name),
-              key = r.what + ":" + r.itemId,
-              old = acts.get(key) || { what: r.what, itemId: r.itemId, qty: 0 };
-            old.qty += r.qty;
-            acts.set(key, old);
-          }
-          return [...people]
-            .map(([name, acts]) => ({
-              name,
-              top: [...acts.values()]
-                .sort(
-                  (a, b) => b.qty - a.qty || a.itemId - b.itemId || a.what.localeCompare(b.what),
-                )
-                .slice(0, 3),
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
-        },
-        recent(account, guild) {
-          prune();
-          return rows
-            .filter((r) => r.account === account && r.guild === guild)
-            .slice()
-            .reverse();
-        },
-        totals(account, guild) {
-          prune();
-          const people = new Map();
-          for (const r of rows) {
-            if (r.account !== account || r.guild !== guild) continue;
-            if (!people.has(r.name)) people.set(r.name, new Map());
-            const acts = people.get(r.name),
-              key = r.what + ":" + r.itemId,
-              old = acts.get(key) || { what: r.what, itemId: r.itemId, qty: 0 };
-            old.qty += r.qty;
-            acts.set(key, old);
-          }
-          return [...people]
-            .map(([name, acts]) => ({
-              name,
-              rows: [...acts.values()].sort(
-                (a, b) =>
-                  (a.what === b.what ? 0 : a.what === "in" ? -1 : 1) ||
-                  b.qty - a.qty ||
-                  a.itemId - b.itemId,
-              ),
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
-        },
-        snapshot() {
-          prune();
-          return { rows };
-        },
-      };
-    }
-    return { create, clean };
-  });
-
   // ---- src/guild-donate.js ----
   /* Which donation gives the most guild points per coin at prices already on hand. */
   (function (root, factory) {
@@ -5031,29 +4892,14 @@ SOFTWARE.
     "use strict";
     const en = {
       家园: "Home",
-      公会仓库统计: "Guild storage statistics",
-      关闭统计: "Close statistics",
       最近一笔: "Latest",
-      "按已收到的仓库日志汇总。原生默认只发来一页，搜索过的成员会补进这里。":
-        "Totals use bank logs already received. The game first sends one page; members you search are added here.",
       掉落日志: "Loot log",
       暂无掉落记录: "No loot recorded",
       战斗装备: "Combat gear",
       工具: "Tools",
       坐骑: "Mount",
       "缺价 {n} 项": "{n} unpriced",
-      统计: "Statistics",
-      "已接收日志 · 每人数量前三项": "Received log · top 3 quantities per member",
       暂无记录: "No records",
-      存入: "Deposited",
-      取出: "Withdrawn",
-      "捐献估算：": "Donation estimate: ",
-      "存入 {points} 分，按当前挂售价每分 {each} 金币换算。":
-        "Deposited {points} points, converted at {each} coins per point from the current ask.",
-      "存入 {points} 分，按商人回收价每分 {each} 金币换算。":
-        "Deposited {points} points, converted at {each} coins per point from the merchant price.",
-      "没有当下报价，积分暂不换算成金币。":
-        "No current price, so points are not converted to coins.",
       "观测 {time}": "Observed {time}",
       "近12小时内续记有效观测；切换任务与未观测的断线时间不计入分母。":
         "Resumes matching observations from the last 12 hours. Other tasks and unobserved disconnection gaps are excluded.",
@@ -21799,7 +21645,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.69";
+  const PLUGIN_VERSION = "0.4.70";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -24430,217 +24276,6 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     "[data-dvi-score-head]>div{position:absolute;right:0;top:100%;z-index:5;min-width:148px;padding:9px 12px;display:grid;grid-template-columns:1fr auto;gap:5px 16px;border:1px solid var(--edge);border-radius:4px;background:var(--panel);box-shadow:0 3px 10px #0003;color:var(--ink)}" +
     "[data-dvi-score-head] b{font-weight:400;font-variant-numeric:tabular-nums}[data-dvi-score-head] small{grid-column:1/-1;color:var(--ink-faint)}";
   (document.head || document.documentElement).append(equipmentValueStyle);
-
-  // ---- src/guild-ledger-ui.js ----
-  let guildLedgerSaved = null;
-  try {
-    guildLedgerSaved = JSON.parse(localStorage.getItem("dvi-insights.guild-ledger.v1") || "null");
-  } catch {}
-  const guildLedger = globalThis.DVIGuildLedger.create(guildLedgerSaved),
-    guildLedgerButtons = new WeakMap(),
-    guildDonatePoints = globalThis.DVIGuildDonate.create(GAME_DATA);
-  let guildStatsDialog = null,
-    guildStatsOwner = null;
-  store.subscribeGuildLog((e) => {
-    if (guildLedger.receive(e.account, e.guild, e.lines))
-      try {
-        localStorage.setItem(
-          "dvi-insights.guild-ledger.v1",
-          JSON.stringify(guildLedger.snapshot()),
-        );
-      } catch {}
-    scheduleNative();
-  });
-  function getGuildStatsDialog() {
-    if (guildStatsDialog) return guildStatsDialog;
-    const dialog = document.createElement("dialog");
-    dialog.className = "dvi-guild-dialog";
-    dialog.dataset.noI18n = "";
-    dialog.setAttribute("aria-labelledby", "dvi-guild-stats-title");
-    dialog.innerHTML =
-      '<section><div class="dvi-guild-stats-head"><h3 id="dvi-guild-stats-title"></h3><button type="button">×</button></div><div class="dvi-guild-stats"></div></section>';
-    dialog.querySelector("button").addEventListener("click", () => dialog.close());
-    dialog.addEventListener("click", (e) => {
-      if (e.target === dialog) dialog.close();
-    });
-    dialog.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Escape") {
-        e.preventDefault();
-        dialog.close();
-      }
-    });
-    dialog.addEventListener("close", () => {
-      guildStatsOwner = null;
-      scheduleNative();
-    });
-    document.body.append(dialog);
-    guildStatsDialog = dialog;
-    return dialog;
-  }
-  function syncGuildLedger() {
-    const p = store.state.player,
-      g = store.state.guild,
-      owner = p?.id + ":" + g?.id;
-    if (guildStatsDialog?.open && guildStatsOwner !== owner) guildStatsDialog.close();
-    for (const tools of document.querySelectorAll("[data-guild-body] .guild-log-tools")) {
-      let button = guildLedgerButtons.get(tools);
-      if (!button) {
-        button = document.createElement("button");
-        button.type = "button";
-        button.className = "bank-arrange";
-        button.dataset.noI18n = "";
-        button.setAttribute("aria-haspopup", "dialog");
-        guildLedgerButtons.set(tools, button);
-        button.addEventListener("click", (e) => {
-          e.stopPropagation();
-          guildStatsOwner = store.state.player?.id + ":" + store.state.guild?.id;
-          const dialog = getGuildStatsDialog();
-          if (!dialog.open) dialog.showModal();
-          syncGuildLedger();
-        });
-      }
-      if (!button.isConnected) tools.append(button);
-      setNativeText(button, t("统计"));
-      const expanded = String(guildStatsDialog?.open === true);
-      if (button.getAttribute("aria-expanded") !== expanded)
-        button.setAttribute("aria-expanded", expanded);
-    }
-    if (!guildStatsDialog?.open) return;
-    setNativeText(guildStatsDialog.querySelector("h3"), t("公会仓库统计"));
-    guildStatsDialog.querySelector("button").setAttribute("aria-label", t("关闭统计"));
-    const name = (
-      document.querySelector("[data-guild-body] .guild-log-tools [data-log-name]")?.value || ""
-    )
-      .trim()
-      .toLowerCase();
-    const now = Date.now(),
-      ironman = !!p?.ironman,
-      rate = guildDonatePoints.best(store.state.books, now, ironman);
-    const donated = (rows) =>
-      rows.reduce((n, x) => n + guildDonatePoints.points(x.itemId) * x.qty, 0);
-    const donationCoins = (rows) => {
-      const pts = donated(rows);
-      return pts && rate ? Math.round((pts * rate.cost) / rate.points) : 0;
-    };
-    const people = guildLedger
-      .totals(p?.id, g?.id)
-      .filter((r) => !name || r.name.toLowerCase().includes(name))
-      .map((r) => ({
-        name: r.name,
-        rows: [...r.rows].sort((a, b) => b.qty - a.qty || a.itemId - b.itemId),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base", numeric: true }));
-    const side = (label, rows) => {
-      let sum = 0,
-        missing = false;
-      for (const x of rows) {
-        const worth = globalThis.DVIInventory.value(
-          x.itemId,
-          x.qty,
-          store.state.books,
-          store.state.taxBp,
-          now,
-          GAME_DATA,
-          ironman,
-        );
-        if (worth === null) missing = true;
-        else sum += worth;
-      }
-      const worthText = sum <= 0 && missing ? "—" : (missing ? "≥ " : "") + fmt(sum);
-      return (
-        '<div class="dvi-guild-side"><small>' +
-        t(label) +
-        " " +
-        worthText +
-        '</small><div class="dvi-guild-grid">' +
-        (rows.length
-          ? rows.map((x) => logItemHtml(x.itemId, x.qty)).join("")
-          : '<span class="muted">—</span>') +
-        "</div></div>"
-      );
-    };
-    const coinsOf = (rows) => {
-      const pts = donated(rows);
-      if (!rate)
-        return { text: pts ? "—" : fmt(0), title: t("没有当下报价，积分暂不换算成金币。") };
-      const each = rate.cost / rate.points,
-        eachText = each.toLocaleString("en-US", { maximumFractionDigits: each >= 100 ? 0 : 2 }),
-        label = t(
-          ironman
-            ? "存入 {points} 分，按商人回收价每分 {each} 金币换算。"
-            : "存入 {points} 分，按当前挂售价每分 {each} 金币换算。",
-          { points: fmt(pts), each: eachText },
-        );
-      return { text: fmt(donationCoins(rows)), title: label };
-    };
-    const html =
-      '<p class="dvi-note">' +
-      t("按已收到的仓库日志汇总。原生默认只发来一页，搜索过的成员会补进这里。") +
-      "</p>" +
-      (people.length
-        ? people
-            .map((r) => {
-              const coins = coinsOf(r.rows.filter((x) => x.what === "in"));
-              return (
-                '<article class="dvi-guild-card"><header><strong>' +
-                escape(r.name) +
-                '</strong><b class="dvi-guild-points" title="' +
-                escape(coins.title) +
-                '">' +
-                escape(t("捐献估算：")) +
-                coins.text +
-                '</b></header><div class="dvi-guild-split">' +
-                side(
-                  "存入",
-                  r.rows.filter((x) => x.what === "in"),
-                ) +
-                side(
-                  "取出",
-                  r.rows.filter((x) => x.what === "out"),
-                ) +
-                "</div></article>"
-              );
-            })
-            .join("")
-        : '<p class="muted">' + t("暂无记录") + "</p>");
-    const content = guildStatsDialog.querySelector(".dvi-guild-stats"),
-      key = JSON.stringify([
-        store.state.quoteRevision,
-        store.state.taxBp,
-        people.map((r) => [r.name, r.rows.map((x) => [x.what, x.itemId, x.qty])]),
-      ]);
-    if (content.dataset.key !== key) {
-      const top = content.scrollTop;
-      content.innerHTML = html;
-      content.dataset.key = key;
-      content.scrollTop = top;
-    }
-  }
-  const guildLedgerStyle = document.createElement("style");
-  guildLedgerStyle.textContent = `
-.dvi-guild-dialog{padding:0;width:min(880px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 32px);border:1px solid var(--edge);border-radius:6px;background:var(--panel);color:var(--ink);box-shadow:0 8px 30px #0005;font:400 13px/1.4 var(--sans)}
-.dvi-guild-dialog::backdrop{background:#0005}
-.dvi-guild-dialog>section{display:flex;flex-direction:column;max-height:calc(100dvh - 36px);min-height:0}
-.dvi-guild-stats-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-bottom:1px solid var(--edge)}
-.dvi-guild-stats-head h3{margin:0;font:400 13px/1.4 var(--sans)}
-.dvi-guild-stats-head button{flex:none;box-sizing:border-box;width:24px;height:24px;min-height:24px;padding:0;border:1px solid var(--edge);border-radius:3px;background:var(--panel);color:var(--ink);font:16px/1 var(--sans)}
-.dvi-guild-stats{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px;padding:8px 12px;overscroll-behavior:contain}
-.dvi-guild-stats>.dvi-note,.dvi-guild-stats>.muted{margin:0;color:var(--ink-faint);font:inherit}
-.dvi-guild-card{margin:0;padding:6px 8px;border:1px solid var(--edge);border-radius:4px;background:var(--panel-raised);font:inherit}
-.dvi-guild-card>header{display:flex;align-items:baseline;gap:8px;min-width:0;margin:0 0 4px;font:inherit}
-.dvi-guild-card>header :is(strong,.dvi-guild-points){margin:0;font:inherit;font-weight:400;color:inherit;font-variant-numeric:tabular-nums}
-.dvi-guild-split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.dvi-guild-side>small{display:block;margin-bottom:2px;color:var(--ink-faint);font:inherit}
-.dvi-guild-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px 6px}
-.dvi-guild-card .dvi-log-item{margin:0;gap:3px;min-width:0;font:inherit;line-height:1.4;color:inherit}
-.dvi-guild-card .dvi-log-item>i{flex-basis:14px;width:14px;height:14px}
-.dvi-guild-card .dvi-log-item :is(svg,img){width:14px;height:14px}
-.dvi-guild-card .dvi-log-item>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dvi-guild-card .dvi-log-item>b{margin-left:0;font:inherit;font-variant-numeric:tabular-nums}
-.dvi-guild-side .muted{color:var(--ink-faint);font-size:11px}
-`;
-  (document.head || document.documentElement).append(guildLedgerStyle);
 
   // ---- src/combat-metrics-ui.js ----
   /* Effective damage from received/live client state. No game controls or requests. */
@@ -30993,7 +30628,6 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     syncHomeTimers();
     syncBossRecords();
     syncEquipmentValue();
-    syncGuildLedger();
     syncInventory();
     syncMarketInventory();
     polishFields();
@@ -31110,7 +30744,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     if (!node?.closest) return false;
     if (
       node.closest(
-        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-dialog,.dvi-guild-best",
+        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best",
       )
     )
       return false;
