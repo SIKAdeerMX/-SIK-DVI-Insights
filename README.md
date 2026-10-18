@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.75
+# [SIK] DVI Insights 0.4.76
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -6,6 +6,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 
 [SIK] DVI信息增强为 Deep Vein Idle 补充经验、材料、时间与收支信息，沿用游戏面板和主题配色。
+
+- 游戏「设置」内新增 **[SIK] Insights** 专属页，集中管理12项功能开关、药水成本和更新提醒。更改即时生效、保存在当前浏览器，沿用既有配置；工作列表的旧设置入口已移除。
 
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
 - 装备标题栏显示穿戴装备估值 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；总分与分项为完整整数、加千位逗号。查看其他玩家时只显示总分。精确强化报价优先；缺价采用有效历史、缓存与商人兜底，强化补价按逐级最低金币及碎片/核心二选一计算，不含失败和保护卷轴。提示中说明该分数不是实际投入或战斗力，不含家园。
@@ -47,6 +49,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+- Open game **Settings → [SIK] Insights** to control 12 main features, potion costs and update reminders. Changes apply immediately and persist in this browser; existing preferences are retained. The old work-list settings entry has been removed.
 
 - Active tasks show observed duration and resume matching samples from the last twelve hours across task switches, stops and reloads. Combat expectations separate zone, equipment and food configurations. Unobserved gaps are excluded; offline settlements remain separate and show a daily profit estimate over effective duration, or income only when costs are incomplete.
 - Equipment score is worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Exact enhanced quotes take priority; valid history, cached prices and vendor values provide fallbacks. Enhancement fallback sums minimum step costs, using either shards or a core, excluding failures and scrolls. It excludes home and does not measure actual spending or combat power. Inspecting another player shows only the total.
