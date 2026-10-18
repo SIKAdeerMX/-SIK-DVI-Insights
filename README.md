@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.78
+# [SIK] DVI Insights 0.4.79
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -10,7 +10,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 游戏「设置」内新增 **[SIK] Insights** 专属页，集中管理12项功能开关、药水成本和更新提醒。更改即时生效、保存在当前浏览器，沿用既有配置；工作列表的旧设置入口已移除。
 
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
-- 装备标题栏显示穿戴装备估值 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；总分与分项为完整整数、加千位逗号。查看其他玩家时只显示总分。精确强化报价优先；缺价采用有效历史、缓存与商人兜底，强化补价按逐级最低金币及碎片/核心二选一计算，不含失败和保护卷轴。提示中说明该分数不是实际投入或战斗力，不含家园。
+- 装备标题栏显示穿戴装备参考估值 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；查看其他玩家时只显示总分。为排除代强化挂单，强化装备不采用 +N 挂单或历史成交，使用同品质底装价加统一强化100级、无精通/家园的重做期望成本，计失败回退、碎片或核心、保护卷轴并比较保护起点。参考标≈；缺保护报价或旧超限装备仅显示已知下限（≥）。未强化底装仍沿用有效报价、历史、缓存或商人兜底。分数不是原生P50、实际投入、成交价值或战斗力，不含家园；市场和仓库报价保持真实来源。
 - 保存最近 30 场本人的已收到 Boss 排名和掉落，聊天区独立“掉落日志”按实际品质显示名称、数量和颜色；原生结算缺少个人名次时补充，未收到的排行明确标注。记录仅存本机，不补发查询。手机家园计时只在地图页显示。
 - 公会日志保持原生日志，不再附加统计。成员、日志和公会列表不再铺浅色白底。公会首页在「捐献积分」按钮右侧显示当前挂售价下每分金币最少的捐献物品名称。
 
@@ -53,7 +53,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Open game **Settings → [SIK] Insights** to control 12 main features, potion costs and update reminders. Changes apply immediately and persist in this browser; existing preferences are retained. The old work-list settings entry has been removed.
 
 - Active tasks show observed duration and resume matching samples from the last twelve hours across task switches, stops and reloads. Combat expectations separate zone, equipment and food configurations. Unobserved gaps are excluded; offline settlements remain separate and show a daily profit estimate over effective duration, or income only when costs are incomplete.
-- Equipment score is worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Exact enhanced quotes take priority; valid history, cached prices and vendor values provide fallbacks. Enhancement fallback sums minimum step costs, using either shards or a core, excluding failures and scrolls. It excludes home and does not measure actual spending or combat power. Inspecting another player shows only the total.
+- Equipment score is reference worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Enhanced listings and trades may be service escrow, so the score uses the same-quality base price plus expected rebuilding cost at a shared Enhancing 100 baseline, with no mastery/home bonus. Includes failures, shards or cores, and protection scrolls, comparing protection thresholds. References show ≈; missing scroll quotes or legacy levels show only known lower bounds (≥). Base prices retain quote/history/cache/vendor fallbacks. This is not native P50, actual spending, resale value or combat power, and excludes home. Market and bank quotes remain unchanged. Inspecting another player shows only the total.
 - A separate chat Loot log preserves the latest thirty received personal boss rewards, with exact rarities, quantities and colors. Empty native personal results can be supplemented with received ranks; missing ranks remain unknown. No recovery queries are sent. Mobile Home timers stay on the map tab and hide under dialogs.
 - The guild log stays native and no longer adds statistics. Member, log and guild-list pages no longer use the light paper background. The guild home page shows the best-value donation item immediately to the right of Donate points.
 

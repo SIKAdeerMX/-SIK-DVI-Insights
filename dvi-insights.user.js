@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.78
+// @version      0.4.79
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4735,6 +4735,21 @@ SOFTWARE.
     if (typeof module === "object" && module.exports) module.exports = factory();
     else root.DVIEquipmentValue = factory();
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+    // Identical items use one benchmark, independent of the wearer's build.
+    const REFERENCE = { level: 100, mastery: 0, house: 0, statistic: "expected-cost" };
+    function expectedFromZero(steps, cost) {
+      const differences = [];
+      let total = 0;
+      for (let k = 0; k < steps.length; k++) {
+        const s = steps[k],
+          rebuild = s.protected ? differences[k - 1] || 0 : total;
+        const difference = (cost(s) + (1 - s.chance) * rebuild) / s.chance;
+        if (!Number.isFinite(difference) || difference < 0) return null;
+        differences.push(difference);
+        total += difference;
+      }
+      return total;
+    }
     function create(data, core) {
       const base = (id) => (id % 10000) % 1000,
         families = new Map(),
@@ -4822,6 +4837,63 @@ SOFTWARE.
         if (level != null) for (const gate of enhanceGates) if (level >= gate) tier++;
         return enhanceBands[tier - 1] * rarityMul[Math.floor(plain / 1000)] || 0;
       }
+      const enhancementCache = new Map(),
+        enhanceable = new Set([...data.gear, ...data.tools].map((x) => x.itemId));
+      function enhancement(plain, plus, prices) {
+        if (
+          !enhanceable.has(plain) ||
+          !Number.isInteger(plus) ||
+          plus < 0 ||
+          plus > (data.constants.enhanceMaxPlus || 20)
+        )
+          return null;
+        const rate = enhanceRate(plain),
+          shard = prices.shard,
+          corePrice = prices.core,
+          scroll = prices.scroll,
+          key = JSON.stringify([rate, plus, shard, corePrice, scroll]);
+        if (enhancementCache.has(key)) return enhancementCache.get(key);
+        let best = null;
+        for (const protectFrom of [
+          null,
+          ...(scroll == null ? [] : Array.from({ length: Math.max(0, plus - 2) }, (_, i) => i + 2)),
+        ]) {
+          const steps = Array.from({ length: plus }, (_, k) => {
+            const useCore = k >= 5 && corePrice != null && corePrice < 3 * (k + 1) * shard;
+            return {
+              chance: Math.min(
+                1,
+                Math.max(0.2, 1 - 0.06 * k) * (1 + 0.002 * (REFERENCE.level - 1)),
+              ),
+              gold: rate * (k + 1),
+              shards: useCore ? 0 : 3 * (k + 1),
+              cores: useCore ? 1 : 0,
+              protected: protectFrom != null && k >= protectFrom,
+            };
+          });
+          const bill = (s) =>
+              s.gold +
+              s.shards * shard +
+              s.cores * (corePrice || 0) +
+              (s.protected ? (1 - s.chance) * (scroll || 0) : 0),
+            cost = expectedFromZero(steps, bill);
+          if (cost != null && (!best || cost < best.cost)) {
+            const totals = {};
+            for (const [kind, fn] of Object.entries({
+              gold: (s) => s.gold,
+              shards: (s) => s.shards,
+              cores: (s) => s.cores,
+              scrolls: (s) => (s.protected ? 1 - s.chance : 0),
+              attempts: () => 1,
+            }))
+              totals[kind] = expectedFromZero(steps, fn);
+            best = { cost, protectFrom, totals, steps, reference: REFERENCE };
+          }
+        }
+        if (enhancementCache.size >= 128) enhancementCache.clear();
+        enhancementCache.set(key, best);
+        return best;
+      }
       function value(player, books, now = Date.now()) {
         const buy = (id) => {
           const flow = core.valueFlows({ [id]: 1 }, books, "buy", 0, now, data);
@@ -4834,38 +4906,40 @@ SOFTWARE.
           const vendor = data.vendorPrices?.[id % 10000];
           return vendor > 0 ? vendor : 0;
         };
-        // Gold is always paid. From +5 the game takes either the shard pile or one
-        // core for that step, never both; counting both was the inflated total.
-        const spent = (plain, plus) => {
-          const rate = enhanceRate(plain),
-            shard = material(208),
-            core = material(212);
-          let gold = 0,
-            mats = 0;
-          for (let step = 0; step < plus; step++) {
-            gold += rate * (step + 1);
-            const shards = 3 * (step + 1) * shard,
-              coreBill = core > 0 ? core : shards;
-            mats += step >= 5 ? Math.min(shards, coreBill) : shards;
-          }
-          return gold + mats;
-        };
+        const prices = { shard: material(208), core: buy(212), scroll: buy(359) };
         const worn = (id) => {
-          const flow = quote(id),
-            exact = flow.total;
-          if (exact !== null)
-            return {
-              price: exact,
-              estimated: !!flow.estimated.length,
-              source: flow.details[0]?.source || "quote",
-            };
           const plus = Math.floor(id / 10000),
-            plain = id % 10000,
-            base = material(plain);
+            plain = id % 10000;
+          // Enhanced quotes/history may be service escrow, not an item sale.
+          // This score ignores them; ordinary market displays keep actual quotes.
+          const flow = quote(plain),
+            basePrice = flow.total ?? material(plain),
+            baseSource = flow.total !== null ? flow.details[0]?.source || "quote" : "vendor";
+          if (!plus)
+            return {
+              price: basePrice > 0 ? basePrice : null,
+              estimated: flow.total === null || !!flow.estimated.length,
+              source: baseSource,
+            };
+          const ref = enhancement(plain, plus, prices),
+            missingMaterials = !(prices.shard > 0) || (plus > 3 && prices.scroll == null);
+          if (!ref || missingMaterials) {
+            const minimum = ref ? (enhanceRate(plain) * plus * (plus + 1)) / 2 : 0;
+            return {
+              price: (basePrice || 0) + minimum || null,
+              estimated: true,
+              incomplete: true,
+              source: "enhancement-incomplete",
+              baseSource,
+            };
+          }
           return {
-            price: plus > 0 ? base + spent(plain, plus) : base || null,
+            price: (basePrice || 0) + ref.cost,
             estimated: true,
-            source: plus > 0 ? "minimum-enhancement" : "vendor",
+            incomplete: !(basePrice > 0),
+            source: "enhancement-reference",
+            baseSource,
+            enhancement: ref,
           };
         };
         const missing = [],
@@ -4876,8 +4950,8 @@ SOFTWARE.
           const item = worn(id),
             price = item.price;
           equipment.push({ slot, id, ...item });
-          if (price === null) missing.push(id);
-          else gear += price;
+          if (price === null || item.incomplete) missing.push(id);
+          if (price !== null) gear += price;
         }
         const parts = [0, 0, 0];
         for (const e of equipment)
@@ -4898,12 +4972,12 @@ SOFTWARE.
           complete: !missing.length,
         };
       }
-      return { points, value };
+      return { points, value, enhancement };
     }
     function formatScore(n) {
       return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
     }
-    return { create, formatScore };
+    return { create, formatScore, REFERENCE, expectedFromZero };
   });
 
   // ---- src/guild-donate.js ----
@@ -5396,6 +5470,10 @@ SOFTWARE.
       "目标等级须为 1–{max} 的整数": "Target level must be an integer from 1 to {max}",
     };
     Object.assign(en, {
+      "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、无精通和家园；计失败回退、碎片或核心及保护卷轴，比较保护起点后取较低参考。不是原生P50、实际投入或战斗力。缺少保护报价或旧超限装备时仅显示已知下限（≥）。":
+        "Enhanced gear ignores +N listings and trades. The reference is the same-quality base item plus expected rebuilding cost at Enhancing 100, with no mastery or home bonus. Includes failures, shards or cores, and protection scrolls; compares protection thresholds. This is not native P50, actual spending or combat power. Missing scroll quotes or legacy levels show only a known lower bound (≥).",
+      "强化按统一重做期望成本估值；≈为参考，≥为缺价下限。":
+        "Enhancement uses a shared expected rebuilding cost: ≈ reference, ≥ known lower bound.",
       "按观测产出速度折算24小时，报价数量只使用一次；产值不等于到账金币。":
         "Project the observed output rate over 24 hours, using each quote quantity once. Output value is not cash received.",
       "按当前状态模拟未来一小时，再折算24小时；稀有优先会计入高品质材料耗尽后的变化。":
@@ -23097,7 +23175,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.78";
+  const PLUGIN_VERSION = "0.4.79";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -25915,6 +25993,18 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
   // ---- src/equipment-value-ui.js ----
   const equipmentValuer = globalThis.DVIEquipmentValue.create(GAME_DATA, globalThis.DVIPlannerCore);
   let equipmentValueCache = null;
+  function equipmentScorePrefix(v) {
+    return v.complete ? (v.estimated ? "≈ " : "") : "≥ ";
+  }
+  function equipmentScoreHint() {
+    return (
+      t("穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。") +
+      " " +
+      t(
+        "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、无精通和家园；计失败回退、碎片或核心及保护卷轴，比较保护起点后取较低参考。不是原生P50、实际投入或战斗力。缺少保护报价或旧超限装备时仅显示已知下限（≥）。",
+      )
+    );
+  }
   function syncInspectScores() {
     const live = store.state.inspect,
       fmt = globalThis.DVIEquipmentValue.formatScore;
@@ -25941,14 +26031,9 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         { equipment: live.gear, houseCells: [], house: {} },
         store.state.books,
       );
-      const text = t("装备评分") + "\u00a0" + fmt(v.score);
+      const text = t("装备评分") + "\u00a0" + equipmentScorePrefix(v) + fmt(v.score);
       setNativeText(note, text);
-      note.title =
-        t("穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。") +
-        " " +
-        t(
-          "缺少精确报价时采用历史、缓存或商人兜底；强化补价为逐级最低成本，未计失败与保护卷轴，不是实际投入或战斗力。",
-        );
+      note.title = equipmentScoreHint();
     }
   }
   function syncEquipmentValue() {
@@ -25991,16 +26076,18 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         equipmentValueCache = { key, value: equipmentValuer.value(p, store.state.books) };
       const v = equipmentValueCache.value;
       const score = globalThis.DVIEquipmentValue.formatScore;
-      setNativeText(box.querySelector("summary"), t("装备评分") + " " + score(v.score));
-      box.querySelector("summary").title =
-        t("穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。") +
-        " " +
-        t(
-          "缺少精确报价时采用历史、缓存或商人兜底；强化补价为逐级最低成本，未计失败与保护卷轴，不是实际投入或战斗力。",
-        );
-      const html = ["战斗装备", "工具", "坐骑"]
-        .map((name, i) => "<span>" + t(name) + "</span><b>" + score(v.parts[i] / 1e6) + "</b>")
-        .join("");
+      setNativeText(
+        box.querySelector("summary"),
+        t("装备评分") + " " + equipmentScorePrefix(v) + score(v.score),
+      );
+      box.querySelector("summary").title = equipmentScoreHint();
+      const html =
+        ["战斗装备", "工具", "坐骑"]
+          .map((name, i) => "<span>" + t(name) + "</span><b>" + score(v.parts[i] / 1e6) + "</b>")
+          .join("") +
+        "<small>" +
+        t("强化按统一重做期望成本估值；≈为参考，≥为缺价下限。") +
+        "</small>";
       const body = box.querySelector("div");
       if (body.innerHTML !== html) body.innerHTML = html;
       const meta = head.querySelector("[data-panel-meta]");
