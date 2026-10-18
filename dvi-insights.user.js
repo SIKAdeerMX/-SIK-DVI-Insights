@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.74
+// @version      0.4.75
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -21783,7 +21783,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.74";
+  const PLUGIN_VERSION = "0.4.75";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -28912,6 +28912,64 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     insightPending.clear();
   });
 
+  // ---- src/route-xp-ui.js ----
+  /* The native 3025 menu drops world buff windows at its fixed simulation clock.
+   * Keep its metadata intact; show the independently calculated real-route rate
+   * in a stable sibling, with native death warnings taking priority. */
+  const routeXpRows = new WeakMap();
+  function syncRouteXp(row, value, pending = false) {
+    routeXpRows.set(row, { value, pending });
+    const native = row.querySelector(".route-meta:not(.dvi-route-xp)");
+    let label = row.querySelector(".dvi-route-xp");
+    const ready =
+      !!native && !row.disabled && Number.isFinite(value) && !native.querySelector(".danger");
+    if (ready && !label) {
+      label = document.createElement("span");
+      label.className = "route-meta dvi-route-xp";
+      label.dataset.noI18n = "";
+      native.insertAdjacentElement("afterend", label);
+    }
+    if (row.hasAttribute("data-dvi-route-xp") !== ready)
+      row.toggleAttribute("data-dvi-route-xp", ready);
+    if (!label) return;
+    if (label.hidden === ready) label.hidden = !ready;
+    if (ready) {
+      setNativeText(label, "≈ " + fmt(value) + " XP/h");
+      const title =
+        (pending ? t("更新中…") + "\n" : "") +
+        t(
+          row.dataset.zone
+            ? "预计总经验/小时：各战斗技能合计，含跑路、补给和回血耗时。"
+            : "未来一小时平均经验",
+        );
+      if (label.title !== title) label.title = title;
+    }
+  }
+  function syncRouteXpChanges(changes) {
+    const rows = new Set();
+    for (const change of changes) {
+      if (change.type === "attributes" && change.attributeName === "data-dvi-route-xp") continue;
+      const target = change.target.nodeType === 3 ? change.target.parentElement : change.target;
+      if (!target?.closest || target.closest(".dvi-route-xp")) continue;
+      const native = target.closest(".route-meta:not(.dvi-route-xp)");
+      const replaced =
+        change.type === "childList" &&
+        [...(change.addedNodes || []), ...(change.removedNodes || [])].some((n) =>
+          n.matches?.(".route-meta:not(.dvi-route-xp)"),
+        );
+      const row = native
+        ? native.closest(".route[data-job],.route[data-zone]")
+        : replaced
+          ? target.closest(".route[data-job],.route[data-zone]")
+          : null;
+      if (row && routeXpRows.has(row)) rows.add(row);
+    }
+    for (const row of rows) {
+      const saved = routeXpRows.get(row);
+      syncRouteXp(row, saved.value, saved.pending);
+    }
+  }
+
   // ---- src/battle-ui.js ----
   /* Compact route-aware combat comparisons on normal monster rows only. */
   const battleLists = new WeakMap(),
@@ -28919,7 +28977,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   let battlePending = false,
     battlePlayerId = null,
     battleMapKey = null;
-  // Native 1.0.3025 owns task XP and death warnings; only append missing profit detail.
+  // Retain native death warnings while correcting the menu's missing world buffs.
   function remountBattleRows() {
     const restores = [];
     for (const list of document.querySelectorAll("[data-routes]")) {
@@ -28933,6 +28991,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         record.row = row;
         row.insertAdjacentElement("afterend", record.box);
         replaced = true;
+        if (record.monster) {
+          const entry = battleCache.get(record.monster.id);
+          syncRouteXp(row, entry?.error ? NaN : entry?.result?.hour?.xp, !!entry?.pending);
+        }
       }
       const old = nativeLists.get(list);
       if (
@@ -29064,6 +29126,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           valid = entry?.signature === signature,
           sameConfig = entry?.configuration === configuration;
         syncBattleLevel(record, p, entry);
+        syncRouteXp(row, entry?.error ? NaN : entry?.result?.hour?.xp, !!entry?.pending);
         setNativeText(record.box.querySelector(".dvi-native-action"), "");
         record.box.setAttribute?.("aria-busy", String(!!entry?.pending));
         const summary = record.box.querySelector("[data-battle-profit]");
@@ -29935,6 +29998,19 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     hoveredItem = null;
   const nativeStyle = document.createElement("style");
   nativeStyle.textContent = `
+.route[data-dvi-route-xp] > .route-meta:not(.dvi-route-xp) {
+  display: none !important;
+}
+.route > .dvi-route-xp {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.route > .dvi-route-xp[hidden] {
+  display: none !important;
+}
 [data-routes][data-dvi-scroll-guard] {
   overflow-anchor: none;
 }
@@ -30638,6 +30714,11 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     const cached = nativeCache.get(nativeKey(record)),
       summary = record.box.querySelector("[data-native-summary]");
     let text;
+    syncRouteXp(
+      record.row,
+      cached?.error || cached?.result?.farming ? NaN : cached?.result?.hour?.xp,
+      !!(nativeActive?.key === nativeKey(record)),
+    );
     if (record.row.disabled) text = t("未解锁或当前位置无可用工作地点");
     else if (!store.state.player) text = t("等待角色数据");
     else if (cached?.result) {
@@ -30919,6 +31000,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
   const nativeMutations = new MutationObserver((changes) => {
     // Native XP/death messages may update without a full row redraw. Adjust only
     // their visibility in this microtask; never restart a worker for a DOM update.
+    syncRouteXpChanges(changes);
     if (changes.some((change) => change.target.matches?.("[data-fields]"))) polishFields();
     if (changes.some((change) => change.target.matches?.("[data-bank-grid]"))) syncInventory();
     if (changes.some((change) => change.target.matches?.("[data-market-list]")))
