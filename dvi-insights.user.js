@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.72
+// @version      0.4.73
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -190,7 +190,12 @@ SOFTWARE.
           if (id == null) return 0;
           return (gear.get(id % 10000)?.luck || 0) * (1 + c.toolEnhance * Math.floor(id / 10000));
         }
-        const master = (p, k) => 1 + (p.masteries?.[k] || 0) * (mastery.get(k) || 0);
+        const master = (p, k) =>
+          1 +
+          Math.min(
+            k === "enhance" ? (c.enhanceMasteryBonusCap ?? 0.5) : Infinity,
+            (p.masteries?.[k] || 0) * (mastery.get(k) || 0),
+          );
         function brewTier(p, k, tick) {
           const buckets = p.brewBuckets?.[k];
           if (buckets?.length) {
@@ -356,7 +361,7 @@ SOFTWARE.
           let points = neighbors
             .map(([dx, dy]) => ({ x: site.x + dx, y: site.y + dy }))
             .filter((p) => walkable(p.x, p.y));
-          if (from && points.length) {
+          if (from && c.nearestStands && points.length) {
             const dist = (p) => Math.max(Math.abs(p.x - from.x), Math.abs(p.y - from.y)),
               best = Math.min(...points.map(dist));
             points = points.filter((p) => dist(p) === best);
@@ -378,13 +383,12 @@ SOFTWARE.
                 [-1, -1],
               ]
             : neighbors;
-          const heuristic = nativeCombat
-            ? (ax, ay, bx, by) => {
-                const x = Math.abs(ax - bx),
-                  y = Math.abs(ay - by);
-                return Math.max(x, y) - Math.min(x, y) + Math.SQRT2 * Math.min(x, y);
-              }
-            : octile;
+          const diagonal = c.pathDiagonal ?? Math.SQRT2;
+          const heuristic = (ax, ay, bx, by) => {
+            const x = Math.abs(ax - bx),
+              y = Math.abs(ay - by);
+            return Math.max(x, y) - Math.min(x, y) + diagonal * Math.min(x, y);
+          };
           const key = [ax, ay, bx, by, nativeCombat].join(",");
           if (paths.has(key)) return paths.get(key);
           if (!walkable(ax, ay) || !walkable(bx, by)) return null;
@@ -418,7 +422,7 @@ SOFTWARE.
                 ny = y + dy;
               if (!canStep(x, y, nx, ny)) continue;
               const id = ny * width + nx,
-                ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? Math.SQRT2 : 1);
+                ng = (nativeCombat ? g[u.id] : u.g) + (dx && dy ? diagonal : 1);
               if (!closed?.[id] && ng < g[id]) {
                 g[id] = ng;
                 prev[id] = u.id;
@@ -2754,6 +2758,27 @@ SOFTWARE.
       const m = message.text.match(lootPattern);
       return m ? { name: m[1], loot: m[2] } : null;
     }
+    function fallNotice(card) {
+      if (
+        !card ||
+        typeof card.boss !== "string" ||
+        !card.boss.length ||
+        card.boss.length > 90 ||
+        typeof card.loot !== "string" ||
+        card.loot.length > 1800 ||
+        !Number.isSafeInteger(card.killTick) ||
+        card.killTick < 0
+      )
+        return null;
+      return {
+        kind: "fall",
+        name: card.boss,
+        loot: card.loot,
+        tick: card.killTick,
+        rank: Number.isSafeInteger(card.rank) && card.rank > 0 ? card.rank : null,
+        points: Number.isFinite(card.points) && card.points >= 0 ? card.points : null,
+      };
+    }
     const lootNames = new WeakMap();
     function parseLoot(data, text) {
       if (!lootNames.has(data))
@@ -2823,6 +2848,48 @@ SOFTWARE.
       return {
         receive(e) {
           if (!Number.isSafeInteger(e.account) || !Number.isSafeInteger(e.tick)) return;
+          if (e.kind === "fall") {
+            const key = "fall:" + e.tick + ":" + e.name;
+            let row = rows.find((r) => r.account === e.account && r.key === key);
+            const pending =
+              active?.account === e.account &&
+              active.name === e.name &&
+              Number.isSafeInteger(active.startTick) &&
+              e.tick >= active.startTick;
+            if (!row && pending)
+              row = rows.find((r) => r.account === e.account && r.key === active.key);
+            if (!row) {
+              row = { account: e.account, at: Number.isFinite(e.at) ? e.at : now() };
+              rows.push(row);
+            }
+            Object.assign(row, {
+              key,
+              name: e.name,
+              loot: e.loot,
+              tick: e.tick,
+              rank: e.rank,
+              points: e.points,
+              final: true,
+            });
+            rows.sort((a, b) => a.tick - b.tick);
+            rows = rows.slice(-30);
+            revision++;
+            if (
+              !active ||
+              active.account !== e.account ||
+              e.tick >= (active.startTick ?? active.tick ?? 0)
+            )
+              active = {
+                account: e.account,
+                name: e.name,
+                key,
+                tick: e.tick,
+                rank: e.rank,
+                points: e.points,
+                final: true,
+              };
+            return;
+          }
           if (e.kind === "rose") {
             active = {
               account: e.account,
@@ -2858,7 +2925,7 @@ SOFTWARE.
             }
             if (e.hp === 0) active.final = !!e.you;
             const row = rows.find((r) => r.account === e.account && r.key === active.key);
-            if (row) {
+            if (row && !row.key.startsWith("fall:")) {
               row.rank = active.rank;
               row.points = active.points;
               row.final = active.final;
@@ -2932,7 +2999,7 @@ SOFTWARE.
         },
       };
     }
-    return { create, lootNotice, parseLoot };
+    return { create, lootNotice, fallNotice, parseLoot };
   });
 
   // ---- src/observer.js ----
@@ -3254,6 +3321,11 @@ SOFTWARE.
                     tick: Number.isSafeInteger(entry.tick) ? entry.tick : frame.tick,
                   });
               }
+              for (const card of Array.isArray(m.bossFalls) ? m.bossFalls : []) {
+                const fall = bossRecords?.fallNotice(card);
+                if (fall)
+                  bossEvent({ ...fall, at: now() - Math.max(0, frame.tick - fall.tick) * 600 });
+              }
               combatEvent({ kind: "reset", tick: frame.tick });
               changed = true;
               break;
@@ -3316,6 +3388,14 @@ SOFTWARE.
                   ...loot,
                   tick: Number.isSafeInteger(m.tick) ? m.tick : frame.tick,
                 });
+                changed = true;
+              }
+              break;
+            }
+            case "bossFall": {
+              const fall = bossRecords?.fallNotice(m.card);
+              if (fall) {
+                bossEvent({ ...fall, at: now() - Math.max(0, frame.tick - fall.tick) * 600 });
                 changed = true;
               }
               break;
@@ -3387,10 +3467,9 @@ SOFTWARE.
               }
               break;
             case "snapshot":
-              // The client keeps stepping the player from welcome. A snapshot's you is a
-              // detached copy, so replacing it freezes lastTick and the observation clock.
+              // The native handler adopts this exact parsed object, then advances it.
               if (validPlayer(m.you)) {
-                if (state.player?.id !== m.you.id) state.player = m.you;
+                state.player = m.you;
                 if (Array.isArray(m.orders)) state.orders = m.orders;
                 if (Array.isArray(m.windows)) state.windows = m.windows;
                 changed = true;
@@ -4146,6 +4225,8 @@ SOFTWARE.
           collections: { ...p.collections },
           skills: { ...p.skills },
           actionIndex: p.actionIndex,
+          rollIndex: p.rollIndex ? { ...p.rollIndex } : null,
+          enhance: !!p.enhance,
           caught: p.tally?.caught || 0,
           burnt: p.tally?.burnt || 0,
           plots: JSON.parse(JSON.stringify(p.plots || {})),
@@ -4189,7 +4270,21 @@ SOFTWARE.
         if (p.lastTick === last.tick) return report(p);
         const job = p.route.zoneId == null ? model.jobs.get(p.route.jobId) : null;
         if (job) {
-          const delta = (p.actionIndex ?? last.actionIndex) - (last.actionIndex ?? p.actionIndex);
+          // Successful production has its own native roll counter; burnt/caught
+          // attempts return before that counter, so include those separately.
+          const domain = job.grow !== undefined ? "farm" : "craft",
+            current = p.rollIndex;
+          const known = current && (last.rollIndex || last.actionIndex === 0);
+          const delta = known
+            ? (current[domain] || 0) -
+              (last.rollIndex?.[domain] || 0) +
+              (job.grow === undefined
+                ? Math.max(0, (p.tally?.burnt || 0) - last.burnt) +
+                  Math.max(0, (p.tally?.caught || 0) - last.caught)
+                : 0)
+            : p.enhance || last.enhance
+              ? 0
+              : (p.actionIndex ?? last.actionIndex) - (last.actionIndex ?? p.actionIndex);
           if (delta < 0) {
             reset(p);
             return report(p);
@@ -4707,6 +4802,7 @@ SOFTWARE.
           const flow = core.valueFlows({ [id]: 1 }, books, "buy", 0, now, data);
           return flow.total === null ? null : flow.total;
         };
+        const quote = (id) => core.valueFlows({ [id]: 1 }, books, "buy", 0, now, data);
         const material = (id) => {
           const market = buy(id);
           if (market !== null) return market;
@@ -4730,20 +4826,31 @@ SOFTWARE.
           return gold + mats;
         };
         const worn = (id) => {
-          const exact = buy(id);
-          if (exact !== null) return exact;
+          const flow = quote(id),
+            exact = flow.total;
+          if (exact !== null)
+            return {
+              price: exact,
+              estimated: !!flow.estimated.length,
+              source: flow.details[0]?.source || "quote",
+            };
           const plus = Math.floor(id / 10000),
             plain = id % 10000,
             base = material(plain);
-          return plus > 0 ? base + spent(plain, plus) : base || null;
+          return {
+            price: plus > 0 ? base + spent(plain, plus) : base || null,
+            estimated: true,
+            source: plus > 0 ? "minimum-enhancement" : "vendor",
+          };
         };
         const missing = [],
           equipment = [];
         let gear = 0;
         for (const [slot, id] of Object.entries(player.equipment || {})) {
           if (!Number.isSafeInteger(id) || id <= 0) continue;
-          const price = worn(id);
-          equipment.push({ slot, id, price });
+          const item = worn(id),
+            price = item.price;
+          equipment.push({ slot, id, ...item });
           if (price === null) missing.push(id);
           else gear += price;
         }
@@ -4762,6 +4869,7 @@ SOFTWARE.
           parts,
           missing: [...new Set(missing)],
           equipment,
+          estimated: equipment.some((x) => x.estimated),
           complete: !missing.length,
         };
       }
@@ -4893,6 +5001,8 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      "伤害 +{n}%": "+{n}% damage",
+      "受到伤害 −{n}%": "−{n}% damage taken",
       家园: "Home",
       最近一笔: "Latest",
       掉落日志: "Loot log",
@@ -4922,6 +5032,10 @@ SOFTWARE.
       未收到本场排行: "Ranking not received",
       装备评分: "Equipment score",
       停用: "Off",
+      "穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。":
+        "Value of worn gear, tools and mount divided by 1,000,000; excludes home.",
+      "缺少精确报价时采用历史、缓存或商人兜底；强化补价为逐级最低成本，未计失败与保护卷轴，不是实际投入或战斗力。":
+        "Missing exact quotes use history, cached prices or vendor values. Enhancement fallback sums minimum step costs, excluding failures and scrolls; it is not actual spending or combat power.",
       "战斗等级 {level}": "Combat {level}",
       "战斗等级=floor(0.65×最高攻击技能等级+0.25×(防御等级+生命等级))，与装备评分无关。":
         "Combat level = floor(0.65 × highest attack level + 0.25 × (Defence + Hitpoints)). Independent of equipment value.",
@@ -16116,7 +16230,8 @@ SOFTWARE.
       {
         id: "gather",
         name: "Gather speed",
-        blurb: "Mine, fish, chop, farm and steal faster.",
+        blurb:
+          "Faster Mining, Fishing, Woodcutting, Thieving and Farming work. Crops still take as long to grow.",
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
@@ -16124,7 +16239,7 @@ SOFTWARE.
       {
         id: "craft",
         name: "Craft speed",
-        blurb: "Smith, cook, fletch, brew and craft faster.",
+        blurb: "Faster Smithing, Cooking, Fletching, Herblore and Crafting.",
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
@@ -16224,16 +16339,16 @@ SOFTWARE.
       1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 22, 23, 24, 25, 26, 27, 10, 11, 12, 13, 14, 15, 170, 171, 172,
       173, 174, 175, 40, 41, 42, 43, 44, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 360, 361, 362, 363,
       364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382,
-      383, 384, 385, 386, 387, 388, 389, 90, 91, 92, 93, 94, 60, 61, 62, 63, 64, 65, 66, 67, 110,
-      111, 112, 113, 114, 390, 391, 392, 393, 394, 395, 115, 116, 117, 118, 119, 120, 121, 122, 123,
-      124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 350, 351, 352, 353, 354, 140, 141, 142,
-      143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 193, 194, 195, 220,
-      225, 226, 227, 221, 222, 223, 224, 180, 181, 182, 183, 358, 184, 185, 186, 357, 260, 262, 261,
-      263, 265, 264, 266, 268, 267, 269, 271, 270, 272, 274, 273, 338, 340, 339, 341, 343, 342, 200,
-      300, 301, 302, 303, 304, 306, 305, 307, 309, 308, 310, 312, 311, 313, 315, 314, 344, 346, 345,
-      323, 324, 325, 326, 329, 330, 331, 332, 333, 347, 348, 334, 335, 336, 337, 349, 327, 240, 241,
-      242, 243, 245, 247, 249, 244, 246, 248, 250, 251, 252, 100, 328, 160, 161, 162, 163, 164, 165,
-      190, 191, 192,
+      383, 384, 385, 386, 387, 388, 389, 90, 91, 92, 93, 94, 60, 61, 62, 63, 64, 65, 66, 67, 71, 72,
+      73, 74, 75, 76, 77, 45, 46, 47, 48, 49, 50, 51, 52, 54, 55, 110, 111, 112, 113, 114, 390, 391,
+      392, 393, 394, 395, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
+      130, 131, 132, 133, 134, 350, 351, 352, 353, 354, 140, 141, 142, 143, 144, 145, 146, 147, 148,
+      149, 150, 151, 152, 153, 154, 155, 156, 157, 193, 194, 195, 220, 225, 226, 227, 221, 222, 223,
+      224, 180, 181, 182, 183, 358, 184, 185, 186, 357, 260, 262, 261, 263, 265, 264, 266, 268, 267,
+      269, 271, 270, 272, 274, 273, 338, 340, 339, 341, 343, 342, 200, 300, 301, 302, 303, 304, 306,
+      305, 307, 309, 308, 310, 312, 311, 313, 315, 314, 344, 346, 345, 323, 324, 325, 326, 329, 330,
+      331, 332, 333, 347, 348, 334, 335, 336, 337, 349, 327, 240, 241, 242, 243, 245, 247, 249, 244,
+      246, 248, 250, 251, 252, 100, 328, 160, 161, 162, 163, 164, 165, 190, 191, 192,
     ],
     seedIds: [160, 161, 162, 163, 164, 165, 190, 191, 192],
     potions: [
@@ -19304,7 +19419,7 @@ SOFTWARE.
         1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0,
+        0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
         0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -19313,8 +19428,8 @@ SOFTWARE.
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-        1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -19323,7 +19438,7 @@ SOFTWARE.
         1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -20740,6 +20855,11 @@ SOFTWARE.
         280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292,
       ],
       petsNoBankSlots: true,
+      pathDiagonal: 1.0001220703125,
+      nearestStands: true,
+      enhanceMaxPlus: 20,
+      enhanceMasteryBonusCap: 0.5,
+      forgePointMaxPlus: 15,
     },
     food: {
       damage: 0.25,
@@ -21326,17 +21446,17 @@ SOFTWARE.
       "The Deep garden": "深岩花园",
     },
     version: {
-      version: "1.0.2704",
+      version: "1.0.2989",
       env: "live",
-      commit: "7d0b258b",
-      branch: "test-all",
-      subject: "1.0.1190 changelog: drop the unlock lists line",
-      committedAt: "2026-10-15T19:11:29+02:00",
+      commit: "6dce2b38",
+      branch: "hotfix-mastery-1018-b",
+      subject: "Enhancing capped at +20 for now: no attempt past it, by any road",
+      committedAt: "2026-10-18T07:09:33+02:00",
       dirty: true,
-      builtAt: "2026-10-15T17:22:22.610Z",
+      builtAt: "2026-10-18T05:12:17.732Z",
     },
-    clientAsset: "index-DAY9oe71.js",
-    sourceSha256: "c61c0f23060ecb43ebc22d6e2e1742b16c265383a1dc1b2860357b341047aeb5",
+    clientAsset: "index-YnNRJ6iz.js",
+    sourceSha256: "57d413ec5e27336ba1925db7f7bf1a988524df7985535bbd58d5680559f50158",
   };
 
   // ---- src/public-market.js ----
@@ -21655,7 +21775,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.72";
+  const PLUGIN_VERSION = "0.4.73";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -23345,15 +23465,10 @@ SOFTWARE.
   }
   let observationPace = null;
   function pacedObservationSeconds(key, seconds, now, hidden, pace) {
-    const safe = Number.isFinite(seconds) ? seconds : 0;
-    if (!key) return { seconds: safe, pace };
-    if (!pace || pace.key !== key) pace = { key, base: safe, shown: safe, at: now };
-    else if (safe > pace.base + 0.05) {
-      const shown = Math.max(safe, pace.shown);
-      pace = { key, base: safe, shown, at: now - (shown - safe) * 1000 };
-    } else if (hidden) pace = { ...pace, at: now - (pace.shown - pace.base) * 1000 };
-    else pace = { ...pace, shown: pace.base + (now - pace.at) / 1000 };
-    return { seconds: pace.shown, pace };
+    // The one-second refresh samples the live native tick. Wall time alone is
+    // never evidence of observed activity, especially during a reconnect.
+    const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    return { seconds: safe, pace: { key, base: safe, shown: safe, at: now } };
   }
   function showObservationTime(box, seconds) {
     const note = box.querySelector(".dvi-income-observation");
@@ -24192,7 +24307,11 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
             );
           })
           .join("") || '<p class="dvi-note">' + t("暂无掉落记录") + "</p>";
-      if (view.log.innerHTML !== html) view.log.innerHTML = html;
+      if (view.html !== html || view.log.innerHTML !== view.rendered) {
+        view.log.innerHTML = html;
+        view.html = html;
+        view.rendered = view.log.innerHTML;
+      }
     }
   }
   function syncBossRecords() {
@@ -24262,6 +24381,12 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       );
       const text = t("装备评分") + "\u00a0" + fmt(v.score);
       setNativeText(note, text);
+      note.title =
+        t("穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。") +
+        " " +
+        t(
+          "缺少精确报价时采用历史、缓存或商人兜底；强化补价为逐级最低成本，未计失败与保护卷轴，不是实际投入或战斗力。",
+        );
     }
   }
   function syncEquipmentValue() {
@@ -24304,6 +24429,12 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       const v = equipmentValueCache.value;
       const score = globalThis.DVIEquipmentValue.formatScore;
       setNativeText(box.querySelector("summary"), t("装备评分") + " " + score(v.score));
+      box.querySelector("summary").title =
+        t("穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。") +
+        " " +
+        t(
+          "缺少精确报价时采用历史、缓存或商人兜底；强化补价为逐级最低成本，未计失败与保护卷轴，不是实际投入或战斗力。",
+        );
       const html = ["战斗装备", "工具", "坐骑"]
         .map((name, i) => "<span>" + t(name) + "</span><b>" + score(v.parts[i] / 1e6) + "</b>")
         .join("");
@@ -27894,19 +28025,23 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     card.dataset.dviGuildEditing = record.editing ? "true" : "false";
     nodes.edit.setAttribute("aria-expanded", String(record.editing));
     const chinese = i18n.language === "zh";
-    nodes.edit.textContent = chinese ? "编辑" : "Edit";
-    nodes.cancel.textContent = chinese ? "取消" : "Cancel";
-    nodes.notice.textContent = record.error
-      ? chinese
-        ? "尚未确认保存，请重试"
-        : "Save not confirmed. Please retry."
-      : record.pending
+    setNativeText(nodes.edit, chinese ? "编辑" : "Edit");
+    setNativeText(nodes.cancel, chinese ? "取消" : "Cancel");
+    setNativeText(
+      nodes.notice,
+      record.error
         ? chinese
-          ? "等待原生保存结果…"
-          : "Waiting for save…"
-        : "";
-    nodes.edit.disabled = !!record.pending && !record.error;
-    nodes.cancel.disabled = !!record.pending && !record.error;
+          ? "尚未确认保存，请重试"
+          : "Save not confirmed. Please retry."
+        : record.pending
+          ? chinese
+            ? "等待原生保存结果…"
+            : "Waiting for save…"
+          : "",
+    );
+    const disabled = !!record.pending && !record.error;
+    if (nodes.edit.disabled !== disabled) nodes.edit.disabled = disabled;
+    if (nodes.cancel.disabled !== disabled) nodes.cancel.disabled = disabled;
     const values = record.baseline,
       empty = chinese ? "暂无内容" : "Nothing yet";
     if (kind === "rules") {
@@ -28415,6 +28550,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 .dvi-buff-food-choice {display:inline-block;box-sizing:border-box;max-width:100%;padding:1px 5px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);border-radius:4px;background:color-mix(in srgb,currentColor 12%,var(--panel));font:500 11px/1.4 var(--sans);color:var(--ink);overflow-wrap:anywhere;}
 .dvi-buff-food-count {margin-left:6px;white-space:nowrap;font-weight:600;font-variant-numeric:tabular-nums;}
 .dvi-buff-time{display:block;white-space:nowrap;font-size:12px;font-variant-numeric:tabular-nums;}
+.dvi-buff-food-idle .bt-left{white-space:nowrap;}
+.dvi-buff-food-idle .bt-track{opacity:.35;}
+[data-combat-hud] .ch-buff{flex-wrap:wrap;}
+[data-combat-hud] .ch-buff>.dvi-buff-price{order:2;grid-column:1/-1;flex:1 0 100%;white-space:normal;font-size:11px;}
 .dvi-insights .buff-sheet .bt-fold .bt-left{display:flex;align-items:center;justify-content:flex-end;gap:6px;}
 .dvi-buff-food-choice.rarity-uncommon {color:var(--rarity-uncommon);}
 .dvi-buff-food-choice.rarity-rare {color:var(--rarity-rare);}
@@ -28565,7 +28704,12 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       }
       const label = foodRecommendationLabel(quotes.get(kind)),
         text = (label.qty ? label.name + " × " + label.qty : label.name) + " · " + label.cost;
-      const el = note || chip.appendChild(document.createElement("small"));
+      // The client writes firstElementChild (effect) and lastElementChild (time).
+      // Keep both native endpoints intact when adding the recommendation.
+      const clock = chip.querySelector(":scope>b");
+      if (!clock) continue;
+      const el = note || document.createElement("small");
+      if (el.nextElementSibling !== clock) clock.before(el);
       el.className = "dvi-buff-price";
       el.dataset.noI18n = "";
       setNativeText(el, text);
@@ -28668,38 +28812,109 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         i18n.remainingDuration(Math.max(0, p.brews.blessing - p.lastTick) * 0.6),
       );
   }
+  function buffRowEntry(row) {
+    const name = row.querySelector(".bt-name b")?.textContent.trim();
+    const kind = ["Well fed", "饱食", "饱腹"].includes(name)
+      ? "fed"
+      : ["Well rooted", "扎根"].includes(name)
+        ? "rooted"
+        : null;
+    if (kind) return buffKinds.find((entry) => entry.kind === kind);
+    const glyph = row.querySelector(".buff-glyph")?.innerHTML;
+    return glyph ? buffKinds.find((entry) => buffGlyphs.get(entry.key) === glyph) : null;
+  }
+  let buffFoodCache = null;
+  function currentFoodQuotes() {
+    const key = store.state.quoteRevision + ":" + Math.floor(Date.now() / 60000);
+    if (buffFoodCache?.key !== key)
+      buffFoodCache = {
+        key,
+        quotes: new Map(
+          ["fed", "rooted"].map((kind) => [
+            kind,
+            globalThis.DVIBuffs.bestDaily(model, store.state.books, kind),
+          ]),
+        ),
+      };
+    return buffFoodCache.quotes;
+  }
+  function syncInactiveFood(sheet, activeFood, quotes) {
+    const missing = buffKinds.filter(
+      (entry) => ["fed", "rooted"].includes(entry.kind) && !activeFood.has(entry.kind),
+    );
+    let host = sheet.querySelector(".dvi-buff-food-idle");
+    if (!missing.length) {
+      host?.remove();
+      return;
+    }
+    if (!host) {
+      host = document.createElement("div");
+      host.className = "dvi-buff-food-idle";
+      host.dataset.noI18n = "";
+      const world = sheet.querySelector(".bt-sec");
+      if (world) world.before(host);
+      else (sheet.querySelector(".bt") || sheet).append(host);
+    }
+    const key = missing.map((entry) => entry.kind).join(",") + ":" + i18n.language;
+    if (host.dataset.keys !== key) {
+      host.dataset.keys = key;
+      host.innerHTML = missing
+        .map(
+          (entry) =>
+            '<div class="bt-row dvi-buff-food-idle-row" data-idle-key="' +
+            entry.key +
+            '"><span class="bt-who"><span class="buff-glyph">' +
+            buffGlyph(entry) +
+            '</span><span class="bt-name"><b>' +
+            escape(buffName(entry)) +
+            "</b><small>" +
+            escape(
+              entry.kind === "fed"
+                ? t("伤害 +{n}%", { n: Math.round(GAME_DATA.food.damage * 100) })
+                : t("受到伤害 −{n}%", { n: Math.round(GAME_DATA.food.reduction * 100) }),
+            ) +
+            '</small></span></span><span class="bt-track"></span><span class="bt-left"><span class="dvi-buff-time">' +
+            t("未生效") +
+            "</span></span></div>",
+        )
+        .join("");
+    }
+    for (const row of host.children) {
+      const entry = buffKinds.find((entry) => entry.key === row.dataset.idleKey);
+      updateBuffFood(row, entry, quotes.get(entry.kind));
+    }
+  }
   function syncBuffs() {
     if (!buffStyle.isConnected) document.documentElement.append(buffStyle);
     const p = store.state.player;
     if (!p) return;
-    const foodQuotes = new Map(
-      ["fed", "rooted"].map((kind) => [
-        kind,
-        globalThis.DVIBuffs.bestDaily(model, store.state.books, kind),
-      ]),
-    );
-    const hudShowsFood = syncCombatFood(foodQuotes);
     const root = document.querySelector("[data-buffs]"),
-      sheet = document.querySelector("[data-buff-sheet]");
-    if (!root || !sheet || sheet.hidden) return;
+      sheet = document.querySelector("[data-buff-sheet]"),
+      hud = document.querySelector("[data-combat-hud]");
+    if ((!sheet || sheet.hidden) && (!hud || hud.hidden)) return;
+    const foodQuotes = currentFoodQuotes();
+    syncCombatFood(foodQuotes);
+    if (!sheet || sheet.hidden) return;
     for (const entry of buffKinds) {
-      const glyph = root.querySelector(`[data-buff="${entry.key}"] .buff-glyph`);
+      const glyph = root?.querySelector(`[data-buff="${entry.key}"] .buff-glyph`);
       if (glyph) buffGlyphs.set(entry.key, glyph.innerHTML);
     }
     syncWorldBuffTimes(sheet, p);
+    const activeFood = new Set();
     for (const row of sheet.querySelectorAll(
-      ".bt-row:not(.bt-axis):not(.bt-goalrow):not(.bt-fold)",
+      ".bt-row:not(.bt-axis):not(.bt-goalrow):not(.bt-fold):not(.dvi-buff-food-idle-row)",
     )) {
-      const glyph = row.querySelector(".buff-glyph")?.innerHTML;
-      if (!glyph) continue;
-      const entry = buffKinds.find((x) => buffGlyphs.get(x.key) === glyph);
+      const entry = buffRowEntry(row);
       if (entry) {
         updateBuffTime(row, entry, p);
         updateBuffPrice(row, entry, p);
-        if (foodQuotes.has(entry.kind) && !hudShowsFood)
+        if (foodQuotes.has(entry.kind)) {
+          activeFood.add(entry.kind);
           updateBuffFood(row, entry, foodQuotes.get(entry.kind));
+        }
       }
     }
+    syncInactiveFood(sheet, activeFood, foodQuotes);
     let idle = sheet.querySelector(".dvi-buff-idle");
     if (!idle) {
       idle = document.createElement("div");
@@ -28708,12 +28923,9 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       sheet.append(idle);
     }
     const inactive = buffKinds.filter(
-        (x) =>
-          !(hudShowsFood && (x.kind === "fed" || x.kind === "rooted")) &&
-          (p.brews?.[x.kind] || 0) <= p.lastTick,
+        (x) => !["fed", "rooted"].includes(x.kind) && (p.brews?.[x.kind] || 0) <= p.lastTick,
       ),
-      keys =
-        inactive.map((x) => x.key).join(",") + ":" + i18n.language + ":" + Number(hudShowsFood);
+      keys = inactive.map((x) => x.key).join(",") + ":" + i18n.language;
     if (idle.dataset.keys !== keys) {
       idle.dataset.keys = keys;
       idle.innerHTML = inactive
@@ -28722,13 +28934,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
             `<div class="dvi-buff-idle-row" data-idle-key="${entry.key}"><span class="buff-glyph">${buffGlyph(entry)}</span><span>${escape(buffName(entry))}</span><span class="dvi-buff-inactive-mark">—</span></div>`,
         )
         .join("");
-    }
-    for (const row of idle.children) {
-      const entry = buffKinds.find((x) => x.key === row.dataset.idleKey);
-      if (foodQuotes.has(entry.kind)) {
-        row.querySelector(".dvi-buff-inactive-mark")?.remove();
-        updateBuffFood(row, entry, foodQuotes.get(entry.kind));
-      }
     }
   }
 
@@ -28804,6 +29009,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         record.row = row;
         row.insertAdjacentElement("afterend", record.box);
         replaced = true;
+        if (record.monster) syncBattleXp(row, battleCache.get(record.monster.id));
       }
       const old = nativeLists.get(list);
       if (
@@ -29402,7 +29608,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       bindValueSortingReset(window, "[data-market-list]", marketValueViews, syncMarketInventory);
       if (!own) view.sorted = false;
       if (view.button.parentElement !== tools) tools.append(view.button);
-      view.button.hidden = !own;
+      if (view.button.hidden !== !own) view.button.hidden = !own;
       setNativeText(view.button, t("价值排序"));
       const pressed = String(view.sorted);
       if (view.button.getAttribute("aria-pressed") !== pressed)
@@ -30545,9 +30751,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
       }
     } else text = cached?.error ? errorText(cached.error) : t("正在估算经验与收益…");
     if (pricing && !cached?.result) updateNativeResult(pricing, "");
-    // Calculation tables stay on the 1.0.2704 extract. This is the live script
-    // reviewed for 1.0.2952; a later filename still means the rules are unchecked.
-    if (nativeClientAsset && nativeClientAsset !== "index-HwnJEPSV.js")
+    if (nativeClientAsset && nativeClientAsset !== GAME_DATA.clientAsset)
       text += " · " + t("新版本待核对");
     if (summary.textContent !== text) summary.textContent = text;
     record.box.hidden = !!record.row.disabled;
@@ -30739,16 +30943,20 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     const restores = [],
       replaced = new Set();
     for (const [row, record] of nativeRecords) {
-      if (row.isConnected) continue;
+      if (row.isConnected && record.box.isConnected) continue;
       const list = record.list;
       if (!list?.isConnected) continue;
       const next = list.querySelector(`.route[data-job="${record.job.id}"]`);
-      if (!next || nativeRecords.has(next)) continue;
+      if (!next || (next !== row && nativeRecords.has(next))) continue;
       nativeRecords.delete(row);
       record.row = next;
       nativeRecords.set(next, record);
       next.insertAdjacentElement("afterend", record.box);
       replaced.add(list);
+      // Native hourly forecasts repaint the list in several idle batches. Restore
+      // the completed XP and profit together in this microtask, before paint;
+      // the ordinary 80ms scan would visibly alternate native and planner XP.
+      renderNative(record);
     }
     for (const list of replaced) {
       const old = nativeLists.get(list);

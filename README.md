@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.72
+# [SIK] DVI Insights 0.4.73
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -8,7 +8,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 [SIK] DVI信息增强为 Deep Vein Idle 补充经验、材料、时间与收支信息，沿用游戏面板和主题配色。
 
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
-- 装备标题栏显示穿戴装备价格 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；总分与分项为完整整数、加千位逗号。查看其他玩家时只显示总分。原生 combat 是技能计算的战斗等级，与该评分不同。
+- 装备标题栏显示穿戴装备估值 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；总分与分项为完整整数、加千位逗号。查看其他玩家时只显示总分。精确强化报价优先；缺价采用有效历史、缓存与商人兜底，强化补价按逐级最低金币及碎片/核心二选一计算，不含失败和保护卷轴。提示中说明该分数不是实际投入或战斗力，不含家园。
 - 保存最近 30 场本人的已收到 Boss 排名和掉落，聊天区独立“掉落日志”按实际品质显示名称、数量和颜色；原生结算缺少个人名次时补充，未收到的排行明确标注。记录仅存本机，不补发查询。手机家园计时只在地图页显示，弹窗打开时隐藏。
 - 公会日志保持原生日志，不再附加统计。成员、日志和公会列表不再铺浅色白底。公会首页在「捐献积分」按钮右侧显示当前挂售价下每分金币最少的捐献物品名称。
 
@@ -16,10 +16,10 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
 - 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
-- 规则跟随正式服 1.0.2952：工作和战斗走到岩石或柜台最近的一侧；农田显示 0–200% 进度，自动收获仍按 100% 估算，并保留每田作物选择。代工产物和委托材料不计为自己的收入与消耗；代工期间保留实际经验观测，订单收益暂不估算。
+- 规则跟随正式服 1.0.2989：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存估算，减少文字闪动。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
 - PC 原生战斗浮窗内增加可折叠的 DPS 与承伤统计，手机顶部原生血条恢复血量数字。DPS 按怪物有效掉血计算，承伤按已收到的受击事件统计，缺数据显示未知，重连重新观测。制作升级计算增加分品质的材料成本、税后即卖和挂售单价参考，缺价保留未知。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示金色光晕。普通战斗补充 EPH、食物续航；普通工作和战斗的药水默认显示当前品质最先到期的实际图标与时长，名称保留在提示中，待机和单独强化时也保留生效药水摘要，按时间计时；八种药水图标均内嵌，不依赖仓库是否打开；瓶子与倒计时紧邻显示，点击展开按剩余时间排序的列表。
-- buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。原生战斗面板显示饱食和扎根倒计时时，插件只在那两行补最省食物和每天花费。非战斗时，饱食与扎根仍显示续 24 小时最省钱的食物、品质及日成本，推荐食物名称和数量采用带品质颜色的高亮标签，不附数量单位。扎根、饱食和药水的右侧剩余时间统一使用 d/h/m/s 两个相邻单位，世界增益与祝福同步，不足一分钟只显示 s。
+- buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。原生战斗面板显示饱食和扎根倒计时时，插件只在那两行补最省食物和每天花费。增益菜单中饱食与扎根始终显示续 24 小时最省钱的食物、品质及日成本，到期后保留推荐并标记未生效；战斗浮窗保留原生倒计时，推荐食物名称和数量采用带品质颜色的高亮标签，不附数量单位。扎根、饱食和药水的右侧剩余时间统一使用 d/h/m/s 两个相邻单位，世界增益与祝福同步，不足一分钟只显示 s。
 - 选怪主行统一显示一小时路线预计总经验（各战斗技能合计，含跑路、补给和回血）。首次等待或失败时显示原生经验，原生阵亡警告优先；下方显示折算日利，展开查看食物与药水成本，以及一小时内战斗、移动、补给回血和停战后闲置的时间。日利与成本并非全天保证值。首领伤害窗适配新版原生皇冠、奖杯、名次变化、伤害占比与个人行，保留紧凑样式。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
 - 选怪展开区提供战斗升级计算，选择近战、远程、魔法、防御或生命技能及目标等级，按当前路线经验估算升级时间，包含移动、补给和回血。
 - 战斗期望收入包含按攻击机会与各品质概率计算的随机坐骑掉落；实际掉落收入单独记账。铁人账号按商人计价，普通账号保留买卖分价、税费和有限订单深度。
@@ -49,7 +49,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 ## English description
 
 - Active tasks show observed duration and resume matching samples from the last twelve hours across task switches, stops and reloads. Combat expectations separate zone, equipment and food configurations. Unobserved gaps are excluded; offline settlements remain separate and show a daily profit estimate over effective duration, or income only when costs are incomplete.
-- Equipment score appears in the equipment header as worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Totals and parts are complete integers with thousands separators. Inspecting another player shows only the total. Native combat is an independent skill-based level.
+- Equipment score is worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Exact enhanced quotes take priority; valid history, cached prices and vendor values provide fallbacks. Enhancement fallback sums minimum step costs, using either shards or a core, excluding failures and scrolls. It excludes home and does not measure actual spending or combat power. Inspecting another player shows only the total.
 - A separate chat Loot log preserves the latest thirty received personal boss rewards, with exact rarities, quantities and colors. Empty native personal results can be supplemented with received ranks; missing ranks remain unknown. No recovery queries are sent. Mobile Home timers stay on the map tab and hide under dialogs.
 - The guild log stays native and no longer adds statistics. Member, log and guild-list pages no longer use the light paper background. The guild home page shows the best-value donation item immediately to the right of Donate points.
 
@@ -60,7 +60,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Expanded work rows show input rarity, projected daily consumption, unit price and each price source. Public snapshots retain client purchase caches; missing quotes or volume still fall back to valid cached prices and trade history, marked as estimates.
 - Gathering XP and level-time estimates follow the current discard setting and account for fewer bank trips. Discard and bank modes use separate caches; discarded outputs are excluded from sale income.
 - Crafting supports Best first, selecting complete recipes from owned stock and filling shortages with Normal materials. Concurrent enhancement keeps the main action income and XP visible, with a separate enhancement status line.
-- Rules follow live client 1.0.2952: work and combat walk to the nearest side of a rock or counter. Fields show 0–200% progress while automatic harvest estimates stay at 100%, and each field keeps its crop choice. Commission outputs and client-owned materials are excluded from personal income and costs; observed XP remains available, while commission income is not estimated yet.
+- Rules follow live client 1.0.2989, including updated path costs and the new passage. Cached estimates are restored during native list redraws to reduce flicker. State follows the newly adopted snapshot object; observation time does not grow from wall time alone, and parallel enhancement is excluded from primary-task material counts. Farming remains a single-field reference and commission income remains unestimated.
 - Responsive field and garden cards retain the original per-field crop dropdowns and live maturity updates. Calculator details show current crops, time remaining, watering and next crops in read-only cards. Farming estimates remain single-field references, excluding travel between fields and garden clearing.
 - The original desktop combat HUD gains collapsible DPS and damage-taken statistics; mobile restores numeric HP inside the original top health bar. DPS uses effective enemy HP loss; damage taken uses received hit events and stays unknown without data. Measurements reset after reconnects. Crafting calculators show per-quality material costs and after-tax unit revenue, retaining unknown prices.
 - Boss animations remember the same summon across reloads. Quick sell and item selection retain local value sorting; switching native sort exits it. Home timers sort by remaining time and show completion notices; no upgrade overview or added gameplay controls.
