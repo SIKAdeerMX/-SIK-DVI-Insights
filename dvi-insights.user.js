@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.77
+// @version      0.4.78
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4498,11 +4498,29 @@ SOFTWARE.
     }
     function income(core, flow, seconds, books, tax, now, pricing) {
       const value = core.valueFlows(flow, books, "sell", tax, now, pricing);
+      // Valuation is nonlinear when received bids have finite quantities. Scale
+      // the observed output rate first, then consume each quote once per day,
+      // exactly as dailyProfits does for the forecast. Scaling the already priced
+      // short observation would incorrectly replenish its market depth 24+ times.
+      const daily =
+        seconds > 0
+          ? core.valueFlows(
+              Object.fromEntries(
+                Object.entries(flow).map(([id, n]) => [id, (n * 86400) / seconds]),
+              ),
+              books,
+              "sell",
+              tax,
+              now,
+              pricing,
+            )
+          : null;
       return {
         value,
         total: value.total,
         known: value.pricedSubtotal,
-        perDay: seconds > 0 ? (value.pricedSubtotal * 86400) / seconds : null,
+        daily,
+        perDay: daily?.total ?? null,
       };
     }
     return { create, identity, offlineFlow, offlineSnapshot, offlineAccounting, income };
@@ -5378,6 +5396,10 @@ SOFTWARE.
       "目标等级须为 1–{max} 的整数": "Target level must be an integer from 1 to {max}",
     };
     Object.assign(en, {
+      "按观测产出速度折算24小时，报价数量只使用一次；产值不等于到账金币。":
+        "Project the observed output rate over 24 hours, using each quote quantity once. Output value is not cash received.",
+      "按当前状态模拟未来一小时，再折算24小时；稀有优先会计入高品质材料耗尽后的变化。":
+        "Simulate the next hour from the current state, then project its average over 24 hours. Best-first crafting includes the depletion of higher-quality materials.",
       "剩 {count} · 为 {name}": "{count} left · for {name}",
       "[SIK] Insights": "[SIK] Insights",
       行动与计算: "Actions & calculations",
@@ -23075,7 +23097,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.77";
+  const PLUGIN_VERSION = "0.4.78";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -25008,8 +25030,11 @@ SOFTWARE.
       Date.now(),
       GAME_DATA,
     );
-    const prefix = v.value.estimated.length ? "≈ " : "";
-    const text = v.total === null ? "—" : `${prefix}${fmt(v.perDay)} ${t("金币/d")}`;
+    const prefix = (v.daily || v.value).estimated.length ? "≈ " : "";
+    const text =
+      v.total === null || !Number.isFinite(v.perDay)
+        ? "—"
+        : `${prefix}${fmt(v.perDay)} ${t("金币/d")}`;
     const above =
       Number.isFinite(expectedIncome) &&
       v.total !== null &&
@@ -25019,10 +25044,13 @@ SOFTWARE.
       "每天收入",
       text,
       t("累计 {value} {unit} · {time} · 未扣成本", {
-        value: prefix + fmt(v.known),
+        value: (v.value.estimated.length ? "≈ " : "") + fmt(v.known),
         unit: t("金币"),
         time: duration(actual.seconds),
-      }) + (v.total === null ? " · " + t("产物或税率缺价") : ""),
+      }) +
+        " · " +
+        t("按观测产出速度折算24小时，报价数量只使用一次；产值不等于到账金币。") +
+        (v.total === null || !Number.isFinite(v.perDay) ? " · " + t("产物或税率缺价") : ""),
       above,
     );
   }
@@ -25161,7 +25189,10 @@ SOFTWARE.
             : entry.error
               ? "—"
               : t("计算中…"),
-        entry.result?.farming ? t("单田预估") + " · " + t("未扣消耗") : t("未扣消耗"),
+        (entry.result?.farming ? t("单田预估") + " · " : "") +
+          t("未扣消耗") +
+          " · " +
+          t("按当前状态模拟未来一小时，再折算24小时；稀有优先会计入高品质材料耗尽后的变化。"),
       );
     if (gross.innerHTML !== grossHtml) gross.innerHTML = grossHtml;
     const detail = currentWorkBox.querySelector("[data-current-details]"),
