@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.73
+// @version      0.4.74
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -547,13 +547,14 @@ SOFTWARE.
           const ready = fields.filter(
             (s) => !off(s.id) && p.plots?.[s.id] && matureAt(p.plots[s.id]) <= p.lastTick,
           );
+          const current = fields.find((s) => s.id === p.workSiteId),
+            group = current ? hidden.has(current.id) : null;
           const distance = (s) => Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y));
+          const rank = (s) =>
+            (group !== null && hidden.has(s.id) !== group ? 1e9 : 0) +
+            (distance(s) <= 1 ? 0 : distance(s));
           const next =
-            [...ready].sort(
-              (a, b) =>
-                (distance(a) <= 1 ? 0 : distance(a)) - (distance(b) <= 1 ? 0 : distance(b)) ||
-                a.id - b.id,
-            )[0] ||
+            [...ready].sort((a, b) => rank(a) - rank(b) || a.id - b.id)[0] ||
             fields.find((s) => !off(s.id) && !p.plots?.[s.id]) ||
             null;
           let stand = null;
@@ -2309,28 +2310,34 @@ SOFTWARE.
               if (id === null || p.hp + healing(id) > getStats(p.lastTick).maxHp) break;
               consume(id, true);
             }
+          const withdraw = (count) => {
+            let taken = 0;
+            for (const id of bankFoods()) {
+              const n = Math.max(0, Math.min(count - taken, p.bank[id], cap() - p.pack.length));
+              if (!n) continue;
+              p.bank[id] -= n;
+              if (!p.bank[id]) delete p.bank[id];
+              for (let i = 0; i < n; i++) p.pack.push({ itemId: id, qty: 1 });
+              taken += n;
+              if (taken >= count) break;
+            }
+          };
           const target =
             p.foodPerTrip === -1
               ? cap()
               : p.foodPerTrip === -2
                 ? Math.max(1, cap() - 1)
                 : Math.max(0, p.foodPerTrip);
-          let taken = 0;
-          for (const id of bankFoods()) {
-            const n = Math.max(0, Math.min(target - taken, p.bank[id], cap() - p.pack.length));
-            if (!n) continue;
-            p.bank[id] -= n;
-            if (!p.bank[id]) delete p.bank[id];
-            for (let i = 0; i < n; i++) p.pack.push({ itemId: id, qty: 1 });
-            taken += n;
-            if (taken >= target) break;
-          }
-          // 1.0.2331 eats before leaving the bank, up to 64 attempts.
+          withdraw(target);
+          let eaten = 0;
           for (let i = 0; i < 64; i++) {
             const old = p.hp;
             eat();
             if (p.hp === old) break;
+            eaten++;
           }
+          // 1.0.3025 replaces meals eaten from the pack before departure.
+          if (facts.combat.balance?.bankFoodReplacement && eaten) withdraw(eaten);
           r.trips++;
           activity = "idle";
         }
@@ -16211,6 +16218,7 @@ SOFTWARE.
         defence: { magic: 0.5, twoHanded: 0.75, longbow: 0.9, other: 1 },
         bankPreheal: true,
         bankPrehealLimit: 2000,
+        bankFoodReplacement: true,
       },
       mountDrops: {
         itemId: 328,
@@ -21446,17 +21454,17 @@ SOFTWARE.
       "The Deep garden": "深岩花园",
     },
     version: {
-      version: "1.0.2989",
+      version: "1.0.3025",
       env: "live",
-      commit: "6dce2b38",
-      branch: "hotfix-mastery-1018-b",
-      subject: "Enhancing capped at +20 for now: no attempt past it, by any road",
-      committedAt: "2026-10-18T07:09:33+02:00",
-      dirty: true,
-      builtAt: "2026-10-18T05:12:17.732Z",
+      commit: "af89ef4d",
+      branch: "release-1195",
+      subject: "Changelog 1.0.1195: Time Traveller and fair play (EN+ZH)",
+      committedAt: "2026-10-18T12:20:37+02:00",
+      dirty: false,
+      builtAt: "2026-10-18T10:26:13.216Z",
     },
-    clientAsset: "index-YnNRJ6iz.js",
-    sourceSha256: "57d413ec5e27336ba1925db7f7bf1a988524df7985535bbd58d5680559f50158",
+    clientAsset: "index-Di-5ljk5.js",
+    sourceSha256: "208371d3ee0b9cab57048c04dc1ab0733f153adb86af1d1959afa06d9304bce1",
   };
 
   // ---- src/public-market.js ----
@@ -21775,7 +21783,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.73";
+  const PLUGIN_VERSION = "0.4.74";
 
   // ---- Embedded local UI artwork ----
   // Experience orb texture: (c) Mojang AB. All rights reserved. Minecraft EULA applies.
@@ -24091,11 +24099,9 @@ SOFTWARE.
   }
   const homeStyle = document.createElement("style");
   homeStyle.textContent = `
-/* World labels belong below docks (7) and modal veils (10). */
-html.dvi-insights :is(.rise-pop,.build-pop){z-index:5;}
+/* Native 1.0.3025 hides map controls behind windows. Keep only absent mobile-tab handling. */
 html.dvi-insights.m-on :is(.rise-pop,.build-pop,.away-timers){z-index:4!important;}
 html.dvi-insights.m-on:not([data-mtab="world"]) :is(.rise-pop,.build-pop,.away-timers){visibility:hidden!important;pointer-events:none!important;}
-html.dvi-insights body:has(.veil:not([hidden])) :is(.rise-pop,.build-pop,.away-timers){visibility:hidden!important;pointer-events:none!important;}
 .dvi-home-notice{position:fixed;right:12px;bottom:18px;z-index:30;width:min(310px,calc(100vw - 24px));box-sizing:border-box;padding:12px 32px 12px 14px;border:1px solid var(--brass);border-radius:6px;background:var(--panel);color:var(--ink);box-shadow:0 3px 12px #0003;font:400 12px/1.5 var(--sans);}
 .dvi-home-notice strong{display:block;color:var(--brass);font-weight:500;}
 .dvi-home-notice ul{margin:5px 0 0;padding-left:18px;max-height:180px;overflow:auto;}
@@ -25282,47 +25288,6 @@ html.dvi-insights .routes .craft-cat {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on) #app .plan {
-  --ink: inherit;
-  --ink-muted: inherit;
-  --ink-faint: inherit;
-  --edge: inherit;
-  --edge-bright: inherit;
-  --panel-sunken: inherit;
-  --panel-raised: inherit;
-  background:
-    var(--lg-dark, var(--panel)) padding-box,
-    var(--lg-grain, none) border-box,
-    var(--lg-wood, none) border-box;
-  color: var(--ink);
-  box-shadow: var(--lg-bead, none), var(--lg-drop, none);
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on) #app .plan:before {
-  color: var(--ink) !important;
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on) #app .plan-now {
-  background: color-mix(in srgb, var(--panel-raised) 85%, transparent);
-  box-shadow: inset 0 0 0 1px var(--edge-bright);
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on) #app .plan-next {
-  background: color-mix(in srgb, var(--panel-raised) 60%, transparent);
-  box-shadow: inset 0 0 0 1px var(--edge);
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on)
-  #app
-  .plan
-  :is(.plan-text, .plan-glyph, .plan-progress-text) {
-  color: var(--ink);
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on) #app .plan .plan-meta {
-  color: var(--ink-muted);
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on) #app .plan .plan-state {
-  color: var(--moss);
-}
-html.dvi-insights.v4[data-theme="dark"]:not(.m-on) #app .plan-progress-bar {
-  background: var(--panel-sunken);
 }
 .dvi-insights :is(.boss-banner, .buff-sheet) {
   border-radius: 6px;
@@ -28954,48 +28919,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   let battlePending = false,
     battlePlayerId = null,
     battleMapKey = null;
-  // Keep native markup (including nested death warnings) intact. A sibling uses
-  // its grid slot, so native refreshes cannot overwrite the completed estimate.
-  function syncBattleXp(row, entry) {
-    const native = row.querySelector(".route-meta:not(.dvi-battle-xp)");
-    let xp = row.querySelector(".dvi-battle-xp");
-    const ready =
-      !!native &&
-      !row.disabled &&
-      !entry?.error &&
-      Number.isFinite(entry?.result?.hour?.xp) &&
-      !native.querySelector(".danger");
-    if (ready && !xp) {
-      xp = document.createElement("span");
-      xp.className = "route-meta dvi-battle-xp";
-      xp.dataset.noI18n = "";
-      native.insertAdjacentElement("afterend", xp);
-    }
-    if (row.hasAttribute("data-dvi-battle-xp") !== ready)
-      row.toggleAttribute("data-dvi-battle-xp", ready);
-    if (xp) {
-      if (xp.hidden === ready) xp.hidden = !ready;
-      if (ready) {
-        setNativeText(xp, "≈ " + fmt(entry.result.hour.xp) + " XP/h");
-        xp.title =
-          (entry.pending ? t("更新中…") + "\n" : "") +
-          t("预计总经验/小时：各战斗技能合计，含跑路、补给和回血耗时。");
-      }
-    }
-  }
-  function syncBattleMetaChanges(changes) {
-    const rows = new Set();
-    for (const change of changes) {
-      const target = change.target.nodeType === 3 ? change.target.parentElement : change.target;
-      const native = target?.closest?.(".route-meta:not(.dvi-battle-xp)");
-      const row = native?.closest(".route[data-zone]");
-      if (row) rows.add(row);
-    }
-    for (const row of rows) {
-      const zone = GAME_DATA.world.zones.find((z) => z.id === Number(row.dataset.zone));
-      if (zone) syncBattleXp(row, battleCache.get(zone.monsterId));
-    }
-  }
+  // Native 1.0.3025 owns task XP and death warnings; only append missing profit detail.
   function remountBattleRows() {
     const restores = [];
     for (const list of document.querySelectorAll("[data-routes]")) {
@@ -29009,7 +28933,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         record.row = row;
         row.insertAdjacentElement("afterend", record.box);
         replaced = true;
-        if (record.monster) syncBattleXp(row, battleCache.get(record.monster.id));
       }
       const old = nativeLists.get(list);
       if (
@@ -29141,7 +29064,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           valid = entry?.signature === signature,
           sameConfig = entry?.configuration === configuration;
         syncBattleLevel(record, p, entry);
-        syncBattleXp(row, entry);
         setNativeText(record.box.querySelector(".dvi-native-action"), "");
         record.box.setAttribute?.("aria-busy", String(!!entry?.pending));
         const summary = record.box.querySelector("[data-battle-profit]");
@@ -30098,19 +30020,6 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.route[data-dvi-battle-xp] > .route-meta:not(.dvi-battle-xp) {
-  display: none !important;
-}
-.route > .dvi-battle-xp {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.route > .dvi-battle-xp[hidden] {
-  display: none !important;
-}
 .dvi-battle-caption {
   margin: 8px 0 2px;
   color: var(--ink-faint, #876640);
@@ -30743,12 +30652,6 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
           pricing,
           cached.options.onFull === "drop" ? "" : nativeCostSourcesHtml(p.cost),
         );
-      const rate = record.row.querySelector(".route-meta");
-      if (rate && !cached.result.farming) {
-        const value = `≈ ${fmt(cached.result.hour.xp)} XP/h`;
-        if (rate.textContent !== value) rate.textContent = value;
-        rate.title = t("未来一小时平均经验");
-      }
     } else text = cached?.error ? errorText(cached.error) : t("正在估算经验与收益…");
     if (pricing && !cached?.result) updateNativeResult(pricing, "");
     if (nativeClientAsset && nativeClientAsset !== GAME_DATA.clientAsset)
@@ -31016,7 +30919,6 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
   const nativeMutations = new MutationObserver((changes) => {
     // Native XP/death messages may update without a full row redraw. Adjust only
     // their visibility in this microtask; never restart a worker for a DOM update.
-    syncBattleMetaChanges(changes);
     if (changes.some((change) => change.target.matches?.("[data-fields]"))) polishFields();
     if (changes.some((change) => change.target.matches?.("[data-bank-grid]"))) syncInventory();
     if (changes.some((change) => change.target.matches?.("[data-market-list]")))

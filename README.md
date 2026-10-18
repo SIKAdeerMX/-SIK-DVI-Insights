@@ -1,4 +1,4 @@
-# [SIK] DVI Insights 0.4.73
+# [SIK] DVI Insights 0.4.74
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
@@ -9,23 +9,23 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
 - 装备标题栏显示穿戴装备估值 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；总分与分项为完整整数、加千位逗号。查看其他玩家时只显示总分。精确强化报价优先；缺价采用有效历史、缓存与商人兜底，强化补价按逐级最低金币及碎片/核心二选一计算，不含失败和保护卷轴。提示中说明该分数不是实际投入或战斗力，不含家园。
-- 保存最近 30 场本人的已收到 Boss 排名和掉落，聊天区独立“掉落日志”按实际品质显示名称、数量和颜色；原生结算缺少个人名次时补充，未收到的排行明确标注。记录仅存本机，不补发查询。手机家园计时只在地图页显示，弹窗打开时隐藏。
+- 保存最近 30 场本人的已收到 Boss 排名和掉落，聊天区独立“掉落日志”按实际品质显示名称、数量和颜色；原生结算缺少个人名次时补充，未收到的排行明确标注。记录仅存本机，不补发查询。手机家园计时只在地图页显示。
 - 公会日志保持原生日志，不再附加统计。成员、日志和公会列表不再铺浅色白底。公会首页在「捐献积分」按钮右侧显示当前挂售价下每分金币最少的捐献物品名称。
 
-- 工作列表显示 XP/h 和期望日利，点击“升级计算”查看目标等级的工作次数、耗时与材料缺口；材料表补充逐项估价、材料总估价和补齐成本，按买价与订单深度计算；收支只用箭头展开。
+- 工作列表保留原生 XP/h，补充期望日利，点击“升级计算”查看目标等级的工作次数、耗时与材料缺口；材料表补充逐项估价、材料总估价和补齐成本，按买价与订单深度计算；收支只用箭头展开。
 - 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
 - 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
-- 规则跟随正式服 1.0.2989：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存估算，减少文字闪动。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
+- 规则跟随正式服 1.0.3025：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。经验率保留原生显示，不再重复覆盖。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
 - PC 原生战斗浮窗内增加可折叠的 DPS 与承伤统计，手机顶部原生血条恢复血量数字。DPS 按怪物有效掉血计算，承伤按已收到的受击事件统计，缺数据显示未知，重连重新观测。制作升级计算增加分品质的材料成本、税后即卖和挂售单价参考，缺价保留未知。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示金色光晕。普通战斗补充 EPH、食物续航；普通工作和战斗的药水默认显示当前品质最先到期的实际图标与时长，名称保留在提示中，待机和单独强化时也保留生效药水摘要，按时间计时；八种药水图标均内嵌，不依赖仓库是否打开；瓶子与倒计时紧邻显示，点击展开按剩余时间排序的列表。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。原生战斗面板显示饱食和扎根倒计时时，插件只在那两行补最省食物和每天花费。增益菜单中饱食与扎根始终显示续 24 小时最省钱的食物、品质及日成本，到期后保留推荐并标记未生效；战斗浮窗保留原生倒计时，推荐食物名称和数量采用带品质颜色的高亮标签，不附数量单位。扎根、饱食和药水的右侧剩余时间统一使用 d/h/m/s 两个相邻单位，世界增益与祝福同步，不足一分钟只显示 s。
-- 选怪主行统一显示一小时路线预计总经验（各战斗技能合计，含跑路、补给和回血）。首次等待或失败时显示原生经验，原生阵亡警告优先；下方显示折算日利，展开查看食物与药水成本，以及一小时内战斗、移动、补给回血和停战后闲置的时间。日利与成本并非全天保证值。首领伤害窗适配新版原生皇冠、奖杯、名次变化、伤害占比与个人行，保留紧凑样式。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
+- 选怪主行保留新版原生经验率与阵亡警告；下方补充路线模拟的折算日利，展开查看食物与药水成本，以及一小时内战斗、移动、补给回血和停战后闲置的时间。日利与成本并非全天保证值。首领伤害窗适配新版原生皇冠、奖杯、名次变化、伤害占比与个人行，保留紧凑样式。补给默认收起，顶部加入／显示入口统一按钮样式。首领开战播放 6 秒全屏烟花，Esc 可收起，鼠标操作不受阻挡。
 - 选怪展开区提供战斗升级计算，选择近战、远程、魔法、防御或生命技能及目标等级，按当前路线经验估算升级时间，包含移动、补给和回血。
 - 战斗期望收入包含按攻击机会与各品质概率计算的随机坐骑掉落；实际掉落收入单独记账。铁人账号按商人计价，普通账号保留买卖分价、税费和有限订单深度。
 - 手机市场优化输入框和触摸操作，减少 Safari 输入时自动放大及滑动物品时的重复估价刷新，保留滚动与双指缩放。
 - 世界首领同一次召唤的动画跨刷新去重；价值排序在打开快速出售、选择物品和筛选时保持，仅切换原生排序时退出。
-- 家园地图计时标签位于技能面板和弹窗下方；右上角计时按剩余时间排序，手机显示最近完工项目。房间建成、设施升级后显示一次可关闭的提醒，已记录工程支持离线补报，取消工程不误报。
+- 家园地图标签的弹窗遮挡使用原生处理；右上角计时按剩余时间排序，手机显示最近完工项目。房间建成、设施升级后显示一次可关闭的提醒，已记录工程支持离线补报，取消工程不误报。
 - 战斗列表刷新时保留浏览位置和已展开明细，减少滚动回跳，兼顾手机窄屏。
 - 物品提示补充求购、挂售和商人价格；买入缺价时可参考已接收的公开历史成交与一天内的报价缓存。被动行情接收增加兜底，切到后台及时保存价格，收到成交价后刷新期望日利；缺价时列出具体物品。
 - 仓库和市场“我的物品”的整堆估值按税后求购和商人价计算；一个按钮按价值排序，重复点击保持排序，仓库锁定物品保持原位。市场同类物品按各品质分别计价后汇总；仓库按钮和数量操作区统一棕金样式。
@@ -56,18 +56,18 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 [SIK] DVI Insights adds XP, material, time and income information to Deep Vein Idle's existing interface, using the game's theme colors.
 
-- Work rows show XP/h and estimated daily profit. Open Level calculator to plan attempts, time and materials for a target level. Material tables include per-item estimates, total material value and the cost to cover shortages, using purchase prices and order depth; financial breakdowns expand with a chevron.
+- Work rows retain native XP/h and add estimated daily profit. Open Level calculator to plan attempts, time and materials for a target level. Material tables include per-item estimates, total material value and the cost to cover shortages, using purchase prices and order depth; financial breakdowns expand with a chevron.
 - Expanded work rows show input rarity, projected daily consumption, unit price and each price source. Public snapshots retain client purchase caches; missing quotes or volume still fall back to valid cached prices and trade history, marked as estimates.
 - Gathering XP and level-time estimates follow the current discard setting and account for fewer bank trips. Discard and bank modes use separate caches; discarded outputs are excluded from sale income.
 - Crafting supports Best first, selecting complete recipes from owned stock and filling shortages with Normal materials. Concurrent enhancement keeps the main action income and XP visible, with a separate enhancement status line.
-- Rules follow live client 1.0.2989, including updated path costs and the new passage. Cached estimates are restored during native list redraws to reduce flicker. State follows the newly adopted snapshot object; observation time does not grow from wall time alone, and parallel enhancement is excluded from primary-task material counts. Farming remains a single-field reference and commission income remains unestimated.
+- Rules follow live client 1.0.3025, including updated path costs and the new passage. Cached profit estimates are restored during native list redraws to reduce flicker. Task XP and death warnings remain native. Combat forecasts replace meals eaten before departing a bank; farming field selection follows the new harvest groups. State follows the newly adopted snapshot object; observation time does not grow from wall time alone, and parallel enhancement is excluded from primary-task material counts. Farming remains a single-field reference and commission income remains unestimated.
 - Responsive field and garden cards retain the original per-field crop dropdowns and live maturity updates. Calculator details show current crops, time remaining, watering and next crops in read-only cards. Farming estimates remain single-field references, excluding travel between fields and garden clearing.
 - The original desktop combat HUD gains collapsible DPS and damage-taken statistics; mobile restores numeric HP inside the original top health bar. DPS uses effective enemy HP loss; damage taken uses received hit events and stays unknown without data. Measurements reset after reconnects. Crafting calculators show per-quality material costs and after-tax unit revenue, retaining unknown prices.
 - Boss animations remember the same summon across reloads. Quick sell and item selection retain local value sorting; switching native sort exits it. Home timers sort by remaining time and show completion notices; no upgrade overview or added gameplay controls.
 - The active task shows daily income, expected income before consumption costs, and expected profit. Daily income gains a golden glow when it exceeds expected income. Normal combat also includes EPH and food endurance; both work and combat show a potion summary with the actual icon of the active potion whose current rarity expires first, and its name in the tooltip. Idle time and standalone enhancement retain active potion timers. All eight native potion icons are embedded and remain visible with the inventory closed; icon and countdown stay together. Click to expand the sorted duration list.
 - Home map labels stay below skill panels and dialogs. Home timers sort by time remaining; the mobile pill names the next completion. A dismissible notice confirms completed rooms and station upgrades, including previously recorded jobs completed while away. Cancelled jobs do not trigger success notices.
 - The buff sheet aligns names, timelines and remaining durations, retaining inactive grey icons. Potions show a per-bottle price for the currently active quality and label the duration as remaining time for that quality. While the native combat panel shows Well fed and Well rooted timers, the plugin only adds the cheapest food and its daily cost on those rows. Outside combat, those two buffs still show the cheapest 24-hour food, its quality and daily budget in a highlighted, rarity-colored label, without a quantity unit. Food buffs and potions use the same two-unit remaining time format: days/hours, hours/minutes, minutes/seconds, or seconds alone.
-- Monster rows show projected total XP across combat skills from a one-hour route simulation, including travel, restocking and healing. Native XP provides a fallback while waiting or after an error; native death warnings take priority. Details show projected food/potion costs and time spent fighting, travelling, resupplying/healing or idle after stopping. Daily profit and costs are projections, not guarantees. Boss windows retain the new native crowns, cups, rank movement, damage shares and your own row, with compact typography. Food controls fold by default, and Join/Show pills use consistent buttons. Native boss-start announcements trigger six seconds of full-screen fireworks, dismissible with Esc without blocking pointer input.
+- Monster rows retain native XP rates and death warnings; the plugin adds route-based daily profit. Details show projected food/potion costs and time spent fighting, travelling, resupplying/healing or idle after stopping. Daily profit and costs are projections, not guarantees. Boss windows retain the new native crowns, cups, rank movement, damage shares and your own row, with compact typography. Food controls fold by default, and Join/Show pills use consistent buttons. Native boss-start announcements trigger six seconds of full-screen fireworks, dismissible with Esc without blocking pointer input.
 - Expanded monster rows offer a combat level calculator for melee, ranged, magic, defense or health and a target level. Estimates use the current route's XP rates, including travel, restocking and healing.
 - Expected combat income includes random mount drops based on attack opportunities and quality probabilities; actual drops are accounted for separately. Ironman accounts use merchant valuation. Normal accounts retain separate buying/selling prices, tax and finite order depth.
 - Mobile market inputs and touch controls reduce Safari's automatic input zoom and repeated valuation refreshes while scrolling items, retaining scrolling and pinch zoom.
@@ -79,7 +79,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Bank and market My items hide estimates by default. Sort by value reveals stack values in the upper left with up to two decimal places, as plain numbers without a background, matching the font, size and color of the corresponding native quantity and keeping its position; switching native sorting restores the native order and quantity display; quick sell retains value sorting.
 - Away summaries value item drops and coins, deducting materials, food and potion costs when a matching pre-away snapshot is available.
 - Automatically follows the game’s English / Chinese language setting and light / dark theme.
-- Refines typography, numbers, buttons and tooltips with lighter text weights. Fixes crafting category layouts and the dark task panel while retaining native progress colors. Plain text tooltips follow the theme; farming tiles omit duplicate status tips.
+- Refines typography, numbers, buttons and tooltips with lighter text weights. Fixes crafting category layouts while retaining the native dark task panel and progress colors. Plain text tooltips follow the theme; farming tiles omit duplicate status tips.
 - A sidebar shortcut opens Alice Combat Simulator in a new tab.
 - Compact K/M/B numbers, coins/d income rates and XP/h experience rates.
 
