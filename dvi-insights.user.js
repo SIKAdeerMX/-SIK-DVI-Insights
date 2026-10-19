@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.79
+// @version      0.4.80
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -1495,10 +1495,59 @@ SOFTWARE.
       else root.DVIBuffs = factory(root.DVIPlannerCore);
     })(typeof globalThis !== "undefined" ? globalThis : this, function (core) {
       "use strict";
+      function foodSupply(book, quote, qty, now) {
+        const depth = Array.isArray(book.asks),
+          at = (depth ? (book.askDepthAt ?? book.depthAt) : book.askAt) ?? book.at;
+        const fresh = Number.isFinite(at) && at <= now && now - at <= 300000;
+        const available = depth
+          ? book.asks.reduce((n, x) => n + (x.price > 0 && x.qty > 0 ? x.qty : 0), 0)
+          : book.ask > 0 && Number.isFinite(book.askQty)
+            ? Math.max(0, book.askQty)
+            : null;
+        const vendor = quote.details
+          .filter((x) => x.source === "vendor")
+          .reduce((n, x) => n + x.qty, 0);
+        // Price fallbacks remain useful budgets, but do not establish purchasable stock.
+        const empty = available === 0 || (!depth && Object.hasOwn(book, "ask") && !(book.ask > 0));
+        const supply =
+          vendor >= qty || (fresh && available !== null && available + vendor >= qty)
+            ? "sufficient"
+            : fresh && available > 0
+              ? "partial"
+              : empty
+                ? "unavailable"
+                : "unverified";
+        const sources = [
+          ...new Set(
+            quote.details.map((x) =>
+              x.source === "market"
+                ? x.public
+                  ? "public"
+                  : x.estimated
+                    ? "stale"
+                    : "client"
+                : x.source,
+            ),
+          ),
+        ];
+        return { supply, available, quoteAt: at ?? null, sources };
+      }
       function bestDaily(model, books, kind, now = Date.now()) {
         if (kind !== "fed" && kind !== "rooted") throw new Error("Invalid food buff");
         const day = 24 * 6000;
-        let best = { kind, hours: 24, id: null, qty: 0, cost: null, ticks: 0, estimated: false };
+        let best = {
+          kind,
+          hours: 24,
+          id: null,
+          qty: 0,
+          cost: null,
+          ticks: 0,
+          estimated: false,
+          supply: "unverified",
+          available: null,
+          sources: [],
+        };
+        const rank = { sufficient: 0, partial: 1, unverified: 2, unavailable: 3 };
         for (const food of model.data.food.variants) {
           const ticks = food[kind + "Ticks"];
           if (!ticks) continue;
@@ -1507,12 +1556,15 @@ SOFTWARE.
           const quote = core.valueFlows({ [food.id]: qty }, books, "buy", 0, now, model.data);
           if (quote.total === null) continue;
           const estimated = quote.estimated.length > 0;
+          const stock = foodSupply(books[food.id] || {}, quote, qty, now);
           if (
             best.cost !== null &&
-            (quote.total > best.cost ||
-              (quote.total === best.cost &&
-                ((estimated && !best.estimated) ||
-                  (estimated === best.estimated && qty >= best.qty))))
+            (rank[stock.supply] > rank[best.supply] ||
+              (rank[stock.supply] === rank[best.supply] &&
+                (quote.total > best.cost ||
+                  (quote.total === best.cost &&
+                    ((estimated && !best.estimated) ||
+                      (estimated === best.estimated && qty >= best.qty))))))
           )
             continue;
           best = {
@@ -1523,6 +1575,7 @@ SOFTWARE.
             cost: quote.total,
             ticks: qty * ticks,
             estimated,
+            ...stock,
           };
         }
         return best;
@@ -4135,10 +4188,59 @@ SOFTWARE.
     else root.DVIBuffs = factory(root.DVIPlannerCore);
   })(typeof globalThis !== "undefined" ? globalThis : this, function (core) {
     "use strict";
+    function foodSupply(book, quote, qty, now) {
+      const depth = Array.isArray(book.asks),
+        at = (depth ? (book.askDepthAt ?? book.depthAt) : book.askAt) ?? book.at;
+      const fresh = Number.isFinite(at) && at <= now && now - at <= 300000;
+      const available = depth
+        ? book.asks.reduce((n, x) => n + (x.price > 0 && x.qty > 0 ? x.qty : 0), 0)
+        : book.ask > 0 && Number.isFinite(book.askQty)
+          ? Math.max(0, book.askQty)
+          : null;
+      const vendor = quote.details
+        .filter((x) => x.source === "vendor")
+        .reduce((n, x) => n + x.qty, 0);
+      // Price fallbacks remain useful budgets, but do not establish purchasable stock.
+      const empty = available === 0 || (!depth && Object.hasOwn(book, "ask") && !(book.ask > 0));
+      const supply =
+        vendor >= qty || (fresh && available !== null && available + vendor >= qty)
+          ? "sufficient"
+          : fresh && available > 0
+            ? "partial"
+            : empty
+              ? "unavailable"
+              : "unverified";
+      const sources = [
+        ...new Set(
+          quote.details.map((x) =>
+            x.source === "market"
+              ? x.public
+                ? "public"
+                : x.estimated
+                  ? "stale"
+                  : "client"
+              : x.source,
+          ),
+        ),
+      ];
+      return { supply, available, quoteAt: at ?? null, sources };
+    }
     function bestDaily(model, books, kind, now = Date.now()) {
       if (kind !== "fed" && kind !== "rooted") throw new Error("Invalid food buff");
       const day = 24 * 6000;
-      let best = { kind, hours: 24, id: null, qty: 0, cost: null, ticks: 0, estimated: false };
+      let best = {
+        kind,
+        hours: 24,
+        id: null,
+        qty: 0,
+        cost: null,
+        ticks: 0,
+        estimated: false,
+        supply: "unverified",
+        available: null,
+        sources: [],
+      };
+      const rank = { sufficient: 0, partial: 1, unverified: 2, unavailable: 3 };
       for (const food of model.data.food.variants) {
         const ticks = food[kind + "Ticks"];
         if (!ticks) continue;
@@ -4147,12 +4249,15 @@ SOFTWARE.
         const quote = core.valueFlows({ [food.id]: qty }, books, "buy", 0, now, model.data);
         if (quote.total === null) continue;
         const estimated = quote.estimated.length > 0;
+        const stock = foodSupply(books[food.id] || {}, quote, qty, now);
         if (
           best.cost !== null &&
-          (quote.total > best.cost ||
-            (quote.total === best.cost &&
-              ((estimated && !best.estimated) ||
-                (estimated === best.estimated && qty >= best.qty))))
+          (rank[stock.supply] > rank[best.supply] ||
+            (rank[stock.supply] === rank[best.supply] &&
+              (quote.total > best.cost ||
+                (quote.total === best.cost &&
+                  ((estimated && !best.estimated) ||
+                    (estimated === best.estimated && qty >= best.qty))))))
         )
           continue;
         best = {
@@ -4163,6 +4268,7 @@ SOFTWARE.
           cost: quote.total,
           ticks: qty * ticks,
           estimated,
+          ...stock,
         };
       }
       return best;
@@ -5100,6 +5206,7 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      "{qty}个": "{qty} pcs",
       "伤害 +{n}%": "+{n}% damage",
       "受到伤害 −{n}%": "−{n}% damage taken",
       家园: "Home",
@@ -23175,7 +23282,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.79";
+  const PLUGIN_VERSION = "0.4.80";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -30262,12 +30369,33 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   function foodRecommendationLabel(r) {
     const name = r.id === null ? t("待报价") : itemName(r.id);
     const tier = r.id === null ? 0 : Math.floor((r.id % 10000) / 1000);
+    const qty = r.id !== null && Number.isFinite(r.qty) && r.qty > 0 ? String(r.qty) : "",
+      quantity = qty ? t("{qty}个", { qty }) : "";
+    const sourceNames = {
+      public: "公开快照（估价）",
+      client: "客户端报价",
+      stale: "客户端报价（估价）",
+      cached: "缓存报价（估价）",
+      history: "历史成交（估价）",
+      vendor: "商人买价",
+    };
+    const sources = (r.sources || []).map((s) => t(sourceNames[s] || s)).join(" / ");
+    const age = Number.isFinite(r.quoteAt)
+      ? t("报价 {age}", {
+          age: t("{n}分钟前", { n: Math.max(0, Math.floor((Date.now() - r.quoteAt) / 60000)) }),
+        })
+      : "";
+    const hint =
+      r.id === null
+        ? t("待报价")
+        : [t("续 24h"), name + " " + quantity, sources, age].filter(Boolean).join(" · ");
     return {
       name,
-      qty: r.id !== null && Number.isFinite(r.qty) && r.qty > 0 ? String(r.qty) : "",
+      qty,
+      quantity,
       rarity: ["", "rarity-uncommon", "rarity-rare", "rarity-epic", "rarity-legendary"][tier] || "",
       cost: (r.cost === null ? "—" : (r.estimated ? "≈ " : "") + fmt(r.cost)) + " " + t("金币/d"),
-      hint: r.id === null ? t("待报价") : t("续 24h") + " · " + name + " × " + fmt(r.qty),
+      hint,
     };
   }
   function updateBuffFood(row, entry, r) {
@@ -30302,7 +30430,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       choice.replaceChildren(foodName, count);
     }
     setNativeText(foodName, label.name);
-    setNativeText(count, label.qty);
+    setNativeText(count, label.quantity);
     if (choice.title !== label.hint) choice.title = label.hint;
     const priceTarget = row.querySelector(".bt-left") || row;
     let price = priceTarget.querySelector(".dvi-buff-price");
@@ -30327,7 +30455,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         continue;
       }
       const label = foodRecommendationLabel(quotes.get(kind)),
-        text = (label.qty ? label.name + " × " + label.qty : label.name) + " · " + label.cost;
+        text =
+          (label.quantity ? label.name + " " + label.quantity : label.name) + " · " + label.cost;
       // The client writes firstElementChild (effect) and lastElementChild (time).
       // Keep both native endpoints intact when adding the recommendation.
       const clock = chip.querySelector(":scope>b");
