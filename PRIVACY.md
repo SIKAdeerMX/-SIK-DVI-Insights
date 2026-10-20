@@ -2,6 +2,8 @@
 
 Author: SIKAer · License: MIT
 
+Settings includes a manual local calculation snapshot download. It contains allow-listed character calculation state (including current position, inventory, skills, equipment and buffs) and received public prices/windows. It is saved on the user's device, never uploaded by this script. It excludes chat, guild-bank logs, account credentials and order boards; export is blocked during active commissions to avoid incomplete ownership accounting.
+
 The sidebar includes a link to Alice Combat Simulator at `https://dvi-lab.pages.dev/`. It opens only when clicked, in a new tab without a referrer or character data in the URL. Opening the link does not export a character configuration.
 
 [SIK] DVI Insights runs locally on `deepveinidle.com` and its `www` host. It observes objects the game has already parsed, with a passive listener on already received WebSocket text when the parser hook is bypassed, calculates in local workers, and adds information to existing panels. It reads the officially documented public market snapshot as described below. It does not make other game queries, operate game controls, collect analytics, or upload character data. It has no external dependencies; its userscript permission remains `@grant none`.
@@ -14,7 +16,7 @@ The running script uses the current character's HP, current map position, invent
 
 Bank value sorting changes CSS display order only, not the stored bank order. No sorting request is sent; locked slots remain in place. Guild presentation reads the already displayed notice, rules and recruitment text in page memory. Drafts and the matching guild acknowledgement are held only in memory to preserve editing through redraws and return to reading after the native Save succeeds. The plugin does not submit or persist these texts. Native edit controls are required before local Edit is offered. Farming status tiles reuse the game's displayed text and keep the original seed preference control. Decorative artwork and native item sprites are embedded in the script; no asset server is contacted.
 
-Ten local storage entries are used on the game origin:
+Local storage entries on the game origin:
 
 | Key | Contents |
 | --- | --- |
@@ -32,9 +34,9 @@ The offline baseline is overwritten with the latest snapshot. It contains no cha
 
 Observation history uses observed active time only; it excludes task-switch and unobserved disconnect gaps. Offline settlements are shown separately. Records are isolated by internal character ID. Expected combat samples are also isolated by zone, equipment and food settings. Observation buckets expire after twelve hours; the boss ledger keeps only the latest thirty results. All remain on the current game origin and are never uploaded.
 
-The script reads the game’s existing `deepvein.locale` language setting without writing to it. It also reads the game's existing `deepvein-seen` record to align the native away summary. It does not write to that entry. To remove the script's saved data, disable the script and remove only its nine entries listed above from the site's local storage. Uninstalling a userscript may leave site local storage behind.
+The script reads the game’s existing `deepvein.locale` language setting without writing to it. It also reads the game's existing `deepvein-seen` record to align the native away summary. It does not write to that entry. To remove the script's saved data, disable the script and remove only its entries listed above from the site's local storage. Uninstalling a userscript may leave site local storage behind.
 
-脚本在本机读取游戏已收到的数据并计算，同时匿名读取官方明确公开的规划器行情快照；不查询其他游戏接口，不操作工作或交易，不上传角色数据。离线核算需要在游戏域名的本地存储中保留最近一次角色库存、金币、收集计数和药水状态；旧快照会被覆盖。家园提醒另保留最近角色的内部 ID、工程与未关闭的完工提醒，用于重连和离线补报。以上表格列出了全部持久缓存。删除缓存时只删插件自己的九项，保留游戏的 `deepvein-seen`。插件还只读游戏已有的 `deepvein.locale` 以跟随界面语言，不写入该项。
+脚本在本机读取游戏已收到的数据并计算，同时匿名读取官方明确公开的规划器行情快照；不查询其他游戏接口，不操作工作或交易，不上传角色数据。离线核算需要在游戏域名的本地存储中保留最近一次角色库存、金币、收集计数和药水状态；旧快照会被覆盖。家园提醒另保留最近角色的内部 ID、工程与未关闭的完工提醒，用于重连和离线补报。以上表格列出了全部持久缓存。删除缓存时只删上表的插件条目，保留游戏的 `deepvein-seen`。插件还只读游戏已有的 `deepvein.locale` 以跟随界面语言，不写入该项。
 
 近 12 小时任务观测保存内部角色 ID、任务配置和产出/经验/消耗计数，最多 1,440 个观测桶，不保存坐标；只累计已观测的有效时间，切换与断线空档不计时，离线结算单列。Boss 记录最多保留最近 30 场本人的已收到名次、伤害及掉落；系统消息仅接受 The Deep 发出的原生个人掉落格式，不保存普通聊天、私信或其他玩家身份。装备和房屋估值只在内存计算。上述数据均不上报。
 

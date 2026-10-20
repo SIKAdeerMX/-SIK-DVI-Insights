@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.80
+// @version      0.4.82
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -663,7 +663,8 @@ SOFTWARE.
           return n;
         }
         function bestRarity(p, j, includePack = true) {
-          if (!j.inputs.length || j.grow !== undefined) return 0;
+          if (!j.inputs.length || j.grow !== undefined || data.commonOnlyJobs?.includes(j.id))
+            return 0;
           for (const rarity of [4, 3, 2, 1])
             if (
               inputs(j, rarity).every(
@@ -697,6 +698,10 @@ SOFTWARE.
                 : bestRarity(p, j)
               : Number(options.rarity || 0),
             ins = inputs(j, rarity);
+          if (data.commonOnlyJobs?.includes(j.id)) {
+            rarity = 0;
+            ins = inputs(j, rarity);
+          }
           if (best) p.workRarity = rarity;
           // Target plans assume purchases for missing materials. Best-first spends
           // owned higher tiers, then plans plain materials; it never invents rare stock.
@@ -3302,7 +3307,23 @@ SOFTWARE.
         }
         state.books[value.itemId] = { ...old, ...copy, at: now() };
       }
-      function receive(frame) {
+      let detachedPlayer = false,
+        observedTick = null;
+      function observationPlayer() {
+        const p = state.player;
+        if (
+          !p ||
+          !detachedPlayer ||
+          !Number.isSafeInteger(observedTick) ||
+          observedTick <= p.lastTick
+        )
+          return p;
+        // Mobile fallback owns a snapshot, not the native ticking object. Use
+        // only ticks actually received, within the existing resync tolerance.
+        // This view never changes the game's object or extrapolates wall time.
+        return observedTick - p.lastTick <= 200 ? { ...p, lastTick: observedTick } : p;
+      }
+      function receive(frame, { detached = false } = {}) {
         // The game parses its own last-seen record immediately before building an
         // in-tab away report. Observe that already-read record, without querying.
         if (
@@ -3330,12 +3351,15 @@ SOFTWARE.
           return;
         }
         if (!frame || !Number.isSafeInteger(frame.tick) || !Array.isArray(frame.m)) return;
+        observedTick = observedTick === null ? frame.tick : Math.max(observedTick, frame.tick);
         let changed = false;
         for (const m of frame.m) {
           if (!m || typeof m !== "object") continue;
           switch (m.t) {
             case "welcome":
               if (!validPlayer(m.you)) break;
+              detachedPlayer = detached;
+              observedTick = frame.tick;
               state.sessionRevision++;
               state.player = m.you;
               state.boss = null;
@@ -3528,6 +3552,8 @@ SOFTWARE.
               break;
             case "snapshot":
               // The native handler adopts this exact parsed object, then advances it.
+              if (frame.tick < (state.player?.lastTick ?? 0) - 9) break;
+              if (validPlayer(m.you)) detachedPlayer = detached;
               if (validPlayer(m.you)) {
                 state.player = m.you;
                 if (Array.isArray(m.orders)) state.orders = m.orders;
@@ -3702,6 +3728,7 @@ SOFTWARE.
       return {
         state,
         receive,
+        observationPlayer,
         refreshBooks(books) {
           state.books = books;
           state.quoteRevision++;
@@ -3782,7 +3809,9 @@ SOFTWARE.
                   queueMicrotask(() => {
                     if (!active || raw === lastFrame) return;
                     try {
-                      store.receive(Reflect.apply(nativeParse, page.JSON, [raw]));
+                      store.receive(Reflect.apply(nativeParse, page.JSON, [raw]), {
+                        detached: true,
+                      });
                     } catch {}
                   });
                 });
@@ -4929,6 +4958,8 @@ SOFTWARE.
         return result;
       }
       function points(id) {
+        if (data.vendorPointExclusions?.includes(id) || data.rocketIds?.includes(base(id)))
+          return null;
         const def = definition(id);
         return def
           ? { family: def.family, qty: Math.floor(def.each * 3 ** Math.floor((id % 10000) / 1000)) }
@@ -5206,6 +5237,43 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      "先完成其他目标，再升 {rooms}": "Finish other targets before upgrading {rooms}",
+      "[SIK] 家园采购": "[SIK] Home supplies",
+      家园采购清单: "Home supply list",
+      "设置设施目标等级，在家园和市场显示点数缺口与采购数量。":
+        "Set station target levels and show point shortfalls and purchase quantities at home and in the market.",
+      木材: "Wood",
+      石料: "Stone",
+      鱼: "Fish",
+      兽皮: "Hides",
+      作物: "Crops",
+      目标: "Targets",
+      已放置各升一级: "Placed stations +1",
+      清空: "Clear",
+      "计入仓库（不含锁定）": "Include bank (unlocked)",
+      等待家园数据: "Waiting for home data",
+      目标点数超出计算范围: "Target exceeds calculation range",
+      未设置目标: "No targets",
+      "待购 {points}点": "Buy {points} pts",
+      "{count}项 · 仓库可换 {points}点": "{count} targets · Bank covers {points} pts",
+      选择设施与目标等级: "Choose stations and target levels",
+      "点数已备齐，仓库材料待转换": "Supplies ready; convert bank items",
+      点数已备齐: "Points ready",
+      暂无足量报价: "No sufficient quote",
+      "每个 {points}点": "{points} pts each",
+      "报价量 {qty}个": "Quoted stock: {qty} pcs",
+      等待已收到的有效报价: "Waiting for valid received quotes",
+      "缺 {points}点": "Need {points} pts",
+      "{level}级 · 升级中": "Lv {level} · Upgrading",
+      "{level}级 · 未放置": "Lv {level} · Unplaced",
+      "{level}级": "Lv {level}",
+      "家园 · 每个 {points}点 · 还需 {qty}个": "Home · {points} pts each · Need {qty} pcs",
+      导出本地计算快照: "Export local calculation snapshot",
+      "仅下载已收到的角色和行情，不上传数据。":
+        "Download received character and prices only; no upload.",
+      尚未读取角色: "Character not received yet",
+      "游戏版本已变化，请先更新插件": "Game version changed; update Insights first",
+      请在代工结束后导出计算快照: "Export a calculation snapshot after your commission finishes",
       "{qty}个": "{qty} pcs",
       "伤害 +{n}%": "+{n}% damage",
       "受到伤害 −{n}%": "−{n}% damage taken",
@@ -8369,6 +8437,78 @@ SOFTWARE.
         ],
         output: { itemId: 327, qty: 1 },
       },
+      {
+        id: 420,
+        name: "Cobalt rocket",
+        skill: "crafting",
+        group: "Fireworks",
+        levelReq: 20,
+        baseTicks: 6,
+        xp: 58,
+        inputs: [
+          { itemId: 7, qty: 25 },
+          { itemId: 700, qty: 1 },
+        ],
+        output: { itemId: 701, qty: 1 },
+      },
+      {
+        id: 421,
+        name: "Void rain",
+        skill: "crafting",
+        group: "Fireworks",
+        levelReq: 45,
+        baseTicks: 6,
+        xp: 156,
+        inputs: [
+          { itemId: 208, qty: 20 },
+          { itemId: 700, qty: 1 },
+        ],
+        output: { itemId: 702, qty: 1 },
+      },
+      {
+        id: 422,
+        name: "Golden arrow rain",
+        skill: "crafting",
+        group: "Fireworks",
+        levelReq: 55,
+        baseTicks: 6,
+        xp: 221,
+        inputs: [
+          { itemId: 302, qty: 25 },
+          { itemId: 700, qty: 1 },
+        ],
+        output: { itemId: 703, qty: 1 },
+      },
+      {
+        id: 423,
+        name: "Jewel crown",
+        skill: "crafting",
+        group: "Fireworks",
+        levelReq: 70,
+        baseTicks: 7,
+        xp: 380,
+        inputs: [
+          { itemId: 100, qty: 5 },
+          { itemId: 40, qty: 10 },
+          { itemId: 700, qty: 2 },
+        ],
+        output: { itemId: 704, qty: 1 },
+      },
+      {
+        id: 424,
+        name: "Dragon egg",
+        skill: "crafting",
+        group: "Fireworks",
+        levelReq: 85,
+        baseTicks: 7,
+        xp: 618,
+        inputs: [
+          { itemId: 251, qty: 3 },
+          { itemId: 8, qty: 10 },
+          { itemId: 700, qty: 3 },
+        ],
+        output: { itemId: 705, qty: 1 },
+      },
     ],
     items: [
       { id: 1, name: "Copper", stackable: false, value: 3 },
@@ -8673,6 +8813,12 @@ SOFTWARE.
       { id: 295, name: "Chest of gems", stackable: true, value: 2600 },
       { id: 296, name: "Vein of gems", stackable: true, value: 7000 },
       { id: 297, name: "Hoard of gems", stackable: true, value: 15000 },
+      { id: 700, name: "Firework powder", stackable: true, value: 0 },
+      { id: 701, name: "Cobalt rocket", stackable: true, value: 0 },
+      { id: 702, name: "Void rain", stackable: true, value: 0 },
+      { id: 703, name: "Golden arrow rain", stackable: true, value: 0 },
+      { id: 704, name: "Jewel crown", stackable: true, value: 0 },
+      { id: 705, name: "Dragon egg", stackable: true, value: 0 },
       { id: 629, name: "Drakestring shortbow", stackable: false, value: 2820 },
       { id: 630, name: "Drakestring longbow", stackable: false, value: 3420 },
       { id: 631, name: "Emberwood staff", stackable: false, value: 4420 },
@@ -9644,6 +9790,26 @@ SOFTWARE.
       { id: 2395, name: "Rare Colossus greatsword", stackable: false, value: 317600 },
       { id: 3395, name: "Epic Colossus greatsword", stackable: false, value: 1905600 },
       { id: 4395, name: "Legendary Colossus greatsword", stackable: false, value: 12704000 },
+      { id: 1701, name: "Uncommon Cobalt rocket", stackable: true, value: 0 },
+      { id: 2701, name: "Rare Cobalt rocket", stackable: true, value: 0 },
+      { id: 3701, name: "Epic Cobalt rocket", stackable: true, value: 0 },
+      { id: 4701, name: "Legendary Cobalt rocket", stackable: true, value: 0 },
+      { id: 1702, name: "Uncommon Void rain", stackable: true, value: 0 },
+      { id: 2702, name: "Rare Void rain", stackable: true, value: 0 },
+      { id: 3702, name: "Epic Void rain", stackable: true, value: 0 },
+      { id: 4702, name: "Legendary Void rain", stackable: true, value: 0 },
+      { id: 1703, name: "Uncommon Golden arrow rain", stackable: true, value: 0 },
+      { id: 2703, name: "Rare Golden arrow rain", stackable: true, value: 0 },
+      { id: 3703, name: "Epic Golden arrow rain", stackable: true, value: 0 },
+      { id: 4703, name: "Legendary Golden arrow rain", stackable: true, value: 0 },
+      { id: 1704, name: "Uncommon Jewel crown", stackable: true, value: 0 },
+      { id: 2704, name: "Rare Jewel crown", stackable: true, value: 0 },
+      { id: 3704, name: "Epic Jewel crown", stackable: true, value: 0 },
+      { id: 4704, name: "Legendary Jewel crown", stackable: true, value: 0 },
+      { id: 1705, name: "Uncommon Dragon egg", stackable: true, value: 0 },
+      { id: 2705, name: "Rare Dragon egg", stackable: true, value: 0 },
+      { id: 3705, name: "Epic Dragon egg", stackable: true, value: 0 },
+      { id: 4705, name: "Legendary Dragon egg", stackable: true, value: 0 },
       { id: 1629, name: "Uncommon Drakestring shortbow", stackable: false, value: 14100 },
       { id: 2629, name: "Rare Drakestring shortbow", stackable: false, value: 70500 },
       { id: 3629, name: "Epic Drakestring shortbow", stackable: false, value: 423000 },
@@ -16603,8 +16769,9 @@ SOFTWARE.
       224, 180, 181, 182, 183, 358, 184, 185, 186, 357, 260, 262, 261, 263, 265, 264, 266, 268, 267,
       269, 271, 270, 272, 274, 273, 338, 340, 339, 341, 343, 342, 200, 300, 301, 302, 303, 304, 306,
       305, 307, 309, 308, 310, 312, 311, 313, 315, 314, 344, 346, 345, 323, 324, 325, 326, 329, 330,
-      331, 332, 333, 347, 348, 334, 335, 336, 337, 349, 327, 240, 241, 242, 243, 245, 247, 249, 244,
-      246, 248, 250, 251, 252, 100, 328, 160, 161, 162, 163, 164, 165, 190, 191, 192,
+      331, 332, 333, 347, 348, 334, 335, 336, 337, 349, 327, 701, 702, 703, 704, 705, 240, 241, 242,
+      243, 245, 247, 249, 244, 246, 248, 250, 251, 252, 100, 328, 160, 161, 162, 163, 164, 165, 190,
+      191, 192,
     ],
     seedIds: [160, 161, 162, 163, 164, 165, 190, 191, 192],
     potions: [
@@ -16959,6 +17126,12 @@ SOFTWARE.
       633: 5600,
       634: 3680,
       635: 3680,
+      700: null,
+      701: 1,
+      702: 1,
+      703: 1,
+      704: 1,
+      705: 1,
       1001: 1,
       1002: 1,
       1003: 4,
@@ -17207,6 +17380,11 @@ SOFTWARE.
       1633: 5600,
       1634: 3680,
       1635: 3680,
+      1701: 1,
+      1702: 1,
+      1703: 1,
+      1704: 1,
+      1705: 1,
       2001: 1,
       2002: 1,
       2003: 4,
@@ -17455,6 +17633,11 @@ SOFTWARE.
       2633: 5600,
       2634: 3680,
       2635: 3680,
+      2701: 1,
+      2702: 1,
+      2703: 1,
+      2704: 1,
+      2705: 1,
       3001: 1,
       3002: 1,
       3003: 4,
@@ -17703,6 +17886,11 @@ SOFTWARE.
       3633: 5600,
       3634: 3680,
       3635: 3680,
+      3701: 1,
+      3702: 1,
+      3703: 1,
+      3704: 1,
+      3705: 1,
       4001: 1,
       4002: 1,
       4003: 4,
@@ -17951,8 +18139,24 @@ SOFTWARE.
       4633: 5600,
       4634: 3680,
       4635: 3680,
+      4701: 1,
+      4702: 1,
+      4703: 1,
+      4704: 1,
+      4705: 1,
     },
-    vendorBuys: { 60: 18, 80: 58, 85: 40, 90: 58, 160: 8, 161: 24, 162: 56, 190: 24, 328: 20000 },
+    vendorBuys: {
+      60: 18,
+      80: 58,
+      85: 40,
+      90: 58,
+      160: 8,
+      161: 24,
+      162: 56,
+      190: 24,
+      328: 20000,
+      700: 5000,
+    },
     farming: {
       unlockLevels: [1, 1, 15, 30, 45, 60],
       waterEvery: 100,
@@ -18057,7 +18261,7 @@ SOFTWARE.
             201, 202, 203, 204, 205, 230, 231, 232, 233, 307, 234, 235, 236, 306, 260, 261, 262,
             263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 289, 290, 291, 248, 249,
             250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 295, 296, 297, 275, 276, 277, 278,
-            280, 281, 282, 283, 284, 298, 285, 286, 287, 288, 300, 279,
+            280, 281, 282, 283, 284, 298, 285, 286, 287, 288, 300, 279, 420, 421, 422, 423, 424,
           ],
         },
         {
@@ -18083,7 +18287,7 @@ SOFTWARE.
             201, 202, 203, 204, 205, 230, 231, 232, 233, 307, 234, 235, 236, 306, 260, 261, 262,
             263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 289, 290, 291, 248, 249,
             250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 295, 296, 297, 275, 276, 277, 278,
-            280, 281, 282, 283, 284, 298, 285, 286, 287, 288, 300, 279,
+            280, 281, 282, 283, 284, 298, 285, 286, 287, 288, 300, 279, 420, 421, 422, 423, 424,
           ],
         },
         {
@@ -19320,19 +19524,28 @@ SOFTWARE.
       "The Fen garden": "沼泽花园",
       "The Archer's ledge": "弓手崖台",
       "The Deep garden": "深岩花园",
+      "Cobalt rocket": "钴火箭",
+      "Void rain": "虚空雨",
+      "Golden arrow rain": "金箭雨",
+      "Jewel crown": "宝石王冠",
+      "Dragon egg": "龙蛋",
+      "Firework powder": "烟花火药",
     },
     version: {
-      version: "1.0.3025",
+      version: "1.0.3160",
       env: "live",
-      commit: "af89ef4d",
-      branch: "release-1195",
-      subject: "Changelog 1.0.1195: Time Traveller and fair play (EN+ZH)",
-      committedAt: "2026-10-18T12:20:37+02:00",
+      commit: "638531c7",
+      branch: "HEAD",
+      subject: "Collection log: rockets have no line and pay no Collection Points (Mikkel, 20 Oct)",
+      committedAt: "2026-10-20T12:55:10+02:00",
       dirty: false,
-      builtAt: "2026-10-18T10:26:13.216Z",
+      builtAt: "2026-10-20T10:59:14.713Z",
     },
-    clientAsset: "index-Di-5ljk5.js",
-    sourceSha256: "208371d3ee0b9cab57048c04dc1ab0733f153adb86af1d1959afa06d9304bce1",
+    clientAsset: "index-TWZoqcXm.js",
+    sourceSha256: "aa14b6a006ba66eab6af0f9d315dd342580bc4d9e71a3fa72a81c66ed009493c",
+    rocketIds: [701, 702, 703, 704, 705],
+    vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
+    commonOnlyJobs: [421],
   };
   GAME_DATA.world.collision = [
     [1, 289],
@@ -23282,7 +23495,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.80";
+  const PLUGIN_VERSION = "0.4.82";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -25013,7 +25226,7 @@ SOFTWARE.
   }
 
   function renderCombat(actual) {
-    const p = store.state.player,
+    const p = store.observationPlayer(),
       report = p ? combatMonitor.sample(p, store.state.windows) : null;
     const host = document.querySelector("[data-plan]");
     if (!host || !report) {
@@ -25136,7 +25349,7 @@ SOFTWARE.
     currentWorkTimeout = null;
   const currentWorkEstimates = new Map();
   store.subscribeBatches((batch) => {
-    activityMonitor.events(store.state.player, batch);
+    activityMonitor.events(store.observationPlayer(), batch);
     scheduleNative();
   });
   function activityMetricHtml(label, value, title = "", highlight = false) {
@@ -25681,7 +25894,7 @@ SOFTWARE.
   function renderCurrentActivity() {
     syncParallelEnhancement();
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("activity")) return;
-    const actual = activityMonitor.sample(store.state.player);
+    const actual = activityMonitor.sample(store.observationPlayer());
     renderCombat(actual);
     renderCurrentWork(actual);
     renderIdlePotions();
@@ -25689,7 +25902,7 @@ SOFTWARE.
     saveObservations();
   }
   function refreshObservationClock() {
-    const p = store.state.player;
+    const p = store.observationPlayer();
     if (!p?.route) return;
     const actual = activityMonitor.sample(p),
       report = p.route.zoneId != null ? combatMonitor.sample(p, store.state.windows) : null;
@@ -25697,9 +25910,20 @@ SOFTWARE.
       seconds = report ? report.seconds : actual?.seconds;
     if (box?.isConnected && seconds != null) showObservationTime(box, seconds);
   }
-  const observationClock = setInterval(refreshObservationClock, 1000);
-  window.addEventListener("pagehide", (e) => {
-    if (!e.persisted) clearInterval(observationClock);
+  let observationClock = null;
+  function startObservationClock() {
+    clearInterval(observationClock);
+    observationClock = setInterval(refreshObservationClock, 1000);
+    refreshObservationClock();
+  }
+  startObservationClock();
+  window.addEventListener("pageshow", startObservationClock);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) startObservationClock();
+  });
+  window.addEventListener("pagehide", () => {
+    clearInterval(observationClock);
+    observationClock = null;
   });
   window.addEventListener("pagehide", (e) => {
     if (e.persisted) return;
@@ -26013,22 +26237,40 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         button.type = "button";
         button.className = "chat-tab dvi-loot-tab";
         button.dataset.noI18n = "";
+        button.setAttribute("role", "tab");
         log.className = "dvi-loot-log";
         log.dataset.noI18n = "";
         log.setAttribute("role", "log");
-        view = { button, log };
+        view = { button, log, open: false, room: chat.dataset.room };
         lootChatViews.set(chat, view);
+        view.setOpen = (open) => {
+          view.open = open;
+          view.room = chat.dataset.room;
+          chat.classList.toggle("dvi-loot-open", open);
+          for (const [key, value] of [
+            ["aria-pressed", String(open)],
+            ["aria-selected", String(open)],
+          ])
+            if (button.getAttribute(key) !== value) button.setAttribute(key, value);
+          for (const tab of tabs.querySelectorAll("[data-room]")) {
+            const selected = String(!open && tab.dataset.room === chat.dataset.room);
+            if (tab.getAttribute("aria-selected") !== selected)
+              tab.setAttribute("aria-selected", selected);
+          }
+        };
         button.addEventListener("click", (e) => {
           e.stopPropagation();
-          chat.classList.toggle("dvi-loot-open");
-          button.setAttribute("aria-pressed", String(chat.classList.contains("dvi-loot-open")));
+          view.setOpen(!view.open);
         });
         chat.addEventListener("click", (e) => {
-          if (e.target.closest("[data-room]")) {
-            chat.classList.remove("dvi-loot-open");
-            button.setAttribute("aria-pressed", "false");
-          }
+          if (e.target.closest(".chat-tab[data-room]")) view.setOpen(false);
         });
+        view.setOpen(false);
+      }
+      if (view.setOpen) {
+        if (chat.closest("[data-m-sub][hidden]") || view.room !== chat.dataset.room)
+          view.setOpen(false);
+        else if (view.open) view.setOpen(true);
       }
       if (!view.button.isConnected) tabs.append(view.button);
       if (!view.log.isConnected) tabs.after(view.log);
@@ -26092,6 +26334,15 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     }
     setNativeText(note, bossRecordText(record));
   }
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!event.target.closest?.("[data-m-sub-back]")) return;
+      for (const chat of document.querySelectorAll(".chat.dvi-loot-open"))
+        lootChatViews.get(chat)?.setOpen(false);
+    },
+    true,
+  );
   const bossRecordsStyle = document.createElement("style");
   bossRecordsStyle.textContent =
     ".dvi-loot-log{display:none;flex:0 1 auto;height:260px;max-height:70dvh;min-height:0;overflow:auto;padding:4px 12px}.dvi-loot-open .dvi-loot-log{display:block}.dvi-loot-open :is([data-log],[data-compose],[data-dm-people],[data-chat-guest]){display:none!important}.dvi-loot-tab{margin-left:auto;flex-shrink:0}.dvi-loot-log article{padding:7px 0;border-bottom:1px solid var(--edge)}.dvi-loot-log header{font-size:12px;background:none;border:0;padding:0}.dvi-loot-log time{display:block;font-size:10px;color:var(--ink-faint)}.dvi-log-item{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:12px;overflow-wrap:anywhere;color:var(--rarity,var(--ink))}.dvi-log-item>i{display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;width:20px;height:20px}.dvi-log-item :is(svg,img){width:18px;height:18px;image-rendering:pixelated}.dvi-log-item>b{margin-left:auto;font-weight:400;white-space:nowrap}.dvi-boss-final-info{margin:6px 0;color:var(--brass);font-size:12px}";
@@ -27469,6 +27720,43 @@ html.dvi-insights.m-on .route-options [data-fields] .dvi-field-tile {
 }
 html.dvi-insights.m-on .route-options [data-fields] .dvi-field-tile small {
   margin: 0;
+}
+/* One compact native row per field on phones; the same select and harvest
+   targets remain in place. Limit the whole scroller instead of six tall cards. */
+html.dvi-insights.m-on .route-options [data-fields] .field-scroll {
+  max-height: clamp(120px, 23dvh, 210px);
+}
+html.dvi-insights.m-on .route-options [data-fields] .field-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+html.dvi-insights.m-on .route-options [data-fields] .field-row.dvi-field-tile {
+  grid-template-columns: minmax(42px, 0.7fr) minmax(0, 1.5fr) minmax(90px, 1fr);
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  min-height: 32px;
+}
+html.dvi-insights.m-on .route-options [data-fields] .field-row .field-name {
+  font-size: 11px;
+}
+html.dvi-insights.m-on .route-options [data-fields] .field-row .field-status {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 3px;
+  font-size: 10px;
+}
+html.dvi-insights.m-on .route-options [data-fields] .field-row .field-crop {
+  flex: 1 1 100%;
+}
+html.dvi-insights.m-on .route-options [data-fields] .field-row .field-over:before {
+  content: none;
+}
+html.dvi-insights.m-on .route-options [data-fields] .field-row .field-pick {
+  margin: 0;
+  padding: 2px;
+  min-height: 30px;
+  font-size: 11px;
 }
 .dvi-insights [data-fields] .dvi-field-tile {
   min-width: 0;
@@ -31751,6 +32039,66 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     if (!e.persisted) clearInterval(publicPriceInterval);
   });
 
+  // ---- src/snapshot-export-ui.js ----
+  /* Manual local download for offline simulation; no game actions or upload. */
+  function calculationSnapshot() {
+    const p = store.state.player;
+    if (!p) throw Error(t("尚未读取角色"));
+    const asset = [...document.querySelectorAll("script[src]")]
+      .map((s) => s.getAttribute("src").split("?")[0].split("/").pop())
+      .find((s) => /^index-.+\.js$/.test(s));
+    if (asset && asset !== GAME_DATA.clientAsset) throw Error(t("游戏版本已变化，请先更新插件"));
+    const fields =
+      "id,x,y,skills,equipment,hp,eatAt,foodItemId,foodMaxTier,foodPerTrip,foeIndex,foeHp,foeTicks,pack,bank,overflow,bankOrder,coins,route,enhance,lastStop,plots,plotChoice,plantPlainest,house,housePoints,houseCells,houseFurniture,houseBuild,houseUpgrades,houseUpgradePaid,queue,quests,questPoints,queueSlots,perks,streak,brews,brewTier,homeBank,stunUntil,tally,collection,collections,masteries,masteryResets,ironman,bankSlotsBought,strideSpeed,stride,unlimitedBank,achievements,activity,path,pathIndex,workSiteId,workJobId,attemptTicks,actionIndex,workRarity,offlineCapTicks,lastTick,rollIndex,guildBonus,lastFoe,held,raidHeld,eventBox,bankLocked,brewBuckets,forgeLog,fallback".split(
+        ",",
+      );
+    const character = Object.fromEntries(
+      fields.filter((k) => Object.hasOwn(p, k)).map((k) => [k, p[k]]),
+    );
+    if (p.route?.order || p.enhance?.order || p.enhance?.contract)
+      throw Error(t("请在代工结束后导出计算快照"));
+    return JSON.parse(
+      JSON.stringify({
+        schema: "SIK-calculation-snapshot-1",
+        clientAsset: GAME_DATA.clientAsset,
+        receivedAt: store.state.receivedAt,
+        character,
+        market: {
+          books: store.state.books,
+          windows: store.state.windows,
+          taxBp: store.state.taxBp,
+        },
+      }),
+    );
+  }
+  function mountCalculationExport(host) {
+    const link = document.createElement("a"),
+      note = document.createElement("small");
+    link.className = "dvi-update-now";
+    link.href = "#";
+    link.dataset.dviSettingsText = "导出本地计算快照";
+    link.style.display = "inline-block";
+    note.dataset.dviSettingsText = "仅下载已收到的角色和行情，不上传数据。";
+    note.style.display = "block";
+    link.addEventListener("click", (event) => {
+      event.stopPropagation();
+      try {
+        const snapshot = calculationSnapshot(),
+          url = URL.createObjectURL(
+            new Blob([JSON.stringify(snapshot)], { type: "application/json" }),
+          );
+        link.href = url;
+        link.download =
+          "SIK-DVI-world-snapshot-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (error) {
+        event.preventDefault();
+        note.textContent = error.message;
+      }
+    });
+    host.append(link, note);
+  }
+
   // ---- src/settings-ui.js ----
   /* A local-only tab beside native account tabs. All attributes are plugin-owned. */
   const insightSettingsHosts = new WeakMap();
@@ -31955,6 +32303,10 @@ html.m-on .account-tabs:has(.dvi-insights-settings-tab){flex-wrap:wrap}.dvi-insi
         const update = document.createElement("div");
         update.className = "dvi-settings-update";
         host.page.append(update);
+        const exportBox = document.createElement("div");
+        exportBox.className = "dvi-settings-export";
+        mountCalculationExport(exportBox);
+        host.page.append(exportBox);
         const note = document.createElement("p");
         note.className = "dvi-settings-saved";
         note.dataset.dviSettingsText = "更改立即生效，并保存在当前浏览器。";
@@ -32943,6 +33295,7 @@ html.m-on .account-tabs:has(.dvi-insights-settings-tab){flex-wrap:wrap}.dvi-insi
     mountSimulatorLinks();
     syncBuffs();
     syncHomeTimers();
+
     syncBossRecords();
     syncEquipmentValue();
     syncInventory();
@@ -33037,7 +33390,7 @@ html.m-on .account-tabs:has(.dvi-insights-settings-tab){flex-wrap:wrap}.dvi-insi
     if (!node?.closest) return false;
     if (
       node.closest(
-        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best",
+        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best,.dvi-home-supplies,.dvi-home-market-note",
       )
     )
       return false;
