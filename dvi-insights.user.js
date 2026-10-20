@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.82
+// @version      0.4.83
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -3319,9 +3319,10 @@ SOFTWARE.
         )
           return p;
         // Mobile fallback owns a snapshot, not the native ticking object. Use
-        // only ticks actually received, within the existing resync tolerance.
+        // only ticks actually received. Monitors reject gaps BETWEEN samples;
+        // snapshot age must not freeze a continuously observed connection.
         // This view never changes the game's object or extrapolates wall time.
-        return observedTick - p.lastTick <= 200 ? { ...p, lastTick: observedTick } : p;
+        return { ...p, lastTick: observedTick };
       }
       function receive(frame, { detached = false } = {}) {
         // The game parses its own last-seen record immediately before building an
@@ -23495,7 +23496,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.82";
+  const PLUGIN_VERSION = "0.4.83";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
