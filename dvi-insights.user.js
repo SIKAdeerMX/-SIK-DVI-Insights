@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.84
+// @version      0.4.85
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4736,6 +4736,24 @@ SOFTWARE.
               ),
             }))
         : [];
+      // Actual income and combat estimates share this history and alternate on
+      // each refresh. Compact restored fragments before applying the row budget;
+      // otherwise 1440 per-sample rows hold minutes instead of twelve hours.
+      const buckets = new Map();
+      function merge(row, value) {
+        row.at = Math.max(row.at, value.at);
+        row.seconds += value.seconds;
+        for (const name of ["outputs", "inputs", "food", "xp"]) add(row[name], value[name]);
+        for (const name of ["kills", "deaths", "unknownFood", "attempts"])
+          row[name] += count(value[name]);
+      }
+      for (const row of rows) {
+        const id = JSON.stringify([row.key, row.account, Math.floor(row.at / 60000)]),
+          old = buckets.get(id);
+        if (old) merge(old, row);
+        else buckets.set(id, row);
+      }
+      rows = [...buckets.values()];
       const baselines = new Map();
       function prune() {
         rows = rows.filter((r) => r.at <= now() && now() - r.at <= AGE).slice(-1440);
@@ -4750,33 +4768,29 @@ SOFTWARE.
         )
           return;
         prune();
-        const minute = Math.floor(now() / 60000),
-          last = rows.at(-1);
-        const row =
-          last?.key === key && last.account === account && Math.floor(last.at / 60000) === minute
-            ? last
-            : {
-                key,
-                account,
-                at: now(),
-                seconds: 0,
-                outputs: {},
-                inputs: {},
-                food: {},
-                xp: {},
-                kills: 0,
-                deaths: 0,
-                unknownFood: 0,
-                attempts: 0,
-                jobId: value.jobId ?? null,
-                zone: value.zone ?? null,
-              };
-        row.at = now();
-        row.seconds += value.seconds;
-        for (const name of ["outputs", "inputs", "food", "xp"]) add(row[name], value[name]);
-        for (const name of ["kills", "deaths", "unknownFood", "attempts"])
-          row[name] += count(value[name]);
-        if (row !== last) rows.push(row);
+        const at = now(),
+          minute = Math.floor(at / 60000);
+        const old = rows.findLast(
+          (r) => r.key === key && r.account === account && Math.floor(r.at / 60000) === minute,
+        );
+        const row = old || {
+          key,
+          account,
+          at,
+          seconds: 0,
+          outputs: {},
+          inputs: {},
+          food: {},
+          xp: {},
+          kills: 0,
+          deaths: 0,
+          unknownFood: 0,
+          attempts: 0,
+          jobId: value.jobId ?? null,
+          zone: value.zone ?? null,
+        };
+        merge(row, { ...value, at });
+        if (!old) rows.push(row);
       }
       function total(key, account) {
         prune();
@@ -23496,7 +23510,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.84";
+  const PLUGIN_VERSION = "0.4.85";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
