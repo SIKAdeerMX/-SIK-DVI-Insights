@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.83
+// @version      0.4.84
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -23496,7 +23496,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.83";
+  const PLUGIN_VERSION = "0.4.84";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -32118,7 +32118,10 @@ html[data-dvi-feature-work=off] .dvi-native-work:not(.dvi-battle-work):not(.dvi-
 .dvi-insights-settings-option input[type=checkbox]{appearance:auto!important;position:static!important;opacity:1!important;width:18px!important;height:18px!important;margin:0!important;accent-color:var(--brass);cursor:pointer}
 .dvi-insights-settings-page .dvi-settings-saved{font-size:11px;color:var(--moss);margin:8px 0}.dvi-insights-settings-page .dvi-update-controls{font-size:12px}
 .dvi-insights-settings-page .dvi-update-now{width:auto;min-width:0;padding:4px 8px;font:inherit;background:var(--panel-raised);color:var(--ink);border:1px solid var(--edge);border-radius:3px}
-html.m-on .account-tabs:has(.dvi-insights-settings-tab){flex-wrap:wrap}.dvi-insights-settings-page *{box-sizing:border-box}
+html.m-on .account-tabs:has(.dvi-insights-settings-tab){flex-wrap:wrap}
+html.m-on .account-tabs:has(.dvi-insights-settings-tab)>button{flex:1 0 auto;max-width:100%;box-sizing:border-box}
+html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-wrap:anywhere;line-height:1.3}
+.dvi-insights-settings-page *{box-sizing:border-box}
 `;
   function applyInsightFeature(id) {
     const on = insightFeatureEnabled(id);

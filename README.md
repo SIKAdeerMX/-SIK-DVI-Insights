@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.83
+# [SIK] DVI Insights 0.4.84
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.83：同步正式服烟花工作与品质规则；修复手机观测计时、农田高度与掉落日志频道状态。设置页支持手动下载完整本地计算快照，无角色上传。原生解锁与强化费用说明直接沿用，经验预估继续处理原生菜单漏算的世界增益。家园采购试用未加入公开包。
+0.4.84：修复手机设置标签文字溢出，按内容宽度排布并自动换行。同步正式服烟花工作与品质规则；修复手机观测计时、农田高度与掉落日志频道状态。设置页支持手动下载完整本地计算快照，无角色上传。原生解锁与强化费用说明直接沿用，经验预估继续处理原生菜单漏算的世界增益。家园采购试用未加入公开包。
 
 
 
@@ -53,7 +53,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.83 supports live 1.0.3160 recipes and rarity rules, fixes mobile observation timers, compact fields and loot-log channel state, and adds manual local calculation snapshots in Settings. Native unlock and enhancement-cost hints remain in use; independent XP forecasts retain world buffs missed by the native menu. The home procurement trial is excluded from this public release.
+0.4.84 fixes mobile Settings tab text overflow with content-sized, wrapping tabs. It supports live 1.0.3160 recipes and rarity rules, fixes mobile observation timers, compact fields and loot-log channel state, and adds manual local calculation snapshots in Settings. Native unlock and enhancement-cost hints remain in use; independent XP forecasts retain world buffs missed by the native menu. The home procurement trial is excluded from this public release.
 
 
 - Open game **Settings → [SIK] Insights** to control features, potion costs and update reminders. Changes apply immediately and persist in this browser; existing preferences are retained. The old work-list settings entry has been removed.
