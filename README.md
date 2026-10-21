@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.87
+# [SIK] DVI Insights 0.4.88
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.84：修复手机设置标签文字溢出，按内容宽度排布并自动换行。同步正式服烟花工作与品质规则；修复手机观测计时、农田高度与掉落日志频道状态。设置页支持手动下载完整本地计算快照，无角色上传。原生解锁与强化费用说明直接沿用，经验预估继续处理原生菜单漏算的世界增益。家园采购试用未加入公开包。
+0.4.88：适配正式服1.0.3169强化大改。装备评分同步高强化成功率递减和按装备阶级计算的碎片成本，排除退役符文书台加成及计时。升级结果随当前经验与增益重算，保留手机布局、观测续记及本地计算快照导出；家园采购试用未加入公开包。
 
 
 
@@ -21,7 +21,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
 - 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
-- 规则跟随正式服 1.0.3160：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
+- 规则跟随正式服 1.0.3169：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
 - PC 原生战斗浮窗内增加可折叠的 DPS 与承伤统计，手机顶部原生血条恢复血量数字。DPS 按怪物有效掉血计算，承伤按已收到的受击事件统计，缺数据显示未知，重连重新观测。制作升级计算增加分品质的材料成本、税后即卖和挂售单价参考，缺价保留未知。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示金色光晕。普通战斗补充 EPH、食物续航；普通工作和战斗的药水默认显示当前品质最先到期的实际图标与时长，名称保留在提示中，待机和单独强化时也保留生效药水摘要，按时间计时；八种药水图标均内嵌，不依赖仓库是否打开；瓶子与倒计时紧邻显示，点击展开按剩余时间排序的列表。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。饱食与扎根优先从近期报价量足够的食物中比较续24小时总成本，名称后只加“数量个”，费用另列金币/d；公开快照标估价。保留历史与缓存估价，悬浮提示简列续24小时、价源和报价时间。到期后仍保留推荐并标记未生效；原生战斗倒计时保持。扎根、饱食和药水的右侧剩余时间统一使用 d/h/m/s 两个相邻单位，世界增益与祝福同步，不足一分钟只显示 s。
@@ -53,7 +53,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.84 fixes mobile Settings tab text overflow with content-sized, wrapping tabs. It supports live 1.0.3160 recipes and rarity rules, fixes mobile observation timers, compact fields and loot-log channel state, and adds manual local calculation snapshots in Settings. Native unlock and enhancement-cost hints remain in use; independent XP forecasts retain world buffs missed by the native menu. The home procurement trial is excluded from this public release.
+0.4.88 supports live 1.0.3169 enhancement rules: equipment reference scores use declining high-level odds and tier-based shard costs, excluding the retired rune lectern. Level plans recalculate with current XP and buffs. Mobile layout fixes, retained observation history and manual local calculation snapshot downloads remain available. The home procurement trial is excluded from this public release.
 
 
 - Open game **Settings → [SIK] Insights** to control features, potion costs and update reminders. Changes apply immediately and persist in this browser; existing preferences are retained. The old work-list settings entry has been removed.
@@ -70,7 +70,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Expanded work rows show input rarity, projected daily consumption, unit price and each price source. Public snapshots retain client purchase caches; missing quotes or volume still fall back to valid cached prices and trade history, marked as estimates.
 - Gathering XP and level-time estimates follow the current discard setting and account for fewer bank trips. Discard and bank modes use separate caches; discarded outputs are excluded from sale income.
 - Crafting supports Best first, selecting complete recipes from owned stock and filling shortages with Normal materials. Concurrent enhancement keeps the main action income and XP visible, with a separate enhancement status line.
-- Rules follow live client 1.0.3160, including updated path costs and the new passage. Cached profit estimates are restored during native list redraws to reduce flicker. The native menu loses active world buffs when it resets the simulation clock; independent XP forecasts correct this while preserving native death warnings. Level calculations use the same buff rules. Combat forecasts replace meals eaten before departing a bank; farming field selection follows the new harvest groups. State follows the newly adopted snapshot object; observation time does not grow from wall time alone, and parallel enhancement is excluded from primary-task material counts. Farming remains a single-field reference and commission income remains unestimated.
+- Rules follow live client 1.0.3169, including updated path costs and the new passage. Cached profit estimates are restored during native list redraws to reduce flicker. The native menu loses active world buffs when it resets the simulation clock; independent XP forecasts correct this while preserving native death warnings. Level calculations use the same buff rules. Combat forecasts replace meals eaten before departing a bank; farming field selection follows the new harvest groups. State follows the newly adopted snapshot object; observation time does not grow from wall time alone, and parallel enhancement is excluded from primary-task material counts. Farming remains a single-field reference and commission income remains unestimated.
 - Responsive field and garden cards retain the original per-field crop dropdowns and live maturity updates. Calculator details show current crops, time remaining, watering and next crops in read-only cards. Farming estimates remain single-field references, excluding travel between fields and garden clearing.
 - The original desktop combat HUD gains collapsible DPS and damage-taken statistics; mobile restores numeric HP inside the original top health bar. DPS uses effective enemy HP loss; damage taken uses received hit events and stays unknown without data. Measurements reset after reconnects. Crafting calculators show per-quality material costs and after-tax unit revenue, retaining unknown prices.
 - Boss animations remember the same summon across reloads. Quick sell and item selection retain local value sorting; switching native sort exits it. Home timers sort by remaining time and show completion notices; no upgrade overview or added gameplay controls.

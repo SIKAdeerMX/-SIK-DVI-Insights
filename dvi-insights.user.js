@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.87
+// @version      0.4.88
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -215,6 +215,7 @@ SOFTWARE.
           let n = 0;
           for (const r of data.rooms)
             if (
+              !r.retired &&
               p.houseFurniture?.[r.id] !== undefined &&
               r.bonus.kind === kind &&
               (!skill || r.bonus.skill === skill)
@@ -4980,14 +4981,30 @@ SOFTWARE.
           ? { family: def.family, qty: Math.floor(def.each * 3 ** Math.floor((id % 10000) / 1000)) }
           : null;
       }
-      const enhanceBands = [100, 300, 1000, 3000, 8000, 20000],
-        rarityMul = [1, 3, 8, 20, 50],
-        enhanceGates = [15, 30, 50, 75, 90];
-      function enhanceRate(plain) {
+      // Historical pinned facts remain useful for old-engine regression fixtures.
+      const rules = data.enhancement?.goldByTier
+          ? data.enhancement
+          : {
+              goldByTier: [100, 300, 1000, 3000, 8000, 20000],
+              rarityGold: [1, 3, 8, 20, 50],
+              tierGates: [15, 30, 50, 75, 90],
+              shardsByTier: [3, 3, 3, 3, 3, 3],
+              coreFrom: 5,
+              linearStep: 0.06,
+              baseFloor: 0.2,
+              levelBonus: 0.002,
+            },
+        enhanceBands = rules.goldByTier,
+        rarityMul = rules.rarityGold,
+        enhanceGates = rules.tierGates;
+      function enhanceTier(plain) {
         const level = craftLevel.get(plain % 1000);
         let tier = level == null ? 4 : 1;
         if (level != null) for (const gate of enhanceGates) if (level >= gate) tier++;
-        return enhanceBands[tier - 1] * rarityMul[Math.floor(plain / 1000)] || 0;
+        return tier;
+      }
+      function enhanceRate(plain) {
+        return enhanceBands[enhanceTier(plain) - 1] * rarityMul[Math.floor(plain / 1000)] || 0;
       }
       const enhancementCache = new Map(),
         enhanceable = new Set([...data.gear, ...data.tools].map((x) => x.itemId));
@@ -4999,11 +5016,12 @@ SOFTWARE.
           plus > (data.constants.enhanceMaxPlus || 20)
         )
           return null;
-        const rate = enhanceRate(plain),
+        const tier = enhanceTier(plain),
+          rate = enhanceRate(plain),
           shard = prices.shard,
           corePrice = prices.core,
           scroll = prices.scroll,
-          key = JSON.stringify([rate, plus, shard, corePrice, scroll]);
+          key = JSON.stringify([tier, rate, plus, shard, corePrice, scroll]);
         if (enhancementCache.has(key)) return enhancementCache.get(key);
         let best = null;
         for (const protectFrom of [
@@ -5011,14 +5029,18 @@ SOFTWARE.
           ...(scroll == null ? [] : Array.from({ length: Math.max(0, plus - 2) }, (_, i) => i + 2)),
         ]) {
           const steps = Array.from({ length: plus }, (_, k) => {
-            const useCore = k >= 5 && corePrice != null && corePrice < 3 * (k + 1) * shard;
+            const shards = rules.shardsByTier[tier - 1] * (k + 1),
+              useCore = k >= rules.coreFrom && corePrice != null && corePrice < shards * shard,
+              baseChance =
+                rules.baseFloor != null
+                  ? Math.max(rules.baseFloor, 1 - rules.linearStep * k)
+                  : k <= rules.tailAfter
+                    ? 1 - rules.linearStep * k
+                    : rules.tailBase * rules.tailDecay ** (k - rules.tailAfter);
             return {
-              chance: Math.min(
-                1,
-                Math.max(0.2, 1 - 0.06 * k) * (1 + 0.002 * (REFERENCE.level - 1)),
-              ),
+              chance: Math.min(1, baseChance * (1 + rules.levelBonus * (REFERENCE.level - 1))),
               gold: rate * (k + 1),
-              shards: useCore ? 0 : 3 * (k + 1),
+              shards: useCore ? 0 : shards,
               cores: useCore ? 1 : 0,
               protected: protectFrom != null && k >= protectFrom,
             };
@@ -16247,6 +16269,7 @@ SOFTWARE.
         bonus: { kind: "enhanceChance" },
         feeds: "stone",
         look: "house-lectern",
+        retired: true,
         blurb:
           "A lectern of cut stone and a book that glows: the more is written, the surer a charm takes -- every level lifts the odds of an enhance landing by a percent of themselves.",
       },
@@ -19547,21 +19570,37 @@ SOFTWARE.
       "Firework powder": "烟花火药",
     },
     version: {
-      version: "1.0.3162",
+      version: "1.0.3169",
       env: "live",
-      commit: "9edc2a0e",
+      commit: "db4780c1",
       branch: "hotfix-enhance-30s",
-      subject: "Tests: count enhance runs in attempts, not 4-tick steps",
-      committedAt: "2026-10-21T10:14:07+02:00",
+      subject:
+        "Migration v70: stop an enhance run begun under the old odds (contract runs keep going) (Mikkel, 21 Oct)",
+      committedAt: "2026-10-21T21:32:28+02:00",
       dirty: false,
-      builtAt: "2026-10-21T08:16:12.145Z",
+      builtAt: "2026-10-21T19:34:45.729Z",
     },
-    clientAsset: "index-hkXLAqGA.js",
-    sourceSha256: "94d1808b57fabb9a65540805363873f181f5d0f53f9041ce02292236a1a6efdf",
+    clientAsset: "index-CX4ETV_k.js",
+    sourceSha256: "1254dd60c7ad5eabd246b401fb0953da31dd493bec72ac9bcdd44519c26936cc",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
-    enhancement: { attemptTicks: 50 },
+    enhancement: {
+      attemptTicks: 50,
+      linearStep: 0.06,
+      tailAfter: 13,
+      tailBase: 0.22,
+      tailDecay: 0.95,
+      shardsByTier: [2, 2, 4, 6, 8, 10],
+      xpByTier: [1, 1.25, 1.5, 1.75, 2, 2.5],
+      tierGates: [15, 30, 50, 75, 90],
+      goldByTier: [100, 300, 1000, 3000, 8000, 20000],
+      rarityGold: [1, 3, 8, 20, 50],
+      coreFrom: 5,
+      levelBonus: 0.002,
+      masteryBonusCap: 0.5,
+      petChance: 0.000004166666666666667,
+    },
   };
   GAME_DATA.world.collision = [
     [1, 289],
@@ -23511,7 +23550,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.87";
+  const PLUGIN_VERSION = "0.4.88";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -25961,6 +26000,7 @@ SOFTWARE.
         doneTick: player.houseBuild.doneTick,
       });
     for (const room of rooms) {
+      if (room.retired) continue;
       const doneTick = player?.houseUpgrades?.[room.id];
       if (Number.isSafeInteger(doneTick))
         tasks.push({
@@ -25981,7 +26021,8 @@ SOFTWARE.
               x &&
               Number.isSafeInteger(x.doneTick) &&
               (Number.isSafeInteger(x.cell) ||
-                (rooms.some((r) => r.id === x.room) && Number.isSafeInteger(x.level))),
+                (rooms.some((r) => !r.retired && r.id === x.room) &&
+                  Number.isSafeInteger(x.level))),
           )
         : [],
       notices = Array.isArray(saved?.notices)
@@ -25990,7 +26031,8 @@ SOFTWARE.
               (x) =>
                 x &&
                 (Number.isSafeInteger(x.cell) ||
-                  (rooms.some((r) => r.id === x.room) && Number.isSafeInteger(x.level))),
+                  (rooms.some((r) => !r.retired && r.id === x.room) &&
+                    Number.isSafeInteger(x.level))),
             )
             .slice(-32)
         : [];
