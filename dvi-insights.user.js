@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.86
+// @version      0.4.87
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -23511,7 +23511,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.86";
+  const PLUGIN_VERSION = "0.4.87";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -32902,19 +32902,71 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       hourOnly: !full,
     };
   }
-  function queueNative(record, full = false) {
+  function refreshNativePlan(record, cached) {
+    // A level plan is remaining work, not a permanent snapshot of the first
+    // button press. Refresh an opened result on the current role in the Worker.
+    // Keep the last number mounted during the calculation; no warning banners
+    // or per-tick simulations on the rendering thread.
+    const old = cached?.planOptions?.player,
+      p = store.state.player;
+    if (
+      !cached?.plan ||
+      !old ||
+      !p ||
+      document.hidden ||
+      !record.box.querySelector("details")?.open ||
+      !visible(record.box)
+    )
+      return;
+    if (
+      cached.plan.targetLevel !== Number(record.box.querySelector("input").value) ||
+      Date.now() - (cached.planAt ?? cached.at ?? 0) < 5000
+    )
+      return;
+    if (
+      p.lastTick !== old.lastTick ||
+      JSON.stringify([
+        p.skills,
+        p.equipment,
+        p.perks,
+        p.masteries,
+        p.house,
+        p.houseFurniture,
+        p.brews,
+        p.brewTier,
+        p.brewBuckets,
+        p.guildBonus,
+        store.state.windows,
+      ]) !==
+        JSON.stringify([
+          old.skills,
+          old.equipment,
+          old.perks,
+          old.masteries,
+          old.house,
+          old.houseFurniture,
+          old.brews,
+          old.brewTier,
+          old.brewBuckets,
+          old.guildBonus,
+          cached.planOptions.windows,
+        ])
+    )
+      queueNative(record, true, true);
+  }
+  function queueNative(record, full = false, background = false) {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("work")) return;
     if (!store.state.player || record.row.disabled) return;
     const key = nativeKey(record),
-      pending =
-        nativeQueue.some((t) => t.key === key && t.full === full) ||
-        (nativeActive?.key === key && nativeActive.full === full);
+      target = full ? Number(record.box.querySelector("input").value) : null;
+    const same = (t) => t?.key === key && t.full === full && (!full || t.target === target),
+      pending = nativeQueue.some(same) || same(nativeActive);
     if (pending) return;
-    const task = { record, key, full };
+    const task = { record, key, full, target };
     if (full) nativeQueue.unshift(task);
     else nativeQueue.push(task);
     if (full) {
-      record.box.querySelector("[data-native-result]").textContent = t("计算中…");
+      if (!background) record.box.querySelector("[data-native-result]").textContent = t("计算中…");
       record.box.querySelector("button").disabled = true;
     }
     pumpNative();
@@ -32923,6 +32975,11 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (nativeActive || !nativeQueue.length) return;
     const task = nativeQueue.shift();
     if (!task.record.row.isConnected || !store.state.player) {
+      pumpNative();
+      return;
+    }
+    if (task.full && task.target !== Number(task.record.box.querySelector("input").value)) {
+      task.record.box.querySelector("button").disabled = false;
       pumpNative();
       return;
     }
@@ -32975,13 +33032,18 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       options: task.options,
       ...(message.error
         ? task.full
-          ? { planError: message.error }
+          ? { plan: null, planError: message.error }
           : { error: message.error }
         : {
             result: message.result,
             error: null,
             ...(task.full
-              ? { plan: message.result, planOptions: task.options, planError: null }
+              ? {
+                  plan: message.result,
+                  planOptions: task.options,
+                  planAt: Date.now(),
+                  planError: null,
+                }
               : {}),
           }),
     });
@@ -33197,9 +33259,13 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       .querySelector("input")
       .setAttribute("aria-label", t("{name}目标等级", { name: nameOf(record.job.name) }));
     const container = record.box.querySelector("[data-native-result]");
-    if (cached?.plan && cached.plan.targetLevel === Number(record.box.querySelector("input").value))
+    if (
+      cached?.plan &&
+      cached.plan.targetLevel === Number(record.box.querySelector("input").value)
+    ) {
       updateNativeResult(container, nativePlanHtml(cached.plan, cached.planOptions));
-    else if (cached?.planError) {
+      refreshNativePlan(record, cached);
+    } else if (cached?.planError) {
       if (container.textContent !== errorText(cached.planError))
         container.textContent = errorText(cached.planError);
     } else if (
