@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.85
+// @version      0.4.86
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -19547,20 +19547,21 @@ SOFTWARE.
       "Firework powder": "烟花火药",
     },
     version: {
-      version: "1.0.3160",
+      version: "1.0.3162",
       env: "live",
-      commit: "638531c7",
-      branch: "HEAD",
-      subject: "Collection log: rockets have no line and pay no Collection Points (Mikkel, 20 Oct)",
-      committedAt: "2026-10-20T12:55:10+02:00",
+      commit: "9edc2a0e",
+      branch: "hotfix-enhance-30s",
+      subject: "Tests: count enhance runs in attempts, not 4-tick steps",
+      committedAt: "2026-10-21T10:14:07+02:00",
       dirty: false,
-      builtAt: "2026-10-20T10:59:14.713Z",
+      builtAt: "2026-10-21T08:16:12.145Z",
     },
-    clientAsset: "index-TWZoqcXm.js",
-    sourceSha256: "aa14b6a006ba66eab6af0f9d315dd342580bc4d9e71a3fa72a81c66ed009493c",
+    clientAsset: "index-hkXLAqGA.js",
+    sourceSha256: "94d1808b57fabb9a65540805363873f181f5d0f53f9041ce02292236a1a6efdf",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
+    enhancement: { attemptTicks: 50 },
   };
   GAME_DATA.world.collision = [
     [1, 289],
@@ -23510,7 +23511,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.85";
+  const PLUGIN_VERSION = "0.4.86";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
