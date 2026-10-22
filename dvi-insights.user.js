@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.88
+// @version      0.4.89
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -16269,7 +16269,6 @@ SOFTWARE.
         bonus: { kind: "enhanceChance" },
         feeds: "stone",
         look: "house-lectern",
-        retired: true,
         blurb:
           "A lectern of cut stone and a book that glows: the more is written, the surer a charm takes -- every level lifts the odds of an enhance landing by a percent of themselves.",
       },
@@ -19570,29 +19569,26 @@ SOFTWARE.
       "Firework powder": "烟花火药",
     },
     version: {
-      version: "1.0.3169",
+      version: "1.0.3177",
       env: "live",
-      commit: "db4780c1",
-      branch: "hotfix-enhance-30s",
-      subject:
-        "Migration v70: stop an enhance run begun under the old odds (contract runs keep going) (Mikkel, 21 Oct)",
-      committedAt: "2026-10-21T21:32:28+02:00",
+      commit: "adeaabb5",
+      branch: "revert-1198",
+      subject: "Changelog 1.0.1200: Bug fix, EN and ZH",
+      committedAt: "2026-10-22T05:42:33+02:00",
       dirty: false,
-      builtAt: "2026-10-21T19:34:45.729Z",
+      builtAt: "2026-10-22T03:52:09.856Z",
     },
-    clientAsset: "index-CX4ETV_k.js",
-    sourceSha256: "1254dd60c7ad5eabd246b401fb0953da31dd493bec72ac9bcdd44519c26936cc",
+    clientAsset: "index-D-DH9jHm.js",
+    sourceSha256: "5c48869cce956497c847198b8828fe01b5eda875e7c4e3222fd4e742bccb2868",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
     enhancement: {
       attemptTicks: 50,
       linearStep: 0.06,
-      tailAfter: 13,
-      tailBase: 0.22,
-      tailDecay: 0.95,
-      shardsByTier: [2, 2, 4, 6, 8, 10],
-      xpByTier: [1, 1.25, 1.5, 1.75, 2, 2.5],
+      baseFloor: 0.2,
+      shardsByTier: [3, 3, 3, 3, 3, 3],
+      xpByTier: [1, 1, 1, 1, 1, 1],
       tierGates: [15, 30, 50, 75, 90],
       goldByTier: [100, 300, 1000, 3000, 8000, 20000],
       rarityGold: [1, 3, 8, 20, 50],
@@ -23550,7 +23546,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.88";
+  const PLUGIN_VERSION = "0.4.89";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
