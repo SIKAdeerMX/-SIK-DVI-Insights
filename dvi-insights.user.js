@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.90
+// @version      0.4.91
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -1759,6 +1759,7 @@ SOFTWARE.
             key = signature;
             reset("刚开始观测");
           }
+          if (previous?.lastTick === p.lastTick) return report(p);
           const counts = inventory(p),
             snap = {
               ...p,
@@ -1860,6 +1861,8 @@ SOFTWARE.
         function report(p) {
           const zone = p?.route?.zoneId;
           if (zone == null || key === null) return null;
+          const retained = history?.total("combat:" + key, p.id),
+            useHistory = retained?.seconds > 0;
           const cutoff = p.lastTick - RATE_WINDOW,
             recent = { ticks: 0, kills: 0, deaths: 0 },
             totals = {
@@ -1873,26 +1876,25 @@ SOFTWARE.
               unknownFood: 0,
             };
           for (const s of segments) {
+            if (useHistory && s.end <= p.lastTick - EPH_WINDOW) continue;
             const ticks = s.end - s.start,
               factor = Math.max(0, s.end - Math.max(s.start, cutoff)) / ticks;
-            totals.ticks += ticks * factor;
-            totals.kills += s.kills * factor;
-            totals.deaths += s.deaths * factor;
-            totals.unknownFood += s.unknownFood * factor;
             const recentFactor =
               Math.max(0, s.end - Math.max(s.start, p.lastTick - EPH_WINDOW)) / ticks;
             recent.ticks += ticks * recentFactor;
             recent.kills += s.kills * recentFactor;
             recent.deaths += s.deaths * recentFactor;
+            if (useHistory) continue;
+            totals.ticks += ticks * factor;
+            totals.kills += s.kills * factor;
+            totals.deaths += s.deaths * factor;
+            totals.unknownFood += s.unknownFood * factor;
             for (const name of ["outputs", "inputs", "food", "xp"])
               for (const [id, n] of Object.entries(s[name])) add(totals[name], id, n * factor);
           }
-          if (history) {
-            const retained = history.total("combat:" + key, p.id);
-            if (retained.seconds > 0) {
-              Object.assign(totals, retained);
-              totals.ticks = retained.seconds / 0.6;
-            }
+          if (useHistory) {
+            Object.assign(totals, retained);
+            totals.ticks = retained.seconds / 0.6;
           }
           const factor = totals.ticks ? 6000 / totals.ticks : 0,
             hour = { ticks: 6000, outputs: {}, inputs: {}, xp: {}, food: {} };
@@ -3553,8 +3555,11 @@ SOFTWARE.
               }
               break;
             case "snapshot":
-              // The native handler adopts this exact parsed object, then advances it.
-              if (frame.tick < (state.player?.lastTick ?? 0) - 9) break;
+              // The native client rejects frames >5 ticks behind lastStepped
+              // (Omo in 1.0.3235). Following a rejected snapshot leaves us holding
+              // an object the client never advances, freezing the income clock
+              // while received loot continues to accumulate in its numerator.
+              if (frame.tick < (state.player?.lastTick ?? 0) - 5) break;
               if (validPlayer(m.you)) detachedPlayer = detached;
               if (validPlayer(m.you)) {
                 state.player = m.you;
@@ -3992,6 +3997,7 @@ SOFTWARE.
           key = signature;
           reset("刚开始观测");
         }
+        if (previous?.lastTick === p.lastTick) return report(p);
         const counts = inventory(p),
           snap = {
             ...p,
@@ -4093,6 +4099,8 @@ SOFTWARE.
       function report(p) {
         const zone = p?.route?.zoneId;
         if (zone == null || key === null) return null;
+        const retained = history?.total("combat:" + key, p.id),
+          useHistory = retained?.seconds > 0;
         const cutoff = p.lastTick - RATE_WINDOW,
           recent = { ticks: 0, kills: 0, deaths: 0 },
           totals = {
@@ -4106,26 +4114,25 @@ SOFTWARE.
             unknownFood: 0,
           };
         for (const s of segments) {
+          if (useHistory && s.end <= p.lastTick - EPH_WINDOW) continue;
           const ticks = s.end - s.start,
             factor = Math.max(0, s.end - Math.max(s.start, cutoff)) / ticks;
-          totals.ticks += ticks * factor;
-          totals.kills += s.kills * factor;
-          totals.deaths += s.deaths * factor;
-          totals.unknownFood += s.unknownFood * factor;
           const recentFactor =
             Math.max(0, s.end - Math.max(s.start, p.lastTick - EPH_WINDOW)) / ticks;
           recent.ticks += ticks * recentFactor;
           recent.kills += s.kills * recentFactor;
           recent.deaths += s.deaths * recentFactor;
+          if (useHistory) continue;
+          totals.ticks += ticks * factor;
+          totals.kills += s.kills * factor;
+          totals.deaths += s.deaths * factor;
+          totals.unknownFood += s.unknownFood * factor;
           for (const name of ["outputs", "inputs", "food", "xp"])
             for (const [id, n] of Object.entries(s[name])) add(totals[name], id, n * factor);
         }
-        if (history) {
-          const retained = history.total("combat:" + key, p.id);
-          if (retained.seconds > 0) {
-            Object.assign(totals, retained);
-            totals.ticks = retained.seconds / 0.6;
-          }
+        if (useHistory) {
+          Object.assign(totals, retained);
+          totals.ticks = retained.seconds / 0.6;
         }
         const factor = totals.ticks ? 6000 / totals.ticks : 0,
           hour = { ticks: 6000, outputs: {}, inputs: {}, xp: {}, food: {} };
@@ -4742,7 +4749,7 @@ SOFTWARE.
       // otherwise 1440 per-sample rows hold minutes instead of twelve hours.
       const buckets = new Map();
       function merge(row, value) {
-        row.at = Math.max(row.at, value.at);
+        row.at = Math.max(row.at ?? value.at, value.at);
         row.seconds += value.seconds;
         for (const name of ["outputs", "inputs", "food", "xp"]) add(row[name], value[name]);
         for (const name of ["kills", "deaths", "unknownFood", "attempts"])
@@ -4755,9 +4762,61 @@ SOFTWARE.
         else buckets.set(id, row);
       }
       rows = [...buckets.values()];
-      const baselines = new Map();
-      function prune() {
-        rows = rows.filter((r) => r.at <= now() && now() - r.at <= AGE).slice(-1440);
+      const baselines = new Map(),
+        totals = new Map();
+      const ledgerId = (key, account) => JSON.stringify([key, account]);
+      const bucketId = (row) => JSON.stringify([row.key, row.account, Math.floor(row.at / 60000)]);
+      const empty = () => ({
+        seconds: 0,
+        outputs: {},
+        inputs: {},
+        food: {},
+        xp: {},
+        kills: 0,
+        deaths: 0,
+        unknownFood: 0,
+        attempts: 0,
+      });
+      const copy = (value) => ({
+        ...value,
+        ...Object.fromEntries(
+          ["outputs", "inputs", "food", "xp"].map((name) => [name, { ...value[name] }]),
+        ),
+      });
+      let nextPrune = Infinity,
+        lastNow = now();
+      function index() {
+        buckets.clear();
+        totals.clear();
+        nextPrune = Infinity;
+        for (const row of rows) {
+          buckets.set(bucketId(row), row);
+          nextPrune = Math.min(nextPrune, row.at + AGE + 1);
+          const id = ledgerId(row.key, row.account);
+          let out = totals.get(id);
+          if (!out) {
+            out = {
+              ...empty(),
+              key: row.key,
+              account: row.account,
+              jobId: row.jobId,
+              zone: row.zone,
+            };
+            totals.set(id, out);
+          }
+          merge(out, row);
+        }
+      }
+      index();
+      function prune(at = now()) {
+        // Rows expire at their last sample, including the boundary millisecond.
+        // Rebuild only when a row can expire, the budget is exceeded, or the
+        // system clock moves backwards; ordinary reads never walk the history.
+        if (at >= nextPrune || at < lastNow || rows.length > 1440) {
+          rows = rows.filter((r) => r.at <= at && at - r.at <= AGE).slice(-1440);
+          index();
+        }
+        lastNow = at;
       }
       function record(key, account, value) {
         if (
@@ -4768,12 +4827,9 @@ SOFTWARE.
           value.seconds < 0
         )
           return;
-        prune();
-        const at = now(),
-          minute = Math.floor(at / 60000);
-        const old = rows.findLast(
-          (r) => r.key === key && r.account === account && Math.floor(r.at / 60000) === minute,
-        );
+        const at = now();
+        prune(at);
+        const old = buckets.get(JSON.stringify([key, account, Math.floor(at / 60000)]));
         const row = old || {
           key,
           account,
@@ -4791,28 +4847,25 @@ SOFTWARE.
           zone: value.zone ?? null,
         };
         merge(row, { ...value, at });
-        if (!old) rows.push(row);
+        if (!old) {
+          rows.push(row);
+          buckets.set(bucketId(row), row);
+          nextPrune = Math.min(nextPrune, at + AGE + 1);
+        }
+        const id = ledgerId(key, account);
+        let out = totals.get(id);
+        if (!out) {
+          out = { ...empty(), key, account, jobId: row.jobId, zone: row.zone };
+          totals.set(id, out);
+        }
+        merge(out, { ...value, at });
+        prune(at);
       }
       function total(key, account) {
         prune();
-        const out = {
-          seconds: 0,
-          outputs: {},
-          inputs: {},
-          food: {},
-          xp: {},
-          kills: 0,
-          deaths: 0,
-          unknownFood: 0,
-          attempts: 0,
-        };
-        for (const r of rows)
-          if (r.account === account && r.key === key) {
-            out.seconds += r.seconds;
-            for (const name of ["outputs", "inputs", "food", "xp"]) add(out[name], r[name]);
-            for (const name of ["kills", "deaths", "unknownFood", "attempts"])
-              out[name] += r[name] || 0;
-          }
+        const value = totals.get(ledgerId(key, account));
+        if (!value) return empty();
+        const { key: _, account: __, jobId, zone, at, ...out } = copy(value);
         return out;
       }
       return {
@@ -4843,37 +4896,16 @@ SOFTWARE.
         },
         recent(account) {
           prune();
-          const tasks = new Map();
-          for (const r of rows) {
-            if (r.account !== account || !r.key.startsWith("actual:")) continue;
-            let out = tasks.get(r.key);
-            if (!out) {
-              out = {
-                key: r.key,
-                jobId: r.jobId,
-                zone: r.zone,
-                seconds: 0,
-                outputs: {},
-                inputs: {},
-                food: {},
-                xp: {},
-                kills: 0,
-                deaths: 0,
-                unknownFood: 0,
-                attempts: 0,
-              };
-              tasks.set(r.key, out);
-            }
-            out.seconds += r.seconds;
-            for (const name of ["outputs", "inputs", "food", "xp"]) add(out[name], r[name]);
-            for (const name of ["kills", "deaths", "unknownFood", "attempts"])
-              out[name] += r[name] || 0;
-          }
-          return [...tasks.values()];
+          return [...totals.values()]
+            .filter((r) => r.account === account && r.key.startsWith("actual:"))
+            .map((value) => {
+              const { account: _, at, ...out } = copy(value);
+              return out;
+            });
         },
         snapshot() {
           prune();
-          return { rows };
+          return { clockRevision: 1, rows };
         },
       };
     }
@@ -5276,6 +5308,9 @@ SOFTWARE.
     const en = {
       "先完成其他目标，再升 {rooms}": "Finish other targets before upgrading {rooms}",
       "[SIK] 家园采购": "[SIK] Home supplies",
+      家园点数总览: "Home point overview",
+      "汇总同类建筑升级缺口，显示精确购买点数，支持自定目标。":
+        "Sum upgrade shortfalls by point type, show exact purchase totals and support custom targets.",
       家园采购清单: "Home supply list",
       "设置设施目标等级，在家园和市场显示点数缺口与采购数量。":
         "Set station target levels and show point shortfalls and purchase quantities at home and in the market.",
@@ -23547,7 +23582,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.90";
+  const PLUGIN_VERSION = "0.4.91";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -24813,10 +24848,23 @@ SOFTWARE.
     historicalCache,
     purchaseCache,
   );
-  let observationSaved = null;
-  try {
-    observationSaved = JSON.parse(localStorage.getItem("dvi-insights.observations.v1") || "null");
-  } catch {}
+  function loadObservationHistory(storage) {
+    try {
+      const raw = storage.getItem("dvi-insights.observations.v1"),
+        saved = JSON.parse(raw || "null");
+      if (saved && saved.clockRevision !== 1) {
+        // Old samples may have received loot while following a rejected native
+        // snapshot. Their missing elapsed time cannot be reconstructed honestly.
+        const backup = "dvi-insights.observations.before-clock-fix.v1";
+        if (!storage.getItem(backup)) storage.setItem(backup, raw);
+        return null;
+      }
+      return saved;
+    } catch {
+      return null;
+    }
+  }
+  let observationSaved = loadObservationHistory(localStorage);
   const observationHistory = globalThis.DVIObservations.create({ saved: observationSaved });
   let observationSavedAt = 0;
   function saveObservations(force = false) {
@@ -26115,6 +26163,7 @@ SOFTWARE.
   }
   const homeStyle = document.createElement("style");
   homeStyle.textContent = `
+.away-timers.dvi-home-timers-owned>.away-timers-list{display:none!important;}
 /* Native 1.0.3025 hides map controls behind windows. Keep only absent mobile-tab handling. */
 html.dvi-insights.m-on :is(.rise-pop,.build-pop,.away-timers){z-index:4!important;}
 html.dvi-insights.m-on:not([data-mtab="world"]) :is(.rise-pop,.build-pop,.away-timers){visibility:hidden!important;pointer-events:none!important;}
@@ -26132,6 +26181,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
   const homeTracker = createHomeTracker(GAME_DATA.rooms, savedHome);
   let homeSaved = "",
     homeNotice = null;
+  const homeTimerViews = new WeakMap();
   function saveHomeTracker() {
     const value = JSON.stringify(homeTracker.snapshot());
     if (value === homeSaved) return;
@@ -26152,12 +26202,25 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       host = document.querySelector(".away-timers");
     if (p && host) {
       // 1.0.3235 retains the outer box, editor frame and inner list by reference.
-      const list = host.querySelector(".away-timers-list") || host;
+      const nativeList = host.querySelector(".away-timers-list");
+      let list = host;
+      if (nativeList) {
+        // Never share the native renderer's content target: it replaces it each second.
+        list = homeTimerViews.get(host);
+        if (!list?.isConnected) {
+          list = document.createElement("div");
+          list.className = "dvi-home-timer-list";
+          list.dataset.noI18n = "";
+          host.append(list);
+          homeTimerViews.set(host, list);
+        }
+        host.classList.add("dvi-home-timers-owned");
+      }
       const tasks = homeTasks(p, GAME_DATA.rooms),
         compact =
           document.documentElement.classList.contains("m-on") ||
           tasks.length * 20 > window.innerHeight - 192,
-        icon = list.querySelector(".away-timer-icon")?.innerHTML || "";
+        icon = nativeList?.querySelector(".away-timer-icon")?.innerHTML || "";
       const html = homeTimerHtml(tasks, p.lastTick, compact, icon);
       if (list.innerHTML !== html) list.innerHTML = html;
       const title = tasks
@@ -31818,29 +31881,9 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   function polishFields() {
     for (const fields of document.querySelectorAll("[data-fields]:not([hidden])")) {
       for (const line of fields.querySelectorAll(".field-line:not(.dvi-field-tile)")) {
-        // Keep 1.0.2704's original crop select and the two native tick targets.
-        if (
-          line.matches(".field-row,.field-locked") ||
-          line.querySelector("[data-plot-choice],[data-field-status]")
-        ) {
-          line.classList.add("dvi-field-tile");
-          continue;
-        }
-        const original = line.textContent.trim(),
-          parts = original.split(/\s*·\s*/),
-          number = parts[0].match(/\d+/)?.[0];
-        if (!number) continue;
+        // The native row owns its selects, options, buttons and tick references.
+        // Unknown/older markup gets the same styling without reconstructing it.
         line.classList.add("dvi-field-tile");
-        const head = document.createElement("span"),
-          badge = document.createElement("b"),
-          name = document.createElement("span"),
-          status = document.createElement("small");
-        head.className = "dvi-field-name";
-        badge.textContent = number;
-        name.textContent = parts.length > 2 ? parts[1] : "";
-        head.append(badge, name);
-        status.textContent = parts.slice(parts.length > 2 ? 2 : 1).join(" · ");
-        line.replaceChildren(head, status);
       }
       const hint = fields.querySelector(":scope>.field-hint,:scope>.field-scroll>.field-hint");
       if (hint) {
@@ -33559,6 +33602,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (changes.some((change) => change.target.matches?.("[data-buffs],[data-buff-sheet]")))
       syncBuffs();
     if (changes.some((change) => change.target.matches?.(".away-timers"))) syncHomeTimers();
+    // Reattach the same local panel and relocate fresh native controls before paint.
     // The game's pointermove handler replaces the tooltip contents on every move.
     // Restore prices in this microtask, before paint, instead of the 80ms scan.
     if (changes.some((change) => change.target.matches?.(".tip[data-tip]"))) syncNativeTip();

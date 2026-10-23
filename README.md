@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.90
+# [SIK] DVI Insights 0.4.91
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.90：适配正式服1.0.3235。家园计时保留新版可拖动外框、布局编辑控件及原生点击监听器，只更新内部中文列表与完成排序。核对强化、配方和家园成本，强化仍30秒。保留经验预估、观测续记和本地快照导出。家园采购试用未加入公开包。
+0.4.91：修复延迟快照导致观测计时停住或走慢、每日收入被抬高的问题，快照接收规则与原生客户端一致。升级会在本地备份旧观测记录并重新观测，设置和行情缓存保留。减少长历史和战斗采样的重复汇总；修正家园计时闪烁，农田保留原生“不使用”选项。家园总览已撤回，不包含购买操作增强。尚不宣称所有实际挂机卡顿均已解决。
 
 
 
@@ -53,7 +53,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.90 supports live 1.0.3235. Home timers preserve the native movable box, layout editor controls and click handler while updating only the translated, sorted inner list. Calculation rules remain unchanged, including 30-second enhancement attempts. Independent XP forecasts, observation history and snapshot downloads remain available. The home procurement trial is excluded.
+0.4.91 aligns delayed snapshot acceptance with the native client, fixing stalled or slow observation clocks and inflated daily income. Old observation records are backed up locally before measurements restart; settings and price caches are retained. Incremental history totals and less repeated combat aggregation reduce CPU work. Home timers no longer compete with native redraws, and farming retains the native unused-field option. The withdrawn home overview is excluded. Overall long-session game lag has not yet been confirmed resolved in a live session.
 
 
 - Open game **Settings → [SIK] Insights** to control features, potion costs and update reminders. Changes apply immediately and persist in this browser; existing preferences are retained. The old work-list settings entry has been removed.
