@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.89
+// @version      0.4.90
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -19569,17 +19569,18 @@ SOFTWARE.
       "Firework powder": "烟花火药",
     },
     version: {
-      version: "1.0.3177",
+      version: "1.0.3235",
       env: "live",
-      commit: "adeaabb5",
-      branch: "revert-1198",
-      subject: "Changelog 1.0.1200: Bug fix, EN and ZH",
-      committedAt: "2026-10-22T05:42:33+02:00",
-      dirty: false,
-      builtAt: "2026-10-22T03:52:09.856Z",
+      commit: "aa3eeab1",
+      branch: "modmail",
+      subject:
+        "Hotfix: home timers hold their box, and rebuild a list that was dropped, instead of throwing every frame (1.0.1201: black map for some players)",
+      committedAt: "2026-10-23T12:55:03+02:00",
+      dirty: true,
+      builtAt: "2026-10-23T11:07:14.867Z",
     },
-    clientAsset: "index-D-DH9jHm.js",
-    sourceSha256: "5c48869cce956497c847198b8828fe01b5eda875e7c4e3222fd4e742bccb2868",
+    clientAsset: "index-t_ec2EGN.js",
+    sourceSha256: "62044383f2435db28a74a37c41ca95315d9e7031a01ca05d0c974c394708e77b",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -23546,7 +23547,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.89";
+  const PLUGIN_VERSION = "0.4.90";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -26150,13 +26151,15 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     const p = store.state.player,
       host = document.querySelector(".away-timers");
     if (p && host) {
+      // 1.0.3235 retains the outer box, editor frame and inner list by reference.
+      const list = host.querySelector(".away-timers-list") || host;
       const tasks = homeTasks(p, GAME_DATA.rooms),
         compact =
           document.documentElement.classList.contains("m-on") ||
           tasks.length * 20 > window.innerHeight - 192,
-        icon = host.querySelector(".away-timer-icon")?.innerHTML || "";
+        icon = list.querySelector(".away-timer-icon")?.innerHTML || "";
       const html = homeTimerHtml(tasks, p.lastTick, compact, icon);
-      if (host.innerHTML !== html) host.innerHTML = html;
+      if (list.innerHTML !== html) list.innerHTML = html;
       const title = tasks
         .map(
           (task) =>
