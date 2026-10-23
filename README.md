@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.91
+# [SIK] DVI Insights 0.4.92
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.91：修复延迟快照导致观测计时停住或走慢、每日收入被抬高的问题，快照接收规则与原生客户端一致。升级会在本地备份旧观测记录并重新观测，设置和行情缓存保留。减少长历史和战斗采样的重复汇总；修正家园计时闪烁，农田保留原生“不使用”选项。家园总览已撤回，不包含购买操作增强。尚不宣称所有实际挂机卡顿均已解决。
+0.4.92：修复与精通助手等消息监听脚本共用时观测停住、显示旧任务及日收入偏高：只读跟踪游戏实际运行角色，每条消息只入账一次，其他脚本再次解析不再替换角色或重复记产出。升级先本地备份旧观测再重新计时，设置及行情保留。沿用历史性能优化、家园计时和农田兼容修正；已取消的家园总览不打包。尚不宣称所有实际挂机卡顿均已解决。
 
 
 
@@ -53,7 +53,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.91 aligns delayed snapshot acceptance with the native client, fixing stalled or slow observation clocks and inflated daily income. Old observation records are backed up locally before measurements restart; settings and price caches are retained. Incremental history totals and less repeated combat aggregation reduce CPU work. Home timers no longer compete with native redraws, and farming retains the native unused-field option. The withdrawn home overview is excluded. Overall long-session game lag has not yet been confirmed resolved in a live session.
+0.4.92 fixes stalled observation clocks, stale task displays and inflated daily income when other scripts also parse received messages. It reads the actual native character and accounts for each socket receipt once, independent of extra JSON parsing. Old observations are backed up locally before measurements restart; settings and price caches are retained. History CPU optimizations, stable home timers and native farming controls remain. The withdrawn home overview is excluded. Overall long-session game lag has not yet been confirmed resolved in a live session.
 
 
 - Open game **Settings → [SIK] Insights** to control features, potion costs and update reminders. Changes apply immediately and persist in this browser; existing preferences are retained. The old work-list settings entry has been removed.

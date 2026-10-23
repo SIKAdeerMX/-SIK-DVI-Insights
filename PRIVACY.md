@@ -29,6 +29,7 @@ Local storage entries on the game origin:
 | `dvi-insights.update-check.v1` | Last check attempt/success times, a failure flag, latest public version and dismissed version; no character data |
 | `dvi-insights.observations.v1` | Up to 1,440 observation buckets from the last 12 hours: internal character ID, task/configuration signature, observed duration, item/XP/consumption counters; no unobserved time or coordinates |
 | `dvi-insights.observations.before-clock-fix.v1` | One local backup of the old observation buckets when upgrading to the corrected snapshot clock; excluded from active calculations and kept until manually removed |
+| `dvi-insights.observations.before-socket-fix.v1` | One local backup of 0.4.91 observations when upgrading to single-receipt socket accounting; excluded from active calculations and kept until manually removed |
 | `dvi-insights.boss-records.v1` | Up to 30 personal boss results: internal character ID, boss identity, received own rank/damage, completion flag, loot system-notice payload and timestamps; no other players' identities or ordinary chat |
 
 The offline baseline is overwritten with the latest snapshot. It contains no character name, account credentials, chat, or movement history. Market settlement records used to reconcile an in-tab away report stay in page memory and are reset on a new welcome message. Public historical estimates expire after seven days; cached ask estimates expire after one day. Each saved price cache is limited to 2,000 variants.
@@ -36,6 +37,8 @@ The offline baseline is overwritten with the latest snapshot. It contains no cha
 Observation history uses observed active time only; it excludes task-switch and unobserved disconnect gaps. Offline settlements are shown separately. Records are isolated by internal character ID. Expected combat samples are also isolated by zone, equipment and food settings. Observation buckets expire after twelve hours; the boss ledger keeps only the latest thirty results. All remain on the current game origin and are never uploaded.
 
 0.4.91 restarts observations because delayed snapshots could have corrupted their time denominator. The previous counters are backed up once locally for recovery, without uploading them or reusing them in current income estimates. 后续正常观测仍保留近12小时；0.4.91升级时旧样本另存一份本地备份，不继续参与日收入计算，备份可手动删除，设置与行情缓存保留。
+
+0.4.92 reads the game's exposed `deepvein.session.state` only as character data and never invokes its methods. It listens once per received socket message; other scripts' repeated JSON parsing does not count as another receipt. 0.4.91 observations are backed up separately because coexistence could have duplicated output or frozen their denominator. Only new corrected observations enter current income estimates. 0.4.92仅只读游戏公开的当前角色对象，不调用session方法；共用脚本造成的重复解析不再重复入账，旧观测另行本地备份后重新开始。
 
 The script reads the game’s existing `deepvein.locale` language setting without writing to it. It also reads the game's existing `deepvein-seen` record to align the native away summary. It does not write to that entry. To remove the script's saved data, disable the script and remove only its entries listed above from the site's local storage. Uninstalling a userscript may leave site local storage behind.
 

@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.91
+// @version      0.4.92
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -3311,8 +3311,19 @@ SOFTWARE.
         state.books[value.itemId] = { ...old, ...copy, at: now() };
       }
       let detachedPlayer = false,
-        observedTick = null;
+        observedTick = null,
+        readLivePlayer = null;
+      function syncLivePlayer() {
+        try {
+          const live = readLivePlayer?.();
+          if (validPlayer(live) && (!state.player || live.id === state.player.id)) {
+            state.player = live;
+            detachedPlayer = false;
+          }
+        } catch {}
+      }
       function observationPlayer() {
+        syncLivePlayer();
         const p = state.player;
         if (
           !p ||
@@ -3328,6 +3339,7 @@ SOFTWARE.
         return { ...p, lastTick: observedTick };
       }
       function receive(frame, { detached = false } = {}) {
+        syncLivePlayer();
         // The game parses its own last-seen record immediately before building an
         // in-tab away report. Observe that already-read record, without querying.
         if (
@@ -3707,6 +3719,7 @@ SOFTWARE.
               break;
           }
         }
+        syncLivePlayer();
         if (changed) {
           if (
             frame.m.some((m) =>
@@ -3736,6 +3749,10 @@ SOFTWARE.
         state,
         receive,
         observationPlayer,
+        useLivePlayer(reader) {
+          readLivePlayer = reader;
+          syncLivePlayer();
+        },
         refreshBooks(books) {
           state.books = books;
           state.quoteRevision++;
@@ -3788,33 +3805,54 @@ SOFTWARE.
     }
     function install(page, store) {
       const nativeParse = page.JSON.parse;
-      let lastFrame = null,
-        active = true;
+      let active = true,
+        socketObserved = false,
+        socketGeneration = 0;
+      store.useLivePlayer(() => page.deepvein?.session?.state);
+      const parsedThisTurn = new Set();
       function observedParse(...args) {
         const result = Reflect.apply(nativeParse, this, args);
         try {
-          if (typeof args[0] === "string") {
-            if (Array.isArray(result?.m) && Number.isSafeInteger(result.tick)) lastFrame = args[0];
-            store.receive(result);
+          if (active && typeof args[0] === "string") {
+            const frame = Array.isArray(result?.m) && Number.isSafeInteger(result.tick);
+            // Once the real socket is observed, unrelated listeners parsing the
+            // same text are not another receipt. Keep the parser only as fallback
+            // and for the game's local last-seen record used in away accounting.
+            if (!frame) store.receive(result);
+            else if (!socketObserved && !parsedThisTurn.has(args[0])) {
+              parsedThisTurn.add(args[0]);
+              queueMicrotask(() => parsedThisTurn.clear());
+              store.receive(result);
+            }
           }
         } catch {}
         return result;
       }
       page.JSON.parse = observedParse;
-      // Some mobile script managers/other scripts retain an earlier parser.
-      // Observe already received socket text too, after the client's listener.
-      // The normal parser path wins, retaining the client's live player object.
+      // One receipt per native socket event, after all synchronous listeners.
+      // Never reuse another script's JSON copy as the live character. The game
+      // exposes session.state for read-only observation; no session method runs.
       const NativeSocket = page.WebSocket;
       const Socket =
         typeof NativeSocket === "function"
           ? new Proxy(NativeSocket, {
               construct(target, args, newTarget) {
                 const socket = Reflect.construct(target, args, newTarget);
+                if (page.location) {
+                  try {
+                    const url = new URL(String(args[0]), page.location.href);
+                    if (url.host !== page.location.host || url.pathname !== "/ws") return socket;
+                  } catch {
+                    return socket;
+                  }
+                }
+                socketObserved = true;
+                const generation = ++socketGeneration;
                 socket.addEventListener("message", (event) => {
                   const raw = event.data;
                   if (typeof raw !== "string") return;
                   queueMicrotask(() => {
-                    if (!active || raw === lastFrame) return;
+                    if (!active || generation !== socketGeneration) return;
                     try {
                       store.receive(Reflect.apply(nativeParse, page.JSON, [raw]), {
                         detached: true,
@@ -4905,7 +4943,7 @@ SOFTWARE.
         },
         snapshot() {
           prune();
-          return { clockRevision: 1, rows };
+          return { clockRevision: 2, rows };
         },
       };
     }
@@ -23582,7 +23620,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.91";
+  const PLUGIN_VERSION = "0.4.92";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -24852,10 +24890,13 @@ SOFTWARE.
     try {
       const raw = storage.getItem("dvi-insights.observations.v1"),
         saved = JSON.parse(raw || "null");
-      if (saved && saved.clockRevision !== 1) {
+      if (saved && saved.clockRevision !== 2) {
         // Old samples may have received loot while following a rejected native
         // snapshot. Their missing elapsed time cannot be reconstructed honestly.
-        const backup = "dvi-insights.observations.before-clock-fix.v1";
+        const backup =
+          saved.clockRevision === 1
+            ? "dvi-insights.observations.before-socket-fix.v1"
+            : "dvi-insights.observations.before-clock-fix.v1";
         if (!storage.getItem(backup)) storage.setItem(backup, raw);
         return null;
       }
