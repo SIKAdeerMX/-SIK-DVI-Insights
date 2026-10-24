@@ -1,16 +1,16 @@
-# [SIK] DVI Insights 0.4.95
+# [SIK] DVI Insights 0.4.102
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.95：功能开关从12项细分为22项，工作/战斗目标计算、当前工作/战斗、离线收支、药水详情、仓库/市场排序等可分别控制，旧关闭偏好自动迁移。减少Worker静态数据重复传输，限制计算与寻路缓存，闲置Worker自动释放，后台暂停界面扫描；过滤无变化DOM通知，并提供可独立关闭的原生信息面板重复写入优化。保留游戏时钟、原生操作和有效观测；本次不重置0.4.92及后续有效账本。上述是具体路径的减负，不代表已定位或解决全部用户的长期卡顿。
+0.4.102：合入原生家园界面美化、紧凑建筑卡片、状态筛选及下一等级点数缺口，家园点数行情显示原生物品贴图、有效点价与挂牌参考，三项分别可关。掉落日志仅打开或内容变化时生成，图标按需缓存，取消全页预扫描；原生信息节点复用，收起的工作/战斗列表不再做无用更新。保留原设置、有效观测和原生操作，不新增诊断工具或游戏指令。
 
 
 
 [SIK] DVI信息增强为 Deep Vein Idle 补充经验、材料、时间与收支信息，沿用游戏面板和主题配色。
 
-- 游戏「设置」内的 **[SIK] Insights** 专属页管理22个功能开关、药水成本和更新提醒。列表预估与目标升级计算、当前工作与战斗统计、离线收支和行动药水、仓库与市场排序分别控制；关闭后停止对应计算或记录。原生信息面板重复写入优化可单独关闭对照。更改即时生效、保存在当前浏览器，沿用既有配置。
+- 游戏「设置」内的 **[SIK] Insights** 专属页管理25个功能开关、药水成本和更新提醒。列表预估与目标升级计算、当前工作与战斗统计、离线收支和行动药水、仓库与市场排序分别控制；关闭后停止对应计算或记录。原生信息面板重复写入优化可单独关闭对照。更改即时生效、保存在当前浏览器，沿用既有配置。
 
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
 - 装备标题栏显示穿戴装备参考估值 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；查看其他玩家时只显示总分。为排除代强化挂单，强化装备不采用 +N 挂单或历史成交，使用同品质底装价加统一强化100级、无精通/家园的重做期望成本，计失败回退、碎片或核心、保护卷轴并比较保护起点。参考标≈；缺保护报价或旧超限装备仅显示已知下限（≥）。未强化底装仍沿用有效报价、历史、缓存或商人兜底。分数不是原生P50、实际投入、成交价值或战斗力，不含家园；市场和仓库报价保持真实来源。
@@ -30,6 +30,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 战斗期望收入包含按攻击机会与各品质概率计算的随机坐骑掉落；实际掉落收入单独记账。铁人账号按商人计价，普通账号保留买卖分价、税费和有限订单深度。
 - 手机市场优化输入框和触摸操作，减少 Safari 输入时自动放大及滑动物品时的重复估价刷新，保留滚动与双指缩放。
 - 世界首领同一次召唤的动画跨刷新去重；价值排序在打开快速出售、选择物品和筛选时保持，仅切换原生排序时退出。
+- 家园新增外观美化、购点素材点价和点数行情三个独立开关：紧凑等高建筑卡片、状态筛选及下一等级有效缺口，原生购买/升级/建造控件保留；行情按材料、物品、技能和品质筛选，每类前五项，显示原生贴图、已知买单和有来源的挂牌参考，参考不代表利润或成交保证。不自动购买、代填或远程升级。
 - 家园地图标签的弹窗遮挡使用原生处理；右上角计时按剩余时间排序，手机显示最近完工项目。房间建成、设施升级后显示一次可关闭的提醒，已记录工程支持离线补报，取消工程不误报。
 - 战斗列表刷新时保留浏览位置和已展开明细，减少滚动回跳，兼顾手机窄屏。
 - 物品提示补充求购、挂售和商人价格；买入缺价时可参考已接收的公开历史成交与一天内的报价缓存。被动行情接收增加兜底，切到后台及时保存价格，收到成交价后刷新期望日利；缺价时列出具体物品。
@@ -53,10 +54,10 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.95 expands feature controls from 12 to 22, separating list forecasts, target-level calculations, current work/combat statistics, offline accounting, potion details and bank/market sorting. Existing disabled preferences migrate automatically. Static facts are sent once per Worker; forecast/path caches are bounded and idle Workers are released. Background UI scans pause, unchanged DOM notifications are filtered, and native information-panel write deduplication has its own switch. Game timing, native controls and valid observations are retained; this update does not reset valid ledgers from 0.4.92 onward. These changes reduce specific sources of overhead; they do not establish that all users' long-session lag has been resolved.
+0.4.102 adds native Home styling, compact building cards, state filters and next-level point shortfalls, plus a separately controlled Home material-price view with native item art and sourced price references. Loot content is generated only while open or changed, icons are cached on demand, native information nodes are reused, and closed route lists skip unnecessary updates. Existing settings, valid observations and native controls are retained. No diagnostics or gameplay commands are added.
 
 
-- Open game **Settings → [SIK] Insights** for 22 feature switches, potion costs and update reminders. Separately control list forecasts and target-level calculations, current work/combat statistics, offline accounting, action potion details, and bank/market value sorting. Disabled functions stop their calculations or recording. Native information-panel write deduplication can be switched off for comparison. Changes apply immediately and persist in this browser; existing preferences are retained.
+- Open game **Settings → [SIK] Insights** for 25 feature switches, potion costs and update reminders. Separately control list forecasts and target-level calculations, current work/combat statistics, offline accounting, action potion details, and bank/market value sorting. Disabled functions stop their calculations or recording. Native information-panel write deduplication can be switched off for comparison. Changes apply immediately and persist in this browser; existing preferences are retained.
 
 - Active tasks show observed duration and resume matching samples from the last twelve hours across task switches, stops and reloads. Combat expectations separate zone, equipment and food configurations. Unobserved gaps are excluded; offline settlements remain separate and show a daily profit estimate over effective duration, or income only when costs are incomplete.
 - Equipment score is reference worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Enhanced listings and trades may be service escrow, so the score uses the same-quality base price plus expected rebuilding cost at a shared Enhancing 100 baseline, with no mastery/home bonus. Includes failures, shards or cores, and protection scrolls, comparing protection thresholds. References show ≈; missing scroll quotes or legacy levels show only known lower bounds (≥). Base prices retain quote/history/cache/vendor fallbacks. This is not native P50, actual spending, resale value or combat power, and excludes home. Market and bank quotes remain unchanged. Inspecting another player shows only the total.
@@ -88,6 +89,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Guild pages retain the previous native buttons, level emblem, notice paper and reward shelf. Notices, rules and recruitment default to reading mode. Native Save acknowledgement closes editing; drafts stay only in page memory. Vein Colossus, Frost Leviathan and Ember Wyrm each have Chinese/English name artwork in mineral, frost and ember themes, with three brief sparkles and no plaque. Damage rankings support three-digit and longer ranks. Native Minecraft XP orb art is embedded; provisions use the current food and the actual potion icon with the shortest remaining time.
 - Bank and market My items hide estimates by default. Sort by value reveals stack values in the upper left with up to two decimal places, as plain numbers without a background, matching the font, size and color of the corresponding native quantity and keeping its position; switching native sorting restores the native order and quantity display; quick sell retains value sorting.
 - Away summaries value item drops and coins, deducting materials, food and potion costs when a matching pre-away snapshot is available.
+- Three independent Home controls add compact native building cards, state filters, next-level point shortfalls and sourced material prices. The material view includes native item art, known bids and listing-price references. Native purchase, upgrade and build controls are retained; no automatic purchases, input filling or remote upgrades. References are estimates rather than guaranteed profit or sales.
 - Automatically follows the game’s English / Chinese language setting and light / dark theme.
 - Refines typography, numbers, buttons and tooltips with lighter text weights. Fixes crafting category layouts while retaining the native dark task panel and progress colors. Plain text tooltips follow the theme; farming tiles omit duplicate status tips.
 - A sidebar shortcut opens Alice Combat Simulator in a new tab.

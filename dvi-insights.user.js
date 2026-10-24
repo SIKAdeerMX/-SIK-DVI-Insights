@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.95
+// @version      0.4.102
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5351,6 +5351,64 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      全部设施: "All stations",
+      可升级: "Ready",
+      缺点数: "Need points",
+      未放置: "Not placed",
+      搜索设施: "Search stations",
+      "房间 {total} · 未放家具 {empty}": "Rooms {total} · Without furniture {empty}",
+      "缺口按单栋计算，共用点数": "Per-station gaps; point balances are shared",
+      "还差 {points} 点": "Need {points} more points",
+      没有符合条件的设施: "No matching stations",
+
+      "每类前五项 · 按已知金币/点排序": "Top five per material · Ranked by known coins/point",
+      "前 {count} 项": "Top {count}",
+      家园点数行情面板: "Home point market panel",
+      "独立显示各类素材的点价清单、制造品挂牌参考和已知买单；只读行情，不操作市场。":
+        "Open a separate home-point price list with crafted-item listing references and known bids. Read-only quotes; no market actions.",
+      "[SIK] 家园点数行情": "[SIK] Home point market",
+      家园点数行情: "Home point market",
+      "按素材点价比较制造品，查看挂牌参考与已知买单。":
+        "Compare crafted items by home-point price, with listing references and known bids.",
+      搜索物品: "Search items",
+      物品类型: "Item type",
+      制成品: "Crafted items",
+      装备: "Equipment",
+      全部材料: "All materials",
+      全部品质: "All qualities",
+      物品与兑换: "Item and points",
+      挂牌参考: "Listing reference",
+      买单价: "Bid price",
+      买单量未知: "Bid quantity unknown",
+      显示更多: "Show more",
+      没有符合条件的物品: "No matching items",
+      "每件 {points} 点": "{points} points/item",
+      "买单 {qty} 件": "Bid: {qty} items",
+      "显示 {shown}/{total}": "Showing {shown}/{total}",
+      "扣税后约 {coins} 金币/件": "About {coins} coins/item after tax",
+      交易税率未知: "Tax rate unknown",
+      "挂牌参考是与其他已知材料同点价的整金币上限，不含制造成本，不保证成交。买单量仅代表已知挂单；≈ 为估价。":
+        "Listing reference is the whole-coin ceiling matching other known materials per point. It excludes crafting costs and does not guarantee a sale. Bid quantities are known orders only; ≈ means estimate.",
+      素材点数: "Home points",
+      以原生报价为准: "Subject to the native quote",
+      家园点数单价: "Home point unit prices",
+      "在各类素材点数下显示最低已知金币/点参考价；不显示物品，不主动查询私有行情。":
+        "Show the lowest known coins/point estimate below each home point balance. No item list and no private market queries.",
+      家园材料性价比: "Home material value",
+      "在家园点数下显示已知报价中每点成本最低的材料、单价与来源；不主动查询私有行情。":
+        "Show the lowest known cost per home point, material price and source below home points. Never query private market data.",
+      "素材点数 · 已知报价最优材料": "Home points · Best materials at known prices",
+      暂无有效材料报价: "No valid material quotes",
+      铁人模式不使用市场: "Ironman does not use the market",
+      "金币/点": "coins/point",
+      "金币/件": "coins/item",
+      "点/件": "points/item",
+      "可售 {qty} 件": "{qty} items quoted",
+      "按金币/点比较已知报价；数量有限，原生成交可能使用多种材料。作物仅适用于部分设施。":
+        "Compare known quotes by coins per point. Stock is limited; native purchases may use several materials. Crops apply only to some stations.",
+      原生家园界面美化: "Native home appearance",
+      "美化家园建筑、升级及购买面板，适配手机；保留原生按钮和确认流程，可随时恢复原版。":
+        "Restyle native home building, upgrade and point-purchase panels for desktop and mobile. Keep the original controls and confirmations; turn off to restore the original appearance.",
       性能: "Performance",
       原生信息面板重复写入优化: "Deduplicate native information panel updates",
       "跳过信息面板相同的显隐和纯文字写入，保留游戏更新频率；可关闭对照。":
@@ -23668,7 +23726,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.95";
+  const PLUGIN_VERSION = "0.4.102";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -23793,6 +23851,26 @@ SOFTWARE.
         description: "建造或升级完成时显示提醒。",
       },
       {
+        id: "homeAppearance",
+        group: "其他",
+        name: "原生家园界面美化",
+        description:
+          "美化家园建筑、升级及购买面板，适配手机；保留原生按钮和确认流程，可随时恢复原版。",
+      },
+      {
+        id: "homeMaterialPrices",
+        requires: "homeAppearance",
+        group: "物品与行情",
+        name: "家园点数单价",
+        description: "在各类素材点数下显示最低已知金币/点参考价；不显示物品，不主动查询私有行情。",
+      },
+      {
+        id: "homeMarket",
+        group: "物品与行情",
+        name: "家园点数行情面板",
+        description: "独立显示各类素材的点价清单、制造品挂牌参考和已知买单；只读行情，不操作市场。",
+      },
+      {
         id: "bossAlerts",
         group: "增益与提醒",
         name: "世界首领出场特效",
@@ -23863,14 +23941,17 @@ SOFTWARE.
       }
       return true;
     }
-    function create(doc) {
+    function create(doc, now = Date.now) {
       const page = doc.defaultView,
         descriptors = {
           hidden: Object.getOwnPropertyDescriptor(page.HTMLElement.prototype, "hidden"),
           textContent: Object.getOwnPropertyDescriptor(page.Node.prototype, "textContent"),
         };
       const records = new Map(),
-        stats = { hidden: 0, text: 0 };
+        stats = { hidden: 0, text: 0 },
+        selector = hiddenSelector + "," + textSelector;
+      let dirty = true,
+        nextScan = 0;
       function restore(node, record) {
         for (const [key, installed] of Object.entries(record)) {
           const current = Object.getOwnPropertyDescriptor(node, key);
@@ -23933,18 +24014,35 @@ SOFTWARE.
         }
       }
       return {
-        sync() {
+        invalidate(changes) {
+          if (dirty) return;
+          for (const change of changes)
+            if (change.type === "childList")
+              for (const node of change.addedNodes)
+                if (
+                  node.nodeType === 1 &&
+                  (node.matches?.(selector) || node.querySelector?.(selector))
+                ) {
+                  dirty = true;
+                  return;
+                }
+        },
+        sync(force = true) {
           for (const [node, record] of records)
-            if (!node.isConnected || !node.matches(hiddenSelector + "," + textSelector))
-              restore(node, record);
-          for (const [key, selector] of [
-            ["hidden", hiddenSelector],
-            ["textContent", textSelector],
-          ])
-            for (const node of doc.querySelectorAll(selector)) attach(node, key);
+            if (!node.isConnected || !node.matches(selector)) restore(node, record);
+          const at = now();
+          if (!force && !dirty && at < nextScan) return;
+          dirty = false;
+          nextScan = at + 2000;
+          for (const node of doc.querySelectorAll(selector)) {
+            if (node.matches(hiddenSelector)) attach(node, "hidden");
+            if (node.matches(textSelector)) attach(node, "textContent");
+          }
         },
         dispose() {
           for (const [node, record] of records) restore(node, record);
+          dirty = true;
+          nextScan = 0;
         },
         report() {
           return { ...stats, nodes: records.size };
@@ -26648,7 +26746,11 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       : name;
   }
   const logItemArt = new Map(),
-    lootChatViews = new WeakMap();
+    lootChatViews = new WeakMap(),
+    logRenderedArt = new Map(),
+    logMissingArt = new Set();
+  let logArtRevision = 0,
+    logArtMissing = false;
   function disposeLootChat(chat) {
     const view = lootChatViews.get(chat);
     if (!view) return;
@@ -26670,17 +26772,29 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
           n.removeAttribute(a.name);
     copy.querySelectorAll("script,foreignObject").forEach((n) => n.remove());
     logItemArt.set(id % 1000, copy.outerHTML);
+    logArtRevision++;
     if (logItemArt.size > 512) logItemArt.delete(logItemArt.keys().next().value);
   }
   function logItemHtml(id, qty) {
     const tier = model.tier(id),
       rarity = ["common", "uncommon", "rare", "epic", "legendary"][tier],
-      art = actionItemIcon(id) || logItemArt.get(id % 1000) || "<span>◆</span>";
+      key = id % 1000;
+    let art = logItemArt.get(key) || logRenderedArt.get(key);
+    if (!art) {
+      if (!logMissingArt.has(key)) art = actionItemIcon(id);
+      if (art) {
+        logRenderedArt.set(key, art);
+        if (logRenderedArt.size > 512) logRenderedArt.delete(logRenderedArt.keys().next().value);
+      } else {
+        logArtMissing = true;
+        if (logMissingArt.size < 512) logMissingArt.add(key);
+      }
+    }
     return (
       '<span class="dvi-log-item rarity-' +
       rarity +
       '"><i>' +
-      art +
+      (art || "<span>◆</span>") +
       "</i><span>" +
       escape(itemName(id)) +
       "</span><b>×" +
@@ -26688,9 +26802,44 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       "</b></span>"
     );
   }
+  function renderLootChat(view) {
+    if (!view.open) return;
+    const key = [store.state.player?.id, bossRecords.revision, i18n.language, logArtRevision].join(
+        ":",
+      ),
+      now = Date.now(),
+      empty = !view.log.firstChild;
+    if (view.key === key && !empty && (!view.missing || now < view.retryAt)) return;
+    logArtMissing = false;
+    logMissingArt.clear();
+    const html =
+      view.rows
+        .map((r) => {
+          const loot = globalThis.DVIBossRecords.parseLoot(GAME_DATA, r.loot);
+          return (
+            "<article><header>" +
+            escape(recordedBossName(r.name)) +
+            "<time>" +
+            escape(new Date(r.at).toLocaleString(i18n.language === "en" ? "en-GB" : "zh-CN")) +
+            "</time></header>" +
+            (loot.coins ? logItemHtml(200, loot.coins) : "") +
+            loot.items.map((x) => logItemHtml(x.id, x.qty)).join("") +
+            loot.rest.map((x) => "<p>" + escape(x) + "</p>").join("") +
+            "</article>"
+          );
+        })
+        .join("") || '<p class="dvi-note">' + t("暂无掉落记录") + "</p>";
+    if (view.html !== html || empty) {
+      view.log.innerHTML = html;
+      view.html = html;
+    }
+    view.key = [store.state.player?.id, bossRecords.revision, i18n.language, logArtRevision].join(
+      ":",
+    );
+    view.missing = logArtMissing;
+    view.retryAt = now + 60000;
+  }
   function syncLootChat(rows) {
-    for (const slot of document.querySelectorAll(".slot[data-item]"))
-      rememberLogArt(Number(slot.dataset.item), slot.querySelector("i svg"));
     for (const chat of document.querySelectorAll(".chat")) {
       const tabs = chat.querySelector(".chat-tabs"),
         body = chat.querySelector(".chat-body");
@@ -26706,9 +26855,15 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         log.className = "dvi-loot-log";
         log.dataset.noI18n = "";
         log.setAttribute("role", "log");
-        view = { button, log, open: false, room: chat.dataset.room };
+        view = { button, log, open: false, room: chat.dataset.room, rows };
         lootChatViews.set(chat, view);
         view.setOpen = (open) => {
+          if (open) {
+            const nativeLog = chat.querySelector("[data-log]"),
+              height = nativeLog && getComputedStyle(nativeLog).height;
+            if (height && parseFloat(height) > 0 && view.log.style.height !== height)
+              view.log.style.height = height;
+          }
           view.open = open;
           view.room = chat.dataset.room;
           chat.classList.toggle("dvi-loot-open", open);
@@ -26722,6 +26877,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
             if (tab.getAttribute("aria-selected") !== selected)
               tab.setAttribute("aria-selected", selected);
           }
+          if (open) renderLootChat(view);
         };
         button.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -26733,6 +26889,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         chat.addEventListener("click", view.nativeRoomClick);
         view.setOpen(false);
       }
+      view.rows = rows;
       if (view.setOpen) {
         if (chat.closest("[data-m-sub][hidden]") || view.room !== chat.dataset.room)
           view.setOpen(false);
@@ -26741,32 +26898,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       if (!view.button.isConnected) tabs.append(view.button);
       if (!view.log.isConnected) tabs.after(view.log);
       setNativeText(view.button, t("掉落日志"));
-      const nativeLog = chat.querySelector("[data-log]"),
-        height = nativeLog && getComputedStyle(nativeLog).height;
-      if (height && parseFloat(height) > 0 && view.log.style.height !== height)
-        view.log.style.height = height;
-      const html =
-        rows
-          .map((r) => {
-            const loot = globalThis.DVIBossRecords.parseLoot(GAME_DATA, r.loot);
-            return (
-              "<article><header>" +
-              escape(recordedBossName(r.name)) +
-              "<time>" +
-              escape(new Date(r.at).toLocaleString(i18n.language === "en" ? "en-GB" : "zh-CN")) +
-              "</time></header>" +
-              (loot.coins ? logItemHtml(200, loot.coins) : "") +
-              loot.items.map((x) => logItemHtml(x.id, x.qty)).join("") +
-              loot.rest.map((x) => "<p>" + escape(x) + "</p>").join("") +
-              "</article>"
-            );
-          })
-          .join("") || '<p class="dvi-note">' + t("暂无掉落记录") + "</p>";
-      if (view.html !== html || view.log.innerHTML !== view.rendered) {
-        view.log.innerHTML = html;
-        view.html = html;
-        view.rendered = view.log.innerHTML;
-      }
+      renderLootChat(view);
     }
   }
   function syncBossRecords() {
@@ -31502,6 +31634,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       if (change.type === "attributes" && change.attributeName === "data-dvi-route-xp") continue;
       const target = change.target.nodeType === 3 ? change.target.parentElement : change.target;
       if (!target?.closest || target.closest(".dvi-route-xp")) continue;
+      if (target.closest('[hidden],.routes[data-open="false"]')) continue;
       const native = target.closest(".route-meta:not(.dvi-route-xp)");
       const replaced =
         change.type === "childList" &&
@@ -31634,6 +31767,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("battle")) return;
     const p = store.state.player;
     if (!p) return;
+    const lists = [...document.querySelectorAll("[data-routes]")].filter(
+      (list) => !list.closest?.('[hidden],.routes[data-open="false"]'),
+    );
+    if (!lists.some((list) => list.querySelectorAll(".route[data-zone]").length)) return;
     if (battlePlayerId !== p.id) {
       battlePlayerId = p.id;
       battleCache.clear();
@@ -31645,7 +31782,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     }
     const signature = battleSignature(p),
       configuration = battleConfiguration(p);
-    for (const list of document.querySelectorAll("[data-routes]")) {
+    for (const list of lists) {
       const rows = list.querySelectorAll(".route[data-zone]");
       if (!rows.length) continue;
       let records = battleLists.get(list);
@@ -32553,6 +32690,2300 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     host.append(link, note);
   }
 
+  // ---- src/home-appearance.js ----
+  /* Presentation-only home skin. No role reads, game controls or background work. */
+  (function (root, factory) {
+    if (typeof module === "object" && module.exports) module.exports = factory();
+    else root.DVIHomeAppearance = factory();
+  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+    "use strict";
+    function create(doc, css) {
+      let style = null;
+      function dispose() {
+        style?.remove();
+        style = null;
+      }
+      function setEnabled(enabled) {
+        if (!enabled) {
+          dispose();
+          return;
+        }
+        if (style?.isConnected) return;
+        style = doc.createElement("style");
+        style.id = "dvi-insights-home-appearance";
+        style.textContent = css;
+        (doc.head || doc.documentElement).append(style);
+      }
+      return { setEnabled, dispose };
+    }
+    // Mirrors the audited point requirement only. Each row is an independent
+    // next-level comparison; shared balances are never presented as a total budget.
+    function summarize(player, rooms, facts) {
+      if (!player?.house || !player.housePoints || !player.houseFurniture || !player.houseUpgrades)
+        return null;
+      const rows = rooms
+        .filter((r) => !r.retired)
+        .map((room) => {
+          const level = player.house[room.id] ?? 0,
+            placed = !!player.houseFurniture[room.id];
+          const upgrading = Number.isFinite(player.houseUpgrades[room.id]);
+          const need = Math.round(facts.firstCost * facts.costFactor ** level);
+          const have = [room.feeds, ...(room.alsoFeeds ?? [])].reduce(
+            (sum, f) => sum + Math.max(0, player.housePoints[f] ?? 0),
+            0,
+          );
+          return {
+            id: room.id,
+            placed,
+            upgrading,
+            need,
+            have,
+            gap: Math.max(0, need - have),
+            status: !placed
+              ? "unplaced"
+              : upgrading
+                ? "upgrading"
+                : have >= need
+                  ? "ready"
+                  : "short",
+          };
+        });
+      const occupied = new Set(
+        Object.values(player.houseFurniture)
+          .filter(Boolean)
+          .map((p) => p.cell),
+      );
+      const cells = new Set(player.houseCells ?? []);
+      return {
+        rows,
+        emptyRooms: [...cells].filter((cell) => !occupied.has(cell)).length,
+        totalRooms: cells.size,
+      };
+    }
+    return { create, summarize };
+  });
+
+  // ---- Native home presentation styles ----
+  const HOME_APPEARANCE_CSS = `
+/* A restrained palette for both native themes; scoped to our home surfaces. */
+[data-home-window] {
+  --panel: #27231f;
+  --panel-raised: #322d26;
+  --panel-sunken: #1f1c18;
+  --edge: #51483b;
+  --edge-bright: #756651;
+  --ink: #ebe0ca;
+  --ink-muted: #c1b39a;
+  --ink-faint: #a59478;
+  --brass: #d1ae71;
+  --brass-bright: #dfc38d;
+  --on-brass: #241c12;
+  --moss: #a5b781;
+  --rarity-rare: #9db4c7;
+  --rarity-uncommon: #a5b781;
+}
+html[data-theme="light"] [data-home-window] {
+  --panel: #e5dbc5;
+  --panel-raised: #eee5d2;
+  --panel-sunken: #d9cdb3;
+  --edge: #c3b394;
+  --edge-bright: #9c8b6e;
+  --ink: #3b382c;
+  --ink-muted: #6a624f;
+  --ink-faint: #7a715c;
+  --brass: #8a6729;
+  --brass-bright: #9e7936;
+  --on-brass: #fffdf8;
+  --moss: #4e7145;
+  --rarity-rare: #416785;
+  --rarity-uncommon: #4e7145;
+}
+/* Original home controls, with theme tokens inherited from the game. */
+[data-home-veil] [data-home-window] {
+  box-sizing: border-box;
+  width: min(900px, calc(100vw - 32px));
+  max-width: 900px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 16px 60px #0005;
+  font-family: var(--sans, system-ui, "Microsoft YaHei", sans-serif);
+}
+[data-home-veil] [data-home-window] * {
+  box-sizing: border-box;
+  text-shadow: none;
+}
+[data-home-veil] [data-home-window] > h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  flex: none;
+  margin: 0;
+  padding: 10px 52px 10px 14px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel-raised);
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+[data-home-veil] [data-home-window] > h2 > span {
+  color: inherit;
+}
+[data-home-veil] [data-home-window] > h2:after {
+  content: "[SIK]";
+  font: 500 10px/1.5 var(--sans, system-ui, sans-serif);
+  color: var(--ink-muted);
+  border-left: 1px solid var(--edge);
+  padding-left: 10px;
+}
+[data-home-veil] [data-home-close] {
+  position: absolute;
+  z-index: 3;
+  right: 10px;
+  top: 10px;
+  transform: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+[data-home-veil] [data-home-close]:hover {
+  background: var(--panel-sunken);
+  color: var(--ink);
+}
+[data-home-veil] [data-home-body] {
+  display: block;
+  padding: 11px 14px 16px;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge) transparent;
+}
+[data-home-veil] .home-board-hint {
+  display: none;
+}
+[data-home-veil] .home-board-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+[data-home-veil] .home-board-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px 9px;
+  min-width: 0;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  background: var(--panel-raised);
+  box-shadow: none;
+}
+[data-home-veil] .home-board-row:has(.home-board-pct.ready) {
+  border-color: var(--moss);
+}
+[data-home-veil] .home-board-row.unbuilt {
+  background: var(--panel);
+  opacity: 1;
+  border-style: dashed;
+}
+[data-home-veil] .home-board-row.unbuilt .home-board-icon {
+  opacity: 0.6;
+}
+[data-home-veil] .home-board-icon {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+[data-home-veil] .home-board-text {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
+  gap: 2px 6px;
+}
+[data-home-veil] .home-board-name {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--ink);
+  font-weight: 700;
+}
+[data-home-veil] .home-board-text > small {
+  grid-column: 1/-1;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+[data-home-veil] .home-board-text > small > b {
+  font-weight: 600;
+  color: var(--ink);
+}
+[data-home-veil] .home-lift {
+  color: var(--brass);
+}
+[data-home-veil] .home-dim {
+  color: var(--ink-muted);
+}
+[data-home-veil] .home-board-track {
+  grid-column: 1/-1;
+  display: grid;
+  grid-template-columns: minmax(40px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  margin: 1px 0;
+  min-width: 0;
+}
+[data-home-veil] .home-bar {
+  height: 4px;
+  min-height: 4px;
+  overflow: hidden;
+  margin: 0;
+  border: 0;
+  border-radius: 3px;
+  background: var(--panel-sunken);
+  box-shadow: none;
+}
+[data-home-veil] .home-bar-fill {
+  height: 100%;
+  min-height: 4px;
+  max-width: 100%;
+  border-radius: 3px;
+  background: var(--brass);
+  box-shadow: none;
+  transition: none;
+}
+[data-home-veil] .home-board-row:has(.home-board-pct.ready) .home-bar-fill {
+  background: var(--moss);
+}
+[data-home-veil] .home-board-pct {
+  display: block;
+  max-width: none;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+[data-home-veil] .home-board-pct.ready,
+[data-home-veil] .home-board-need .ok {
+  color: var(--moss);
+}
+[data-home-veil] .home-board-need {
+  display: block;
+  font-size: 11px !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+  line-height: 1.45 !important;
+  margin: 0;
+}
+[data-home-veil] .home-time-icon {
+  display: inline-flex;
+  align-items: center;
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+  margin: 0 3px;
+}
+[data-home-veil] .home-time-icon svg {
+  width: 12px;
+  height: 12px;
+}
+[data-home-veil] .home-board-acts {
+  grid-column: 1/-1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-width: 0;
+  align-self: end;
+  padding-top: 7px;
+  border-top: 1px solid var(--edge);
+}
+[data-home-veil] .home-board-acts > button {
+  flex: 0 0 auto;
+  width: auto;
+  height: 27px;
+  min-height: 27px;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 9px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel);
+  box-shadow: none;
+  color: var(--ink);
+  font: 500 11px/1.35 var(--sans, system-ui, sans-serif);
+  white-space: nowrap;
+  text-align: center;
+  cursor: pointer;
+}
+[data-home-veil] .home-board-acts > .home-raise-btn {
+  background: color-mix(in srgb, var(--moss) 12%, var(--panel));
+  border-color: var(--moss);
+  color: var(--moss);
+  font-weight: 700;
+}
+[data-home-veil] .home-board-acts > .home-goto-btn {
+  margin-left: auto;
+  background: transparent;
+  color: var(--ink-muted);
+  border-color: transparent;
+}
+[data-home-veil] .home-board-acts > .home-skip-btn {
+  color: var(--brass);
+}
+[data-home-veil] button:not(:disabled):hover {
+  filter: brightness(1.06);
+  border-color: var(--edge-bright);
+}
+[data-home-veil] button:disabled {
+  cursor: default;
+  opacity: 0.42;
+  filter: none;
+}
+[data-home-veil] button:focus-visible,
+[data-home-veil] input:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+[data-home-veil] .home-board-buy {
+  grid-column: 1/-1;
+  grid-row: 3;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--edge);
+  min-width: 0;
+}
+[data-home-veil] .home-board-row:has(.home-board-buy) {
+  grid-column: 1/-1;
+  border-color: var(--brass);
+}
+[data-home-veil] .home-buy {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  min-width: 0;
+}
+[data-home-veil] .home-buy-label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 600;
+}
+[data-home-veil] .home-buy-line {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+[data-home-veil] .home-buy-field {
+  display: flex;
+  align-items: center;
+  flex: 1 1 130px;
+  min-width: 0;
+  max-width: 300px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel-sunken);
+  padding: 0 10px 0 0;
+}
+[data-home-veil] .home-buy-qty {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  min-height: 34px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  padding: 5px 9px;
+  margin: 0;
+  font: 400 16px/1.3 var(--sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  box-shadow: none;
+}
+[data-home-veil] .home-buy-unit {
+  font-size: 11px;
+  color: var(--ink-muted);
+  flex: none;
+}
+[data-home-veil] .home-buy-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: 5px 12px;
+  margin: 0;
+  border: 1px solid var(--brass);
+  border-radius: 5px;
+  background: var(--panel-raised);
+  color: var(--brass);
+  font: 600 12px/1.4 var(--sans, system-ui, sans-serif);
+  box-shadow: none;
+  white-space: normal;
+  cursor: pointer;
+}
+[data-home-veil] .home-buy-btn.confirm {
+  background: var(--brass);
+  color: var(--on-brass);
+}
+[data-home-veil] .home-buy-quote {
+  margin: 8px 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel-sunken);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+[data-home-veil] .home-buy-note {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+[data-home-veil] .home-build,
+[data-home-veil] .home-next {
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: none;
+}
+[data-home-veil] .home-next-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--ink);
+}
+[data-home-veil] .home-build:has([data-home-build-mode]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  align-items: center;
+}
+[data-home-veil] .home-build:has([data-home-build-mode]) > .home-next-head {
+  grid-column: 1;
+  margin: 0;
+}
+[data-home-veil] .home-build:has([data-home-build-mode]) > p {
+  grid-column: 1;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+[data-home-veil] .home-build:has([data-home-build-mode]) > .home-actions {
+  grid-column: 2;
+  grid-row: 1/3;
+  margin: 0;
+}
+[data-home-veil] .home-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+[data-home-veil] .home-actions button,
+[data-home-veil] .home-place button,
+[data-home-veil] .home-build > button {
+  flex: 0 1 auto;
+  width: auto;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+[data-home-veil] .home-room-top {
+  gap: 12px;
+}
+[data-home-veil] .home-convert-row {
+  min-width: 0;
+  gap: 8px;
+  padding-block: 9px;
+  overflow-wrap: anywhere;
+}
+[data-home-veil] [data-conv-qty] {
+  font-size: 16px;
+  min-height: 36px;
+  min-width: 0;
+  max-width: 100%;
+}
+.dvi-home-tools {
+  margin: 6px 0 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.dvi-home-filters {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+[data-home-veil] .dvi-home-filters button {
+  background: transparent;
+  color: var(--ink-muted);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: 500 11px/1.4 var(--sans, system-ui, sans-serif);
+  min-height: 29px;
+  padding: 4px 9px;
+  box-shadow: none;
+  cursor: pointer;
+}
+[data-home-veil] .dvi-home-filters button[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--edge);
+  background: var(--panel-raised);
+}
+[data-home-veil] .dvi-home-search {
+  width: 150px;
+  min-width: 0;
+  min-height: 29px;
+  padding: 4px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel-sunken);
+  color: var(--ink);
+  font: 400 12px/1.4 var(--sans, system-ui, sans-serif);
+  box-shadow: none;
+}
+.dvi-home-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  margin: 0 0 5px;
+}
+.dvi-home-gap {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--brass);
+  font-variant-numeric: tabular-nums;
+}
+.dvi-home-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+[data-home-veil] [data-dvi-home-filtered] {
+  display: none !important;
+}
+@media (max-width: 700px), (max-width: 1000px) and (pointer: coarse) {
+  [data-home-veil] {
+    padding: 0 !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+  }
+  [data-home-veil] [data-home-window] {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  [data-home-veil] [data-home-window] > h2 {
+    padding: 11px 50px 11px 13px;
+    min-height: 48px;
+    font-size: 16px;
+  }
+  [data-home-veil] [data-home-close] {
+    right: 7px;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+  }
+  [data-home-veil] [data-home-body] {
+    padding: 10px 10px 16px;
+  }
+  [data-home-veil] .home-board-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  [data-home-veil] .home-board-row {
+    padding: 9px;
+    gap: 6px 8px;
+  }
+  [data-home-veil] .home-board-acts > button {
+    height: 32px;
+    min-height: 32px;
+    padding: 5px 9px;
+    font-size: 12px;
+  }
+  [data-home-veil] .home-board-row:has(.home-board-buy) {
+    grid-column: auto;
+  }
+  [data-home-veil] .home-buy-field {
+    max-width: none;
+  }
+  [data-home-veil] .home-buy-btn {
+    min-height: 36px;
+  }
+  [data-home-veil] .home-actions button,
+  [data-home-veil] .home-place button {
+    min-height: 36px;
+  }
+  [data-home-veil] .dvi-home-tools {
+    gap: 6px;
+    margin-top: 5px;
+  }
+  [data-home-veil] .dvi-home-search {
+    width: 100%;
+    font-size: 16px;
+    min-height: 36px;
+  }
+  [data-home-veil] .dvi-home-filters button {
+    min-height: 32px;
+    padding-inline: 8px;
+  }
+}
+@media (max-height: 550px) {
+  [data-home-veil] [data-home-window] {
+    max-height: calc(100dvh - 12px);
+  }
+  [data-home-veil] [data-home-window] > h2 {
+    padding-block: 8px;
+  }
+  [data-home-veil] [data-home-body] {
+    padding-top: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-home-veil] * {
+    transition: none !important;
+  }
+}
+
+html.v4 [data-home-veil] .home-actions button,
+html.v4 [data-home-veil] .home-place button {
+  border: 1px solid var(--edge);
+  background: var(--panel-raised);
+  color: var(--ink);
+  box-shadow: none;
+  text-shadow: none;
+}
+html.v4 [data-home-veil] .home-actions button:hover {
+  border-color: var(--edge-bright);
+}
+`;
+
+  // ---- src/home-appearance-ui.js ----
+  const homeAppearance = globalThis.DVIHomeAppearance.create(document, HOME_APPEARANCE_CSS);
+  const homeBoardViews = new WeakMap();
+  function clearHomeBoard() {
+    document
+      .querySelectorAll(".dvi-home-tools,.dvi-home-meta,.dvi-home-gap,.dvi-home-empty")
+      .forEach((n) => n.remove());
+    document
+      .querySelectorAll("[data-dvi-home-filtered]")
+      .forEach((n) => n.removeAttribute("data-dvi-home-filtered"));
+  }
+  function syncHomeAppearance() {
+    homeAppearance.setEnabled(insightFeatureEnabled("homeAppearance"));
+    if (!insightFeatureEnabled("homeAppearance")) clearHomeBoard();
+  }
+  function syncHomeBoard() {
+    if (!insightFeatureEnabled("homeAppearance") || document.hidden) return;
+    const bodies = document.querySelectorAll("[data-home-veil]:not([hidden]) [data-home-body]");
+    if (!bodies.length) return;
+    const summary = globalThis.DVIHomeAppearance.summarize(
+      store.state.player,
+      GAME_DATA.rooms,
+      HOME_MATERIAL_FACTS,
+    );
+    if (!summary) return;
+    const labels = {
+      all: "全部设施",
+      ready: "可升级",
+      short: "缺点数",
+      upgrading: "升级中",
+      unplaced: "未放置",
+    };
+    for (const body of bodies) {
+      const list = body.querySelector(".home-board-list");
+      if (!list) continue;
+      let view = homeBoardViews.get(body);
+      if (!view) {
+        view = { filter: "all", search: "" };
+        homeBoardViews.set(body, view);
+      }
+      let tools = body.querySelector(".dvi-home-tools");
+      if (!tools) {
+        tools = document.createElement("div");
+        tools.className = "dvi-home-tools";
+        tools.dataset.noI18n = "";
+        tools.innerHTML =
+          '<div class="dvi-home-filters"></div><input class="dvi-home-search" type="search">';
+        list.before(tools);
+        tools.querySelector("input").value = view.search;
+        tools.querySelector("input").addEventListener("input", (e) => {
+          view.search = e.target.value;
+          syncHomeBoard();
+        });
+        tools.querySelector(".dvi-home-filters").addEventListener("click", (e) => {
+          const button = e.target.closest("[data-dvi-home-filter]");
+          if (button) {
+            view.filter = button.dataset.dviHomeFilter;
+            syncHomeBoard();
+          }
+        });
+      }
+      const filters = tools.querySelector(".dvi-home-filters");
+      if (!filters.children.length)
+        filters.innerHTML = Object.keys(labels)
+          .map((key) => '<button type="button" data-dvi-home-filter="' + key + '"></button>')
+          .join("");
+      for (const button of filters.children) {
+        const key = button.dataset.dviHomeFilter,
+          pressed = String(view.filter === key),
+          label =
+            t(labels[key]) +
+            " " +
+            summary.rows.filter((r) => key === "all" || r.status === key).length;
+        if (button.textContent !== label) button.textContent = label;
+        if (button.getAttribute("aria-pressed") !== pressed)
+          button.setAttribute("aria-pressed", pressed);
+      }
+      const search = tools.querySelector("input");
+      search.placeholder = t("搜索设施");
+      search.setAttribute("aria-label", t("搜索设施"));
+      let meta = body.querySelector(".dvi-home-meta");
+      if (!meta) {
+        meta = document.createElement("div");
+        meta.className = "dvi-home-meta";
+        meta.dataset.noI18n = "";
+        tools.before(meta);
+      }
+      const info =
+        "<span>" +
+        escape(
+          t("房间 {total} · 未放家具 {empty}", {
+            total: summary.totalRooms,
+            empty: summary.emptyRooms,
+          }),
+        ) +
+        "</span><span>" +
+        escape(t("缺口按单栋计算，共用点数")) +
+        "</span>";
+      if (meta.innerHTML !== info) meta.innerHTML = info;
+      let visible = 0;
+      for (const row of list.querySelectorAll(".home-board-row")) {
+        const id = row.querySelector("[data-home-goto]")?.getAttribute("data-home-goto"),
+          record = summary.rows.find((r) => r.id === id);
+        if (!record) continue;
+        const name = row.querySelector(".home-board-name")?.textContent ?? "";
+        const show =
+          (view.filter === "all" || record.status === view.filter) &&
+          (!view.search || name.toLowerCase().includes(view.search.trim().toLowerCase()));
+        if (show) {
+          visible++;
+          if (row.hasAttribute("data-dvi-home-filtered"))
+            row.removeAttribute("data-dvi-home-filtered");
+        } else if (!row.hasAttribute("data-dvi-home-filtered"))
+          row.setAttribute("data-dvi-home-filtered", "");
+        let gap = row.querySelector(".dvi-home-gap");
+        const text =
+          record.placed && !record.upgrading && record.gap > 0
+            ? t("还差 {points} 点", {
+                points: record.gap.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN"),
+              })
+            : "";
+        if (text) {
+          if (!gap) {
+            gap = document.createElement("span");
+            gap.className = "dvi-home-gap";
+            gap.dataset.noI18n = "";
+            row.querySelector(".home-board-text").append(gap);
+          }
+          if (gap.textContent !== text) gap.textContent = text;
+        } else gap?.remove();
+      }
+      let empty = body.querySelector(".dvi-home-empty");
+      if (!visible) {
+        if (!empty) {
+          empty = document.createElement("p");
+          empty.className = "dvi-home-empty";
+          empty.dataset.noI18n = "";
+          list.after(empty);
+        }
+        empty.textContent = t("没有符合条件的设施");
+      } else empty?.remove();
+    }
+  }
+  syncHomeAppearance();
+  window.addEventListener("pagehide", (event) => {
+    if (!event.persisted) homeAppearance.dispose();
+  });
+
+  // ---- src/home-materials.js ----
+  /* Home conversion value at already-received prices. No network or game actions. */
+  (function (root, factory) {
+    if (typeof module === "object" && module.exports) module.exports = factory();
+    else root.DVIHomeMaterials = factory();
+  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+    "use strict";
+    const families = ["wood", "stone", "fish", "hide", "crop"];
+    const fresh = (at, now, age) => Number.isFinite(at) && at <= now && now - at <= age;
+    function quote(book, now) {
+      if (!book) return null;
+      const at = book.askAt ?? book.at,
+        depthAt = book.askDepthAt ?? book.depthAt;
+      if (
+        Array.isArray(book.asks) &&
+        fresh(depthAt, now, 300000) &&
+        (!Number.isFinite(at) || depthAt >= at)
+      ) {
+        const levels = book.asks
+          .filter(
+            (x) =>
+              Number.isFinite(x.price) && x.price > 0 && Number.isSafeInteger(x.qty) && x.qty > 0,
+          )
+          .sort((a, b) => a.price - b.price);
+        if (levels.length) {
+          const price = levels[0].price;
+          return {
+            price,
+            qty: levels.filter((l) => l.price === price).reduce((n, l) => n + l.qty, 0),
+            at: depthAt,
+            source: "client",
+            estimated: false,
+          };
+        }
+      }
+      if (
+        Number.isFinite(book.ask) &&
+        book.ask > 0 &&
+        (book.askQty == null || (Number.isFinite(book.askQty) && book.askQty > 0)) &&
+        fresh(at, now, book.askPublic ? 900000 : 300000)
+      )
+        return {
+          price: book.ask,
+          qty: Number.isFinite(book.askQty) ? book.askQty : null,
+          at,
+          source: book.askPublic ? "public" : "client",
+          estimated: !!book.askPublic,
+        };
+      const options = [];
+      if (book.purchaseCache?.price > 0 && fresh(book.purchaseCache.at, now, 86400000))
+        options.push({
+          price: book.purchaseCache.price,
+          at: book.purchaseCache.at,
+          source: "cached",
+        });
+      if (!book.askPublic && book.ask > 0 && fresh(at, now, 86400000))
+        options.push({ price: book.ask, at, source: "cached" });
+      if (book.history?.price > 0 && fresh(book.history.tradeAt, now, 7 * 86400000))
+        options.push({ price: book.history.price, at: book.history.tradeAt, source: "history" });
+      const selected = options
+        .filter((x) => Number.isFinite(x.price))
+        .sort((a, b) => b.at - a.at)[0];
+      return selected ? { ...selected, qty: null, estimated: true } : null;
+    }
+    function create(data, facts) {
+      const excluded = new Set(facts.excludedIds || []),
+        candidates = [];
+      for (const item of data.items) {
+        const id = item.id,
+          base = id % 1000,
+          rarity = Math.floor(id / 1000),
+          point = facts.points[base];
+        if (
+          !Number.isSafeInteger(id) ||
+          id <= 0 ||
+          id >= 5000 ||
+          excluded.has(id) ||
+          excluded.has(base) ||
+          !point ||
+          !families.includes(point.family)
+        )
+          continue;
+        const each = point.each * facts.rarityFactor ** rarity;
+        if (!(each > 0) || !Number.isFinite(each)) continue;
+        candidates.push({ id, family: point.family, each });
+      }
+      function best(books, now = Date.now()) {
+        const current = new Map(),
+          fallback = new Map();
+        for (const item of candidates) {
+          const price = quote(books[item.id], now);
+          if (!price) continue;
+          const entry = { ...item, ...price, perPoint: price.price / item.each },
+            map = price.source === "client" || price.source === "public" ? current : fallback,
+            old = map.get(item.family);
+          if (
+            !old ||
+            entry.perPoint < old.perPoint ||
+            (entry.perPoint === old.perPoint &&
+              (entry.price < old.price || (entry.price === old.price && entry.id < old.id)))
+          )
+            map.set(item.family, entry);
+        }
+        return families.map((family) => ({
+          family,
+          best: current.get(family) || fallback.get(family) || null,
+        }));
+      }
+      return { best, candidates: () => candidates.map((r) => ({ ...r })) };
+    }
+    return { create, quote, families };
+  });
+
+  // ---- Home material conversion facts ----
+  const HOME_MATERIAL_FACTS = {
+    firstCost: 300,
+    costFactor: 1.2639,
+    rarityFactor: 3,
+    excludedIds: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
+    points: Object.fromEntries(
+      [
+        [1, 1, 1],
+        [2, 1, 1],
+        [3, 1, 2],
+        [4, 1, 3],
+        [5, 1, 4],
+        [6, 1, 5],
+        [7, 1, 6],
+        [8, 1, 7],
+        [10, 0, 1],
+        [11, 0, 2],
+        [12, 0, 3],
+        [13, 0, 4],
+        [14, 0, 5],
+        [15, 0, 6],
+        [20, 2, 1],
+        [21, 2, 2],
+        [22, 2, 3],
+        [23, 2, 4],
+        [24, 2, 5],
+        [25, 2, 6],
+        [26, 2, 7],
+        [27, 2, 8],
+        [40, 1, 3],
+        [41, 1, 3],
+        [42, 1, 15],
+        [43, 1, 27],
+        [44, 1, 34.5],
+        [60, 2, 1.5],
+        [61, 2, 3],
+        [62, 2, 4.5],
+        [63, 2, 6],
+        [64, 2, 7.5],
+        [65, 2, 9],
+        [66, 2, 10.5],
+        [67, 2, 12],
+        [80, 1, 8],
+        [81, 1, 8],
+        [82, 1, 40],
+        [83, 1, 72],
+        [84, 1, 92],
+        [85, 1, 6],
+        [86, 1, 8],
+        [87, 1, 26],
+        [88, 1, 46],
+        [89, 1, 58],
+        [90, 1, 8],
+        [91, 1, 8],
+        [92, 1, 40],
+        [93, 1, 72],
+        [94, 1, 92],
+        [110, 1, 4],
+        [111, 1, 4],
+        [112, 1, 20],
+        [113, 1, 36],
+        [114, 1, 46],
+        [115, 1, 12],
+        [116, 1, 12],
+        [117, 1, 60],
+        [118, 1, 108],
+        [119, 1, 138],
+        [120, 1, 8],
+        [121, 1, 8],
+        [122, 1, 40],
+        [123, 1, 72],
+        [124, 1, 92],
+        [125, 1, 20],
+        [126, 1, 20],
+        [127, 1, 100],
+        [128, 1, 180],
+        [129, 1, 230],
+        [130, 1, 16],
+        [131, 1, 16],
+        [132, 1, 80],
+        [133, 1, 144],
+        [134, 1, 184],
+        [140, 0, 1.5],
+        [141, 0, 3],
+        [142, 0, 4.5],
+        [143, 0, 6],
+        [144, 0, 7.5],
+        [145, 0, 9],
+        [146, 0, 3],
+        [147, 0, 6],
+        [148, 0, 9],
+        [149, 0, 12],
+        [150, 0, 15],
+        [151, 0, 18],
+        [152, 0, 3],
+        [153, 0, 6],
+        [154, 0, 9],
+        [155, 0, 12],
+        [156, 0, 15],
+        [157, 0, 18],
+        [170, 4, 1],
+        [171, 4, 3],
+        [172, 4, 4],
+        [173, 4, 6],
+        [174, 4, 7],
+        [175, 4, 9],
+        [181, 1, 6],
+        [182, 1, 10],
+        [183, 1, 46],
+        [184, 1, 6],
+        [185, 1, 10],
+        [186, 1, 46],
+        [193, 4, 2],
+        [194, 4, 5],
+        [195, 4, 8],
+        [220, 4, 4.5],
+        [221, 4, 13.5],
+        [222, 4, 19.5],
+        [223, 4, 30],
+        [224, 3, 27],
+        [225, 3, 7.5],
+        [226, 4, 15],
+        [227, 4, 21],
+        [240, 3, 1],
+        [241, 3, 2],
+        [242, 3, 3],
+        [243, 3, 4],
+        [244, 3, 5],
+        [245, 3, 6],
+        [246, 3, 7],
+        [247, 3, 8],
+        [248, 3, 9],
+        [249, 3, 10],
+        [250, 3, 11],
+        [251, 3, 12],
+        [252, 3, 13],
+        [260, 3, 3],
+        [261, 3, 7.5],
+        [262, 3, 4.5],
+        [263, 3, 6],
+        [264, 3, 15],
+        [265, 3, 9],
+        [266, 3, 9],
+        [267, 3, 22.5],
+        [268, 3, 13.5],
+        [269, 3, 18],
+        [270, 3, 45],
+        [271, 3, 27],
+        [272, 3, 24],
+        [273, 3, 60],
+        [274, 3, 36],
+        [323, 3, 6],
+        [324, 3, 6],
+        [325, 3, 9],
+        [326, 3, 12],
+        [327, 3, 24],
+        [329, 3, 4.5],
+        [330, 3, 9],
+        [331, 3, 13.5],
+        [332, 3, 24],
+        [333, 3, 31.5],
+        [335, 3, 3],
+        [336, 3, 7.5],
+        [337, 3, 21],
+        [338, 3, 27],
+        [339, 3, 67.5],
+        [340, 3, 40.5],
+        [341, 3, 36],
+        [342, 3, 90],
+        [343, 3, 54],
+        [344, 3, 16.5],
+        [345, 3, 49.5],
+        [346, 3, 33],
+        [347, 3, 36],
+        [348, 3, 54],
+        [349, 3, 33],
+        [350, 1, 190],
+        [351, 1, 190],
+        [352, 1, 118],
+        [353, 1, 308],
+        [354, 1, 236],
+        [360, 1, 4],
+        [361, 1, 4],
+        [362, 1, 20],
+        [363, 1, 36],
+        [364, 1, 46],
+        [365, 1, 8],
+        [366, 1, 8],
+        [367, 1, 40],
+        [368, 1, 72],
+        [369, 1, 92],
+        [370, 1, 4],
+        [371, 1, 4],
+        [372, 1, 20],
+        [373, 1, 36],
+        [374, 1, 46],
+        [375, 1, 4],
+        [376, 1, 4],
+        [377, 1, 20],
+        [378, 1, 36],
+        [379, 1, 46],
+        [380, 1, 8],
+        [381, 1, 8],
+        [382, 1, 40],
+        [383, 1, 72],
+        [384, 1, 92],
+        [385, 1, 8],
+        [386, 0, 12],
+        [387, 1, 32],
+        [388, 1, 56],
+        [389, 1, 70],
+        [390, 1, 8],
+        [391, 1, 8],
+        [392, 1, 40],
+        [393, 1, 72],
+        [394, 1, 92],
+        [395, 1, 170],
+        [629, 3, 36],
+        [630, 0, 48],
+        [631, 3, 68],
+        [632, 3, 44],
+        [633, 3, 132],
+        [634, 3, 88],
+        [635, 3, 88],
+      ].map(([id, family, each]) => [
+        id,
+        { family: ["wood", "stone", "fish", "hide", "crop"][family], each },
+      ]),
+    ),
+  };
+
+  // ---- src/home-materials-ui.js ----
+  const homeMaterialModel = globalThis.DVIHomeMaterials.create(GAME_DATA, HOME_MATERIAL_FACTS);
+  let homeMaterialCache = null;
+  const homeMaterialStyle = document.createElement("style");
+  homeMaterialStyle.textContent = `
+[data-home-veil] .dvi-home-materials {
+  margin: 8px 0 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+}
+[data-home-veil] .dvi-home-materials > h3 {
+  margin: 0 0 6px;
+  font: 600 13px/1.4 var(--sans, system-ui, sans-serif);
+  color: var(--ink);
+}
+[data-home-veil] .dvi-home-material-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+[data-home-veil] .dvi-home-material-family {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--panel-sunken);
+  font: 400 11px/1.6 var(--sans, system-ui, sans-serif);
+  overflow-wrap: anywhere;
+}
+[data-home-veil] .dvi-home-material-points {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+[data-home-veil] .dvi-home-material-points strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+[data-home-veil] .dvi-home-material-item {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+[data-home-veil] .dvi-home-material-cost {
+  display: block;
+  color: var(--brass);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  margin-top: 2px;
+}
+[data-home-veil] .dvi-home-material-source {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 10px;
+  margin-top: 3px;
+}
+[data-home-veil] .dvi-home-materials > p {
+  margin: 9px 0 0;
+  font: 400 10px/1.6 var(--sans, system-ui, sans-serif);
+  color: var(--ink-muted);
+}
+.dvi-home-material-cost .dvi-home-cost-unit {
+  font-size: 10px;
+  color: var(--ink-muted);
+  margin-left: 3px;
+}
+@media (max-width: 700px), (max-width: 1000px) and (pointer: coarse) {
+  [data-home-veil] .dvi-home-material-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+  }
+  [data-home-veil] .dvi-home-materials {
+    padding: 0;
+  }
+  [data-home-veil] .dvi-home-material-family {
+    padding: 6px 5px;
+  }
+  [data-home-veil] .dvi-home-material-points {
+    flex-direction: column;
+    gap: 1px;
+    font-size: 9px;
+  }
+  [data-home-veil] .dvi-home-material-points strong {
+    font-size: 14px;
+  }
+  [data-home-veil] .dvi-home-material-cost {
+    font-size: 11px;
+    line-height: 1.3;
+    margin-top: 4px;
+  }
+  [data-home-veil] .dvi-home-cost-unit {
+    display: block;
+    font-size: 8px;
+    margin: 2px 0 0;
+  }
+  [data-home-veil] .dvi-home-materials > h3 {
+    font-size: 12px;
+  }
+}
+`;
+  function resetHomeMaterialPrices() {
+    document.querySelectorAll(".dvi-home-materials").forEach((n) => n.remove());
+    homeMaterialStyle.remove();
+    homeMaterialCache = null;
+  }
+  function syncHomeMaterialPrices() {
+    if (!insightFeatureEnabled("homeMaterialPrices") || document.hidden) return;
+    const bodies = [
+      ...document.querySelectorAll("[data-home-veil]:not([hidden]) [data-home-body]"),
+    ];
+    if (!bodies.length) {
+      homeMaterialCache = null;
+      return;
+    }
+    const p = store.state.player;
+    if (!p?.housePoints) return;
+    if (!homeMaterialStyle.isConnected)
+      (document.head || document.documentElement).append(homeMaterialStyle);
+    const now = Date.now(),
+      key = [
+        p.id,
+        p.ironman,
+        store.state.sessionRevision,
+        store.state.quoteRevision,
+        Math.floor(now / 15000),
+      ].join(":");
+    if (homeMaterialCache?.key !== key)
+      homeMaterialCache = {
+        key,
+        rows: p.ironman
+          ? globalThis.DVIHomeMaterials.families.map((family) => ({ family, best: null }))
+          : homeMaterialModel.best(store.state.books, now),
+      };
+    const number = (n) =>
+      n.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
+        maximumFractionDigits: n > 0 && n < 1 ? Math.min(8, Math.ceil(-Math.log10(n)) + 2) : 2,
+      });
+    const familyName = (f) =>
+      t({ wood: "木材", stone: "石料", fish: "鱼", hide: "兽皮", crop: "作物" }[f]);
+    const rows = homeMaterialCache.rows
+      .map(({ family, best }) => {
+        const balance = Number.isFinite(p.housePoints[family]) ? p.housePoints[family] : 0;
+        const source = best
+          ? t(
+              {
+                client: "客户端报价",
+                public: "公开快照（估价）",
+                cached: "缓存报价（估价）",
+                history: "历史成交（估价）",
+              }[best.source],
+            )
+          : "";
+        const price = best
+          ? (best.estimated ? "≈ " : "") +
+            (best.perPoint < 0.001 ? best.perPoint.toPrecision(2) : number(best.perPoint))
+          : "—";
+        const hint = best
+          ? source +
+            (best.qty !== null ? " · " + t("可售 {qty} 件", { qty: fmt(best.qty) }) : "") +
+            " · " +
+            t("以原生报价为准")
+          : t(p.ironman ? "铁人模式不使用市场" : "暂无有效材料报价");
+        return (
+          '<div class="dvi-home-material-family"><div class="dvi-home-material-points"><span>' +
+          escape(familyName(family)) +
+          "</span><strong>" +
+          escape(fmt(balance)) +
+          '</strong></div><span class="dvi-home-material-cost" title="' +
+          escape(hint) +
+          '" aria-label="' +
+          escape(familyName(family) + " " + price + " " + t("金币/点") + " · " + hint) +
+          '">' +
+          escape(price) +
+          '<small class="dvi-home-cost-unit">' +
+          escape(t("金币/点")) +
+          "</small></span></div>"
+        );
+      })
+      .join("");
+    const html =
+      "<h3>" +
+      escape(t("素材点数")) +
+      '</h3><div class="dvi-home-material-grid">' +
+      rows +
+      "</div>";
+    for (const body of bodies) {
+      let panel = body.querySelector(".dvi-home-materials");
+      if (!panel) {
+        panel = document.createElement("section");
+        panel.className = "dvi-home-materials";
+        panel.dataset.noI18n = "";
+        const anchor = body.querySelector(".home-points,.home-conv-head,.home-board-hint");
+        if (anchor) anchor.insertAdjacentElement("afterend", panel);
+        else body.prepend(panel);
+      }
+      if (panel.innerHTML !== html) panel.innerHTML = html;
+    }
+  }
+
+  // ---- src/home-market.js ----
+  /* Seller-side comparison for home-point materials, from existing quotes only. */
+  (function (root, factory) {
+    if (typeof module === "object" && module.exports)
+      module.exports = factory(require("./home-materials.js"));
+    else root.DVIHomeMarket = factory(root.DVIHomeMaterials);
+  })(typeof globalThis !== "undefined" ? globalThis : this, function (materials) {
+    "use strict";
+    function create(data, facts) {
+      const pointModel = materials.create(data, facts),
+        gear = new Set(data.gear.map((g) => g.itemId)),
+        jobs = new Map();
+      for (const job of data.jobs)
+        if (job.inputs?.length && !job.retired && !jobs.has(job.output.itemId))
+          jobs.set(job.output.itemId, job);
+      const candidates = pointModel.candidates().map((r) => {
+        const job = jobs.get(r.id % 1000);
+        return {
+          ...r,
+          crafted: !!job,
+          gear: gear.has(r.id) || gear.has(r.id % 1000),
+          skill: job?.skill ?? null,
+          level: job?.levelReq ?? null,
+        };
+      });
+      function rows(books, now = Date.now(), taxBp = null) {
+        const quoted = candidates.map((r) => {
+          const ask = materials.quote(books[r.id], now);
+          return { ...r, ask, perPoint: ask ? ask.price / r.each : null };
+        });
+        const pools = new Map(
+          materials.families.map((f) => [
+            f,
+            quoted
+              .filter((r) => r.family === f && r.ask)
+              .sort((a, b) => a.perPoint - b.perPoint || a.id - b.id),
+          ]),
+        );
+        const current = (pool) => {
+          const fresh = pool.filter((r) => ["client", "public"].includes(r.ask.source));
+          return fresh.length ? fresh : pool;
+        };
+        return quoted.map((r) => {
+          const pool = current(pools.get(r.family).filter((other) => other.id !== r.id)),
+            rival = pool[0] ?? null;
+          const basis = rival || (r.ask ? r : null),
+            ceiling = basis ? Math.floor(basis.perPoint * r.each + 1e-9) : null;
+          const reference = Number.isSafeInteger(ceiling) && ceiling >= 1 ? ceiling : null;
+          const b = books[r.id] || {},
+            bidAt = b.bidAt ?? b.at,
+            age = b.bidPublic ? 900000 : 300000;
+          const bid =
+            b.bid > 0 &&
+            Number.isFinite(b.bid) &&
+            Number.isFinite(bidAt) &&
+            bidAt <= now &&
+            now - bidAt <= age &&
+            (b.bidQty == null || b.bidQty > 0)
+              ? {
+                  price: b.bid,
+                  qty: Number.isFinite(b.bidQty) ? b.bidQty : null,
+                  estimated: !!b.bidPublic,
+                }
+              : null;
+          const familyCurrent = current(pools.get(r.family)),
+            lowest = familyCurrent[0]?.perPoint ?? null;
+          return {
+            ...r,
+            bid,
+            reference,
+            referenceBasis: basis?.id ?? null,
+            referenceEstimated: true,
+            netReference:
+              reference !== null && Number.isFinite(taxBp) && taxBp >= 0 && taxBp <= 10000
+                ? reference * (1 - taxBp / 10000)
+                : null,
+            leading: !!(r.ask && lowest !== null && r.perPoint <= lowest + 1e-12),
+            belowMinimum: ceiling === 0,
+          };
+        });
+      }
+      return { rows };
+    }
+    return { create };
+  });
+
+  // ---- Home market native icon atlas ----
+  const HOME_MARKET_ART = {
+    ids: [
+      1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 26, 27, 40, 41, 42,
+      43, 44, 61, 62, 63, 64, 65, 66, 67, 81, 82, 83, 84, 86, 87, 88, 89, 91, 92, 93, 94, 110, 111,
+      112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130,
+      131, 132, 133, 134, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154,
+      155, 156, 157, 170, 171, 172, 173, 174, 175, 181, 182, 183, 184, 185, 186, 193, 194, 195, 220,
+      221, 222, 223, 224, 225, 226, 227, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251,
+      252, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 323, 324, 325,
+      326, 327, 329, 330, 331, 332, 333, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346,
+      347, 348, 349, 350, 351, 352, 353, 354, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370,
+      371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389,
+      390, 391, 392, 393, 394, 395, 629, 630, 631, 632, 633, 634, 635,
+    ],
+    columns: 16,
+    tile: 16,
+    width: 256,
+    height: 224,
+  };
+  HOME_MARKET_ART.source =
+    "data:image/webp;base64," +
+    [
+      "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",
+    ].join("");
+
+  // ---- src/home-market-ui.js ----
+  const homeMarketModel = globalThis.DVIHomeMarket.create(GAME_DATA, HOME_MATERIAL_FACTS);
+  let homeMarketView = null,
+    homeMarketCache = null;
+  const homeMarketIconIndex = new Map(HOME_MARKET_ART.ids.map((id, index) => [id, index]));
+  const homeMarketStyle = document.createElement("style");
+  homeMarketStyle.textContent = `
+/* A restrained palette for both native themes; scoped to our home surfaces. */
+.dvi-home-market,
+.dvi-home-market-launch {
+  --panel: #27231f;
+  --panel-raised: #322d26;
+  --panel-sunken: #1f1c18;
+  --edge: #51483b;
+  --edge-bright: #756651;
+  --ink: #ebe0ca;
+  --ink-muted: #c1b39a;
+  --ink-faint: #a59478;
+  --brass: #d1ae71;
+  --brass-bright: #dfc38d;
+  --on-brass: #241c12;
+  --moss: #a5b781;
+  --rarity-rare: #9db4c7;
+  --rarity-uncommon: #a5b781;
+}
+html[data-theme="light"] .dvi-home-market,
+html[data-theme="light"] .dvi-home-market-launch {
+  --panel: #e5dbc5;
+  --panel-raised: #eee5d2;
+  --panel-sunken: #d9cdb3;
+  --edge: #c3b394;
+  --edge-bright: #9c8b6e;
+  --ink: #3b382c;
+  --ink-muted: #6a624f;
+  --ink-faint: #7a715c;
+  --brass: #8a6729;
+  --brass-bright: #9e7936;
+  --on-brass: #fffdf8;
+  --moss: #4e7145;
+  --rarity-rare: #416785;
+  --rarity-uncommon: #4e7145;
+}
+
+.dvi-home-market-launch {
+  position: fixed;
+  left: 10px;
+  bottom: 132px;
+  z-index: 7;
+  min-height: 29px;
+  padding: 5px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--ink);
+  font: 500 12px/1.4 var(--sans, system-ui, sans-serif);
+  cursor: pointer;
+  box-shadow: 0 3px 14px #0007;
+}
+.dvi-home-market {
+  position: fixed;
+  z-index: 30;
+  inset: 5vh max(12px, calc((100vw - 1080px) / 2));
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  max-height: 90dvh;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 18px 65px #000b;
+  font: 13px/1.5 var(--sans, system-ui, sans-serif);
+  color-scheme: inherit;
+}
+.dvi-home-market[hidden] {
+  display: none !important;
+}
+.dvi-home-market * {
+  box-sizing: border-box;
+  text-shadow: none;
+}
+.dvi-home-market button,
+.dvi-home-market input,
+.dvi-home-market select {
+  font: inherit;
+  color: inherit;
+}
+.dvi-home-market header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 17px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel-raised);
+  border-radius: 8px 12px 0 0;
+}
+.dvi-home-market h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.dvi-home-market header p {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.dvi-home-market button {
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel-raised);
+  padding: 5px 10px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.dvi-home-market [data-dvi-market-close] {
+  width: 36px;
+  font-size: 20px;
+  background: none;
+  border: 0;
+}
+.dvi-home-market-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--edge);
+}
+.dvi-home-market-tools input,
+.dvi-home-market-tools select {
+  background: var(--panel-sunken);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  min-height: 30px;
+  padding: 4px 8px;
+  min-width: 0;
+}
+.dvi-home-market-tools input {
+  flex: 1;
+  min-width: 120px;
+}
+.dvi-home-market-tools select {
+  max-width: 150px;
+}
+.dvi-home-market-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 13px 16px;
+}
+.dvi-home-market-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+.dvi-home-market-group {
+  min-width: 0;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.dvi-home-market-group > h3 {
+  margin: 0;
+  padding: 9px 11px;
+  font-size: 13px;
+  background: var(--panel-raised);
+  display: flex;
+  justify-content: space-between;
+  gap: 9px;
+}
+.dvi-home-market-group > h3 small {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+.dvi-home-market-table {
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.dvi-home-market table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 430px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.dvi-home-market th,
+.dvi-home-market td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--edge);
+  text-align: right;
+  vertical-align: top;
+}
+.dvi-home-market th {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.dvi-home-market th:first-child,
+.dvi-home-market td:first-child {
+  text-align: left;
+  min-width: 140px;
+}
+.dvi-home-market td small {
+  display: block;
+  font-size: 9px;
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+.dvi-home-market .dvi-point-leading {
+  color: var(--moss);
+}
+.dvi-home-market td strong {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--brass);
+  white-space: nowrap;
+}
+.dvi-home-market .dvi-market-more {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: var(--panel-raised);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.dvi-home-market-note {
+  padding: 9px 16px;
+  border-top: 1px solid var(--edge);
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.dvi-home-market-empty {
+  padding: 18px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+.dvi-home-market button:focus-visible,
+.dvi-home-market input:focus-visible,
+.dvi-home-market select:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+@media (max-width: 700px), (max-width: 1000px) and (pointer: coarse) {
+  .dvi-home-market {
+    inset: 0;
+    max-height: none;
+    height: 100vh;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .dvi-home-market header {
+    border-radius: 0;
+    padding: 11px 13px;
+  }
+  .dvi-home-market h2 {
+    font-size: 17px;
+  }
+  .dvi-home-market [data-dvi-market-close] {
+    min-height: 44px;
+    width: 44px;
+  }
+  .dvi-home-market-tools {
+    padding: 9px 12px;
+    gap: 6px;
+  }
+  .dvi-home-market-tools input {
+    font-size: 16px;
+    flex-basis: 100%;
+    min-height: 42px;
+  }
+  .dvi-home-market-tools select {
+    flex: 1;
+    max-width: none;
+    min-height: 40px;
+    font-size: 13px;
+  }
+  .dvi-home-market-scroll {
+    padding: 10px 12px;
+  }
+  .dvi-home-market-groups {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .dvi-home-market-note {
+    padding: 8px 12px;
+  }
+  .dvi-home-market-launch {
+    bottom: calc(126px + env(safe-area-inset-bottom));
+    font-size: 11px;
+  }
+}
+`;
+  homeMarketStyle.textContent += `
+.dvi-home-market-group {
+  --point-accent: var(--brass);
+  border-color: var(--edge);
+  background: var(--panel-raised);
+}
+.dvi-home-market-group[data-family="stone"] {
+  --point-accent: var(--rarity-rare);
+}
+.dvi-home-market-group[data-family="fish"] {
+  --point-accent: var(--rarity-uncommon);
+}
+.dvi-home-market-group[data-family="hide"] {
+  --point-accent: var(--brass);
+}
+.dvi-home-market-group[data-family="crop"] {
+  --point-accent: var(--moss);
+}
+.dvi-home-market-group > h3 {
+  border-left: 3px solid var(--point-accent);
+  color: var(--point-accent);
+  padding: 8px 10px;
+  background: var(--panel-raised);
+  font-size: 14px;
+}
+.dvi-home-market-group > h3 small {
+  align-self: center;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+.dvi-home-market table {
+  font-size: 12px;
+}
+.dvi-home-market th,
+.dvi-home-market td {
+  padding: 7px 8px;
+}
+.dvi-home-market th {
+  font-size: 10px;
+  background: var(--panel-sunken);
+}
+.dvi-home-market td {
+  line-height: 1.55;
+}
+.dvi-home-market td:first-child {
+  font-weight: 500;
+}
+.dvi-home-market td small {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+.dvi-home-market td strong {
+  font-size: 12px;
+}
+.dvi-market-rank {
+  font:
+    500 10px/1.5 ui-monospace,
+    monospace;
+  color: var(--ink-muted);
+  margin-right: 6px;
+}
+.dvi-home-market tbody tr:last-child td {
+  border-bottom: 0;
+}
+.dvi-home-market tbody tr:hover {
+  background: #ffffff04;
+}
+@media (max-width: 700px), (max-width: 1000px) and (pointer: coarse) {
+  .dvi-home-market table {
+    min-width: 0;
+    display: block;
+  }
+  .dvi-home-market thead {
+    display: none;
+  }
+  .dvi-home-market tbody {
+    display: block;
+  }
+  .dvi-home-market tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px 8px;
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--edge);
+  }
+  .dvi-home-market td,
+  .dvi-home-market td:first-child {
+    padding: 0;
+    border: 0;
+    text-align: left;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .dvi-home-market td:first-child {
+    grid-column: 1/-1;
+    font-size: 13px;
+  }
+  .dvi-home-market td:first-child small {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+  .dvi-home-market td:not(:first-child):before {
+    content: attr(data-label);
+    display: block;
+    font-size: 9px;
+    line-height: 1.3;
+    color: var(--ink-muted);
+    margin-bottom: 2px;
+  }
+  .dvi-home-market td strong {
+    font-size: 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .dvi-home-market td small {
+    font-size: 9px;
+  }
+  .dvi-home-market tr:last-child {
+    border-bottom: 0;
+  }
+  .dvi-home-market-group > h3 {
+    padding: 10px 12px;
+  }
+  .dvi-home-market-note {
+    font-size: 9px;
+  }
+}
+`;
+  homeMarketStyle.textContent += `
+.dvi-market-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.dvi-market-item .dvi-market-rank {
+  flex: none;
+  width: 14px;
+  margin: 0;
+  font-size: 9px;
+}
+.dvi-market-item-icon {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background-image: var(--dvi-home-item-atlas);
+  background-repeat: no-repeat;
+  background-size: 384px 336px;
+  image-rendering: pixelated;
+}
+.dvi-market-item-copy {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dvi-market-item-name {
+  display: block;
+  line-height: 1.5;
+}
+.dvi-home-market tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--panel-sunken) 24%, transparent);
+}
+`;
+  function homeMarketItemIcon(id) {
+    const index = homeMarketIconIndex.get(id % 1000);
+    if (index === undefined) return "";
+    return (
+      '<i class="dvi-market-item-icon" data-dvi-item-art="' +
+      (id % 1000) +
+      '" style="background-position:-' +
+      (index % HOME_MARKET_ART.columns) * 24 +
+      "px -" +
+      Math.floor(index / HOME_MARKET_ART.columns) * 24 +
+      'px" aria-hidden="true"></i>'
+    );
+  }
+  function resetHomeMarket() {
+    homeMarketView?.launch.remove();
+    homeMarketView?.panel.remove();
+    homeMarketView = null;
+    homeMarketStyle.remove();
+    homeMarketCache = null;
+  }
+  function mountHomeMarket() {
+    if (homeMarketView) return;
+    (document.head || document.documentElement).append(homeMarketStyle);
+    const launch = document.createElement("button");
+    launch.type = "button";
+    launch.className = "dvi-home-market-launch";
+    launch.dataset.noI18n = "";
+    const panel = document.createElement("section");
+    panel.className = "dvi-home-market";
+    panel.dataset.noI18n = "";
+    panel.style.setProperty("--dvi-home-item-atlas", 'url("' + HOME_MARKET_ART.source + '")');
+    panel.hidden = true;
+    panel.setAttribute("role", "dialog");
+    panel.innerHTML =
+      '<header><div><h2></h2><p></p></div><button type="button" data-dvi-market-close aria-label="Close">×</button></header><div class="dvi-home-market-tools"><input type="search"><select data-dvi-market-kind></select><select data-dvi-market-quality></select></div><div class="dvi-home-market-scroll"><div class="dvi-home-market-groups"></div></div><div class="dvi-home-market-note"></div>';
+    const view = { launch, panel, open: false, html: "", language: null, focus: null };
+    homeMarketView = view;
+    launch.onclick = () => {
+      view.focus = document.activeElement;
+      view.open = true;
+      panel.hidden = false;
+      renderHomeMarket();
+      panel.querySelector("[data-dvi-market-close]").focus();
+    };
+    const close = () => {
+      view.open = false;
+      panel.hidden = true;
+      homeMarketCache = null;
+      view.focus?.focus?.();
+    };
+    panel.querySelector("[data-dvi-market-close]").onclick = close;
+    panel.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    });
+    for (const e of ["input", "change"])
+      panel.querySelector(".dvi-home-market-tools").addEventListener(e, () => renderHomeMarket());
+    (document.body || document.documentElement).append(launch, panel);
+  }
+  function renderHomeMarket() {
+    const view = homeMarketView;
+    if (!view?.open || document.hidden) return;
+    const { panel } = view,
+      kind = panel.querySelector("[data-dvi-market-kind]"),
+      quality = panel.querySelector("[data-dvi-market-quality]"),
+      search = panel.querySelector("input");
+    if (view.language !== i18n.language) {
+      view.language = i18n.language;
+      panel.querySelector("h2").textContent = t("[SIK] 家园点数行情");
+      panel.setAttribute("aria-label", t("[SIK] 家园点数行情"));
+      panel.querySelector("header p").textContent = t("每类前五项 · 按已知金币/点排序");
+      search.placeholder = t("搜索物品");
+      search.setAttribute("aria-label", t("搜索物品"));
+      kind.setAttribute("aria-label", t("物品类型"));
+      kind.innerHTML = [
+        "crafted",
+        "gear",
+        "all",
+        "smithing",
+        "crafting",
+        "fletching",
+        "cooking",
+        "herblore",
+      ]
+        .map(
+          (v, i) =>
+            '<option value="' +
+            v +
+            '">' +
+            escape(t(["制成品", "装备", "全部材料", "锻造", "制作", "制箭", "烹饪", "炼药"][i])) +
+            "</option>",
+        )
+        .join("");
+      quality.setAttribute("aria-label", t("品质"));
+      quality.innerHTML =
+        '<option value="all">' +
+        t("全部品质") +
+        "</option>" +
+        TIERS.map((n, i) => '<option value="' + i + '">' + escape(t(n)) + "</option>").join("");
+      panel.querySelector(".dvi-home-market-note").textContent = t(
+        "挂牌参考是与其他已知材料同点价的整金币上限，不含制造成本，不保证成交。买单量仅代表已知挂单；≈ 为估价。",
+      );
+    }
+    const now = Date.now(),
+      key = [
+        store.state.sessionRevision,
+        store.state.quoteRevision,
+        store.state.taxBp,
+        Math.floor(now / 15000),
+      ].join(":");
+    if (homeMarketCache?.key !== key)
+      homeMarketCache = {
+        key,
+        rows: homeMarketModel.rows(store.state.books, now, store.state.taxBp),
+      };
+    const needle = search.value.trim().toLowerCase(),
+      selection = kind.value || "crafted",
+      tier = quality.value || "all";
+    const sourceName = (s) =>
+      t(
+        {
+          client: "客户端报价",
+          public: "公开快照（估价）",
+          cached: "缓存报价（估价）",
+          history: "历史成交（估价）",
+        }[s],
+      );
+    const money = (n) =>
+      n < 0.001
+        ? n.toPrecision(2)
+        : n.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
+            maximumFractionDigits: n < 1 ? 5 : 2,
+          });
+    const rows = homeMarketCache.rows.filter((r) => {
+      const name = itemName(r.id);
+      return (
+        (!needle || name.toLowerCase().includes(needle) || String(r.id) === needle) &&
+        (tier === "all" || Math.floor(r.id / 1000) === +tier) &&
+        (selection === "all" ||
+          (selection === "crafted" && r.crafted) ||
+          (selection === "gear" && r.gear) ||
+          r.skill === selection)
+      );
+    });
+    const html = globalThis.DVIHomeMaterials.families
+      .map((f) => {
+        const priority = (r) => (r.ask ? (["client", "public"].includes(r.ask.source) ? 0 : 1) : 2);
+        const group = rows
+            .filter((r) => r.family === f)
+            .sort(
+              (a, b) =>
+                priority(a) - priority(b) ||
+                (a.perPoint ?? Infinity) - (b.perPoint ?? Infinity) ||
+                (b.reference !== null ? 1 : 0) - (a.reference !== null ? 1 : 0) ||
+                a.id - b.id,
+            ),
+          shown = group.slice(0, 5);
+        const body = shown
+          .map((r, index) => {
+            const name =
+                (i18n.language === "en" ? t(TIERS[Math.floor(r.id / 1000)]) + " " : "") +
+                itemName(r.id),
+              exchange =
+                t("每件 {points} 点", { points: money(r.each) }) +
+                (r.skill ? " · " + t(LABELS[r.skill] || r.skill) + " Lv." + r.level : "");
+            const ask = r.ask ? (r.ask.estimated ? "≈ " : "") + money(r.perPoint) : "—";
+            const quoteInfo = r.ask
+              ? fmt(r.ask.price) +
+                " " +
+                t("金币/件") +
+                (r.ask.qty !== null ? " · " + t("可售 {qty} 件", { qty: fmt(r.ask.qty) }) : "")
+              : t("暂无有效材料报价");
+            const reference =
+                r.reference !== null
+                  ? "≈ " + r.reference.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN")
+                  : "—",
+              hint =
+                r.netReference !== null
+                  ? t("扣税后约 {coins} 金币/件", { coins: money(r.netReference) })
+                  : t("交易税率未知");
+            const bid = r.bid ? (r.bid.estimated ? "≈ " : "") + fmt(r.bid.price) : "—",
+              bidQty =
+                r.bid?.qty != null ? t("买单 {qty} 件", { qty: fmt(r.bid.qty) }) : t("买单量未知");
+            return (
+              '<tr><td class="' +
+              (r.leading ? "dvi-point-leading" : "") +
+              '"><div class="dvi-market-item"><span class="dvi-market-rank">' +
+              String(index + 1).padStart(2, "0") +
+              "</span>" +
+              homeMarketItemIcon(r.id) +
+              '<span class="dvi-market-item-copy"><span class="dvi-market-item-name">' +
+              escape(name) +
+              "</span><small>" +
+              escape(exchange) +
+              '</small></span></div></td><td data-label="' +
+              escape(t("金币/点")) +
+              '" title="' +
+              escape(r.ask ? sourceName(r.ask.source) : quoteInfo) +
+              '"><strong>' +
+              escape(ask) +
+              "</strong><small>" +
+              escape(quoteInfo) +
+              '</small></td><td data-label="' +
+              escape(t("挂牌参考")) +
+              '" title="' +
+              escape(hint) +
+              '"><strong>' +
+              escape(reference) +
+              "</strong><small>" +
+              escape(t("金币/件")) +
+              '</small></td><td data-label="' +
+              escape(t("买单价")) +
+              '"><strong>' +
+              escape(bid) +
+              "</strong><small>" +
+              escape(bidQty) +
+              "</small></td></tr>"
+            );
+          })
+          .join("");
+        const family = t(
+          { wood: "木材", stone: "石料", fish: "鱼", hide: "兽皮", crop: "作物" }[f],
+        );
+        return (
+          '<section class="dvi-home-market-group" data-family="' +
+          f +
+          '"><h3>' +
+          escape(family) +
+          "<small>" +
+          escape(t("前 {count} 项", { count: shown.length })) +
+          '</small></h3><div class="dvi-home-market-table"><table><thead><tr>' +
+          ["物品与兑换", "金币/点", "挂牌参考", "买单价"]
+            .map((s) => "<th>" + escape(t(s)) + "</th>")
+            .join("") +
+          "</tr></thead><tbody>" +
+          body +
+          "</tbody></table></div>" +
+          (!group.length
+            ? '<div class="dvi-home-market-empty">' + escape(t("没有符合条件的物品")) + "</div>"
+            : "") +
+          "</section>"
+        );
+      })
+      .join("");
+    if (view.html !== html) {
+      panel.querySelector(".dvi-home-market-groups").innerHTML = html;
+      view.html = html;
+    }
+  }
+  function syncHomeMarket() {
+    if (!insightFeatureEnabled("homeMarket")) return;
+    if (!store.state.player) return;
+    mountHomeMarket();
+    const label = t("家园点数行情");
+    if (homeMarketView.launch.textContent !== label) homeMarketView.launch.textContent = label;
+    renderHomeMarket();
+  }
+
   // ---- src/settings-ui.js ----
   /* A local-only tab beside native account tabs. All attributes are plugin-owned. */
   const insightSettingsHosts = new WeakMap();
@@ -32580,6 +35011,15 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   function applyInsightFeature(id) {
     const on = insightFeatureEnabled(id);
     if (id === "nativeUiEfficiency") syncNativePresentation();
+    if (id === "homeAppearance") syncHomeAppearance();
+    if (id === "homeMaterialPrices" || id === "homeAppearance") {
+      if (insightFeatureEnabled("homeMaterialPrices")) syncHomeMaterialPrices();
+      else resetHomeMaterialPrices();
+    }
+    if (id === "homeMarket") {
+      if (on) syncHomeMarket();
+      else resetHomeMarket();
+    }
     if (id === "work" && !on) {
       for (const record of nativeRecords.values()) {
         syncRouteXp(record.row, NaN);
@@ -32858,7 +35298,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   // ---- src/presentation-ui.js ----
   const nativePresentation = globalThis.DVIPresentation.create(document);
   function syncNativePresentation() {
-    if (insightFeatureEnabled("nativeUiEfficiency")) nativePresentation.sync();
+    if (insightFeatureEnabled("nativeUiEfficiency")) nativePresentation.sync(false);
     else nativePresentation.dispose();
   }
   window.addEventListener("pagehide", (event) => {
@@ -33498,6 +35938,12 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       pumpNative();
       return;
     }
+    // An automatic hourly job queued while the chooser was open has no viewer
+    // after it closes. Explicit level calculations may still finish normally.
+    if (!task.full && task.record.row.closest?.('[hidden],.routes[data-open="false"]')) {
+      pumpNative();
+      return;
+    }
     if (task.full && task.target !== Number(task.record.box.querySelector("input").value)) {
       task.record.box.querySelector("button").disabled = false;
       pumpNative();
@@ -33808,6 +36254,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   }
   function attachNativeRow(row) {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("work")) return;
+    if (row.closest?.('[hidden],.routes[data-open="false"]')) return;
     const job = model.jobs.get(Number(row.dataset.job));
     if (!job || job.retired) return;
     let record = nativeRecords.get(row);
@@ -33914,6 +36361,9 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     mountSimulatorLinks();
     syncBuffs();
     syncHomeTimers();
+    syncHomeBoard();
+    syncHomeMaterialPrices();
+    syncHomeMarket();
 
     syncBossRecords();
     syncEquipmentValue();
@@ -33928,6 +36378,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       }
     for (const row of document.querySelectorAll(".route[data-job]")) attachNativeRow(row);
     for (const list of document.querySelectorAll("[data-routes]")) {
+      if (list.closest?.('[hidden],.routes[data-open="false"]')) continue;
       syncBattleScrollGuard(list);
       nativeLists.set(list, {
         ids: nativeListIds(list),
@@ -33963,10 +36414,17 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       nativeRecords.set(next, record);
       next.insertAdjacentElement("afterend", record.box);
       replaced.add(list);
-      // Native hourly forecasts repaint the list in several idle batches. Restore
-      // the completed XP and profit together in this microtask, before paint;
-      // the ordinary 80ms scan would visibly alternate native and planner XP.
-      renderNative(record);
+      // The retained box already has its prices, disclosure and input. Native
+      // idle batches only replace the route button: restore its XP before paint
+      // without rebuilding pricing/plan markup for every batch. The scheduled
+      // scan still refreshes changed role, quote, target and locale values.
+      const cached = nativeCache.get(nativeKey(record));
+      syncRouteXp(
+        next,
+        cached?.error || cached?.result?.farming ? NaN : cached?.result?.hour?.xp,
+        !!(nativeActive?.key === nativeKey(record)),
+      );
+      if (record.box.hidden !== !!next.disabled) record.box.hidden = !!next.disabled;
     }
     for (const list of replaced) {
       const old = nativeLists.get(list);
@@ -34033,6 +36491,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   }
   const nativeMutations = new MutationObserver((changes) => {
     if (document.hidden) return;
+    if (insightFeatureEnabled("nativeUiEfficiency")) nativePresentation.invalidate(changes);
     changes = changes.filter(globalThis.DVIPresentation.changeHasEffect);
     if (!changes.length) return;
     // Native gives enhancement the title but leaves main-route controls beside
@@ -34123,7 +36582,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     characterData: true,
     attributes: true,
     attributeOldValue: true,
-    attributeFilter: ["hidden", "aria-pressed", "data-item", "disabled", "lang"],
+    attributeFilter: ["hidden", "aria-pressed", "data-item", "disabled", "lang", "data-open"],
   });
   const inventoryThemeMutations = new MutationObserver(scheduleNative);
   inventoryThemeMutations.observe(document.documentElement, {
