@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.107
+// @version      0.4.108
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -20345,7 +20345,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.107";
+  const PLUGIN_VERSION = "0.4.108";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -25738,8 +25738,6 @@ html.dvi-insights .guild-window .guild-body {
 }
 html.dvi-insights .guild-window [data-guild-sheet] {
   z-index: 2;
-  background: var(--dvi-guild-paper, var(--panel));
-  color: var(--ink);
 }
 html.dvi-insights .guild-window .ranks-sheet-head b {
   font-size: 17px;
@@ -31087,7 +31085,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
         if (!p) {
           const a = anchor?.(),
             y = a?.bottom ?? b.y + 70;
-          p = { edge: "right", ratio: (y + 2 - b.y) / Math.max(1, b.height - r.height) };
+          p = { edge: "right", ratio: (y - b.y) / Math.max(1, b.height - r.height) };
         }
         const next = position(p, b, r.width, r.height);
         button.dataset.edge = next.edge;
@@ -31244,22 +31242,32 @@ html[data-theme="light"] .dvi-home-market {
   width: auto;
   max-width: calc(100vw - 16px);
   padding: 3px 8px;
-  border: 2px solid var(--edge-bright);
-  border-radius: 0;
-  background: var(--panel);
-  background-image: none;
+  border: 0;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #6e4423, #4b2c14);
   appearance: none;
   -webkit-appearance: none;
   transform: none;
-  color: var(--ink);
-  font: 600 var(--fs-sm, 12px) / 1.25 var(--sans, system-ui, sans-serif);
+  color: #fbe9c8;
+  font: 800 var(--fs-sm, 12px) / 1.25 var(--sans, system-ui, sans-serif);
   cursor: grab;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 55%);
   box-shadow:
-    0 0 0 1px var(--panel-sunken),
-    inset 0 0 0 1px var(--panel-sunken);
+    inset 0 0 0 1px #c79352,
+    0 0 0 2px #1f1108,
+    0 3px #1f1108;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+}
+.dvi-home-market-launch:hover {
+  background: linear-gradient(180deg, #82532b, #5a3519);
+  color: #fff6e2;
+}
+.dvi-home-market-launch:active {
+  box-shadow:
+    inset 0 0 0 1px #c79352,
+    0 0 0 2px #1f1108;
 }
 .dvi-home-market-launch b {
   font: inherit;
@@ -31753,22 +31761,13 @@ html[data-theme="light"] .dvi-home-market {
       search.placeholder = t("搜索物品");
       search.setAttribute("aria-label", t("搜索物品"));
       kind.setAttribute("aria-label", t("物品类型"));
-      kind.innerHTML = [
-        "crafted",
-        "gear",
-        "all",
-        "smithing",
-        "crafting",
-        "fletching",
-        "cooking",
-        "herblore",
-      ]
+      kind.innerHTML = ["all", "smithing", "crafting", "fletching", "cooking", "herblore"]
         .map(
           (v, i) =>
             '<option value="' +
             v +
             '">' +
-            escape(t(["制成品", "装备", "全部材料", "锻造", "制作", "制箭", "烹饪", "炼药"][i])) +
+            escape(t(["全部材料", "锻造", "制作", "制箭", "烹饪", "炼药"][i])) +
             "</option>",
         )
         .join("");
@@ -31796,7 +31795,7 @@ html[data-theme="light"] .dvi-home-market {
         rows: homeMarketModel.rows(store.state.books, now, store.state.taxBp),
       };
     const needle = search.value.trim().toLowerCase(),
-      selection = kind.value || "crafted",
+      selection = kind.value || "all",
       tier = quality.value || "all";
     const money = (n) =>
       n < 0.001
@@ -31809,10 +31808,7 @@ html[data-theme="light"] .dvi-home-market {
       return (
         (!needle || name.toLowerCase().includes(needle) || String(r.id) === needle) &&
         (tier === "all" || Math.floor(r.id / 1000) === +tier) &&
-        (selection === "all" ||
-          (selection === "crafted" && r.crafted) ||
-          (selection === "gear" && r.gear) ||
-          r.skill === selection)
+        (selection === "all" || r.skill === selection)
       );
     });
     const html = globalThis.DVIHomeMaterials.families

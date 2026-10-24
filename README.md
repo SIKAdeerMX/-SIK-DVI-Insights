@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.107
+# [SIK] DVI Insights 0.4.108
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.107：侧边家园入口直接跟随游戏原生主题，采用农场/Boss按钮描边、缩小上下留白，默认更靠近上方家园倒计时。手机家园按钮和行情控件改用原生风格的方角描边及内缘明暗，点数分类标题下方采用与物品卡片相同的浅色细线，左侧保留原来的装饰线。家园行情入口默认位于右上角倒计时下方，手机与PC可拖动、吸附屏幕四边并记住位置，使用“[SIK] 家园”窄条，单击打开、关闭收回，无入口悬浮提示。优化手机行情排版，价格说明可折叠，卖单数量明确标为“在售”，移除表格报价悬浮提示。家园购买展开保持列宽和当前卡片位置，转换返回保留列表位置，修复窄屏横向溢出及窗口底部超高。保留0.4.102的性能优化、原设置、有效观测与原生操作。
+0.4.108：公会成员等级详情恢复原生主题底色。家园行情默认比较全部可兑换材料，移除制成品/装备筛选，只保留按制造技能及品质筛选。侧边入口采用PC原生按钮的棕金渐变、描边与文字样式，保持紧凑尺寸，默认紧贴家园倒计时下方。手机家园按钮和行情控件改用原生风格的方角描边及内缘明暗，点数分类标题下方采用与物品卡片相同的浅色细线，左侧保留原来的装饰线。家园行情入口默认位于右上角倒计时下方，手机与PC可拖动、吸附屏幕四边并记住位置，使用“[SIK] 家园”窄条，单击打开、关闭收回，无入口悬浮提示。优化手机行情排版，价格说明可折叠，卖单数量明确标为“在售”，移除表格报价悬浮提示。家园购买展开保持列宽和当前卡片位置，转换返回保留列表位置，修复窄屏横向溢出及窗口底部超高。保留0.4.102的性能优化、原设置、有效观测与原生操作。
 
 
 
@@ -54,7 +54,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.107 makes the Home edge tab follow the game’s own theme and farm/Boss chip border styling, with less vertical padding and a default position closer to the Home timer. It brings squared native-style mobile Home controls, inset button edges, and subtle one-pixel material heading dividers matching the item rows, with the original side accents. It docks the Home market launcher below the upper-right Home timers. Drag it to any screen edge on mobile or desktop; its position is remembered and its compact “[SIK] Home” edge tab opens with one click and returns on close, without hover tooltips. The mobile market layout is clearer, price notes fold away, offer quantities say “Listed”, and table quote tooltips are removed. Native Home purchase cards retain their column and scroll anchor; conversion returns to the previous list position without horizontal overflow or excess mobile window height. All 0.4.102 performance changes, settings, valid observations and native controls are retained.
+0.4.108 restores native theme colors in guild member details and defaults the Home market filter to all convertible materials, retaining skill and quality filters while removing the redundant crafted-item and equipment categories. The compact Home edge tab uses the native PC button’s brown-gold gradient, border and text styling, directly below the Home timer. It brings squared native-style mobile Home controls, inset button edges, and subtle one-pixel material heading dividers matching the item rows, with the original side accents. It docks the Home market launcher below the upper-right Home timers. Drag it to any screen edge on mobile or desktop; its position is remembered and its compact “[SIK] Home” edge tab opens with one click and returns on close, without hover tooltips. The mobile market layout is clearer, price notes fold away, offer quantities say “Listed”, and table quote tooltips are removed. Native Home purchase cards retain their column and scroll anchor; conversion returns to the previous list position without horizontal overflow or excess mobile window height. All 0.4.102 performance changes, settings, valid observations and native controls are retained.
 
 
 - Open game **Settings → [SIK] Insights** for 25 feature switches, potion costs and update reminders. Separately control list forecasts and target-level calculations, current work/combat statistics, offline accounting, action potion details, and bank/market value sorting. Disabled functions stop their calculations or recording. Native information-panel write deduplication can be switched off for comparison. Changes apply immediately and persist in this browser; existing preferences are retained.
