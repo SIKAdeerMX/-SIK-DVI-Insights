@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.108
+// @version      0.4.109
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -20345,7 +20345,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.108";
+  const PLUGIN_VERSION = "0.4.109";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -29193,8 +29193,11 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     onSnapshot: (data) => {
       if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("publicPrices"))
         return;
+      const previous = store.state.publicQuoteSnapshot;
+      const changed = !previous || Date.parse(data.generatedAt) > Date.parse(previous.generatedAt);
+      if (changed) store.state.publicQuoteSnapshot = data;
       const result = publicMarket.merge(store.state.books, data, Date.now(), store.state.orders);
-      if (result.changed) store.refreshBooks(result.books);
+      if (result.changed || changed) store.refreshBooks(result.books);
     },
     fetchSnapshot: async () => {
       const controller = new AbortController(),
@@ -29873,8 +29876,88 @@ html[data-theme="light"] [data-home-window] {
   border-radius: 5px;
   font-size: 12px;
 }
-[data-home-veil] .home-room-top {
-  gap: 12px;
+/* A single room is a short detail sheet, separate from the stable board/list. */
+[data-home-veil] .home-room-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 6px;
+}
+[data-home-veil] .home-room-head .home-board-icon {
+  flex: none;
+}
+[data-home-veil] .home-room-head .home-blurb {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+[data-home-veil] .home-room-head + .home-status {
+  margin: 0 0 9px;
+  font-size: 12px;
+}
+[data-home-veil] .home-next {
+  display: block;
+}
+[data-home-veil] .home-next .home-points {
+  margin: 7px 0;
+  font-size: 12px;
+}
+[data-home-veil] .home-next .dvi-home-materials {
+  margin: 8px 0;
+}
+[data-home-veil] .home-next .home-buy {
+  display: block;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--edge);
+}
+[data-home-veil] .home-next .home-buy-line {
+  grid-template-columns: minmax(0, 1fr) minmax(140px, auto);
+}
+[data-home-veil] .home-next .home-buy-field {
+  max-width: none;
+}
+[data-home-veil] .home-next .home-buy.home-buy-auto .home-buy-btn {
+  min-height: 46px;
+  max-width: 260px;
+}
+[data-home-veil] .home-next .home-buy-quote {
+  min-height: 52px;
+  padding: 7px 9px;
+  margin-top: 7px;
+  line-height: 1.5;
+}
+[data-home-veil] .home-next .home-uptime {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+[data-home-veil] .home-place {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--edge);
+}
+[data-home-veil] .home-place > .home-status {
+  margin: 0;
+  font-size: 12px;
+}
+[data-home-veil] .home-place > .home-actions {
+  margin: 0;
+}
+@media (min-width: 701px) and (pointer: fine) {
+  [data-home-veil] [data-home-window]:has(.home-room-head) {
+    width: min(620px, calc(100vw - 32px));
+    height: auto;
+  }
+  [data-home-veil] [data-home-body]:has(> .home-room-head) {
+    flex: 0 1 auto;
+  }
 }
 [data-home-veil] .home-conv-row {
   min-width: 0;
@@ -30355,8 +30438,8 @@ html.v4 [data-home-veil] .home-actions button:hover {
     "use strict";
     const families = ["wood", "stone", "fish", "hide", "crop"];
     const fresh = (at, now, age) => Number.isFinite(at) && at <= now && now - at <= age;
-    function quote(book, now) {
-      if (!book) return null;
+    function quote(book, now, publicOffer = null) {
+      book = book || {};
       const at = book.askAt ?? book.at,
         depthAt = book.askDepthAt ?? book.depthAt;
       if (
@@ -30394,6 +30477,58 @@ html.v4 [data-home-veil] .home-actions button:hover {
           source: book.askPublic ? "public" : "client",
           estimated: !!book.askPublic,
         };
+      // Keep the still-valid public observation independently of a matching native
+      // quote. A native five-minute timeout must not erase a fifteen-minute source.
+      const cached = book.purchaseCache,
+        cacheAt = cached?.price > 0 && fresh(cached.at, now, 86400000) ? cached.at : 0;
+      const stamp = Math.max(
+        Number.isFinite(at) ? at : 0,
+        Number.isFinite(depthAt) ? depthAt : 0,
+        cacheAt,
+      );
+      const hasDepth = Array.isArray(book.asks) && Number.isFinite(depthAt) && depthAt >= (at || 0);
+      const levels = hasDepth
+        ? book.asks
+            .filter(
+              (x) =>
+                Number.isFinite(x.price) && x.price > 0 && Number.isSafeInteger(x.qty) && x.qty > 0,
+            )
+            .sort((a, b) => a.price - b.price)
+        : null;
+      const nativePrice = hasDepth ? levels[0]?.price : book.ask,
+        nativeQty = hasDepth
+          ? levels.filter((x) => x.price === nativePrice).reduce((sum, x) => sum + x.qty, 0)
+          : book.askQty;
+      const empty = hasDepth
+        ? !levels.length
+        : (Object.hasOwn(book, "ask") && !(book.ask > 0)) || book.askQty === 0;
+      const nativeEmpty =
+        !book.askPublic && empty && (fresh(at, now, 300000) || fresh(depthAt, now, 300000));
+      const matching =
+        !empty &&
+        (cacheAt >= Math.max(at || 0, depthAt || 0) ? cached?.price : nativePrice) ===
+          publicOffer?.price;
+      if (
+        !nativeEmpty &&
+        publicOffer?.price > 0 &&
+        Number.isFinite(publicOffer.price) &&
+        Number.isSafeInteger(publicOffer.qty) &&
+        publicOffer.qty > 0 &&
+        fresh(publicOffer.at, now, 900000) &&
+        (publicOffer.at >= stamp || matching)
+      ) {
+        const qty =
+          publicOffer.at < stamp && Number.isSafeInteger(nativeQty) && nativeQty > 0
+            ? Math.min(publicOffer.qty, nativeQty)
+            : publicOffer.qty;
+        return {
+          price: publicOffer.price,
+          qty,
+          at: publicOffer.at,
+          source: "public",
+          estimated: true,
+        };
+      }
       const options = [];
       if (book.purchaseCache?.price > 0 && fresh(book.purchaseCache.at, now, 86400000))
         options.push({
@@ -30432,11 +30567,37 @@ html.v4 [data-home-veil] .home-actions button:hover {
         if (!(each > 0) || !Number.isFinite(each)) continue;
         candidates.push({ id, family: point.family, each });
       }
-      function best(books, now = Date.now()) {
+      function quotes(books, now = Date.now(), snapshot = null, orders = []) {
+        const at = Date.parse(snapshot?.generatedAt),
+          valid = snapshot?.game === "Deep Vein Idle" && fresh(at, now, 900000),
+          own = new Map();
+        if (valid)
+          for (const order of orders)
+            if (
+              order.side === "sell" &&
+              Number.isSafeInteger(order.qtyRemaining) &&
+              order.qtyRemaining > 0
+            ) {
+              const key = order.itemId + ":" + order.price;
+              own.set(key, (own.get(key) || 0) + order.qtyRemaining);
+            }
+        return new Map(
+          candidates.map((item) => {
+            const q = valid ? snapshot.items?.[item.id] : null,
+              price = q?.lowestSell,
+              qty = Number.isSafeInteger(q?.sellQty)
+                ? Math.max(0, q.sellQty - (own.get(item.id + ":" + price) || 0))
+                : 0;
+            return [item.id, quote(books[item.id], now, q ? { price, qty, at } : null)];
+          }),
+        );
+      }
+      function best(books, now = Date.now(), snapshot = null, orders = []) {
+        const selected = quotes(books, now, snapshot, orders);
         const current = new Map(),
           fallback = new Map();
         for (const item of candidates) {
-          const price = quote(books[item.id], now);
+          const price = selected.get(item.id);
           if (!price) continue;
           const entry = { ...item, ...price, perPoint: price.price / item.each },
             map = price.source === "client" || price.source === "public" ? current : fallback,
@@ -30454,7 +30615,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
           best: current.get(family) || fallback.get(family) || null,
         }));
       }
-      return { best, candidates: () => candidates.map((r) => ({ ...r })) };
+      return { best, quotes, candidates: () => candidates.map((r) => ({ ...r })) };
     }
     return { create, quote, families };
   });
@@ -30829,7 +30990,12 @@ html.v4 [data-home-veil] .home-actions button:hover {
         key,
         rows: p.ironman
           ? globalThis.DVIHomeMaterials.families.map((family) => ({ family, best: null }))
-          : homeMaterialModel.best(store.state.books, now),
+          : homeMaterialModel.best(
+              store.state.books,
+              now,
+              insightFeatureEnabled("publicPrices") ? store.state.publicQuoteSnapshot : null,
+              store.state.orders,
+            ),
       };
     const number = (n) =>
       n.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
@@ -30922,9 +31088,10 @@ html.v4 [data-home-veil] .home-actions button:hover {
           level: job?.levelReq ?? null,
         };
       });
-      function rows(books, now = Date.now(), taxBp = null) {
+      function rows(books, now = Date.now(), taxBp = null, snapshot = null, orders = []) {
+        const selected = pointModel.quotes(books, now, snapshot, orders);
         const quoted = candidates.map((r) => {
-          const ask = materials.quote(books[r.id], now);
+          const ask = selected.get(r.id);
           return { ...r, ask, perPoint: ask ? ask.price / r.each : null };
         });
         const pools = new Map(
@@ -31242,32 +31409,33 @@ html[data-theme="light"] .dvi-home-market {
   width: auto;
   max-width: calc(100vw - 16px);
   padding: 3px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #6e4423, #4b2c14);
+  border: 1px solid var(--edge-bright);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--panel-raised), var(--panel));
   appearance: none;
   -webkit-appearance: none;
   transform: none;
-  color: #fbe9c8;
-  font: 800 var(--fs-sm, 12px) / 1.25 var(--sans, system-ui, sans-serif);
+  color: var(--ink);
+  font: 400 var(--fs-sm, 12px) / 1.25 var(--sans, system-ui, sans-serif);
   cursor: grab;
-  text-shadow: 0 1px 0 rgb(0 0 0 / 55%);
+  text-shadow: none;
   box-shadow:
-    inset 0 0 0 1px #c79352,
-    0 0 0 2px #1f1108,
-    0 3px #1f1108;
+    inset 0 1px 0 var(--rim-hi, var(--edge-bright)),
+    0 1px 0 var(--rim-lo, var(--panel-sunken));
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 .dvi-home-market-launch:hover {
-  background: linear-gradient(180deg, #82532b, #5a3519);
-  color: #fff6e2;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brass) 8%, var(--panel-raised)),
+    var(--panel)
+  );
+  color: var(--ink);
 }
 .dvi-home-market-launch:active {
-  box-shadow:
-    inset 0 0 0 1px #c79352,
-    0 0 0 2px #1f1108;
+  box-shadow: inset 0 1px 0 var(--rim-lo, var(--edge));
 }
 .dvi-home-market-launch b {
   font: inherit;
@@ -31792,7 +31960,13 @@ html[data-theme="light"] .dvi-home-market {
     if (homeMarketCache?.key !== key)
       homeMarketCache = {
         key,
-        rows: homeMarketModel.rows(store.state.books, now, store.state.taxBp),
+        rows: homeMarketModel.rows(
+          store.state.books,
+          now,
+          store.state.taxBp,
+          insightFeatureEnabled("publicPrices") ? store.state.publicQuoteSnapshot : null,
+          store.state.orders,
+        ),
       };
     const needle = search.value.trim().toLowerCase(),
       selection = kind.value || "all",
