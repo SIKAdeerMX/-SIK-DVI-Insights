@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.105
+// @version      0.4.106
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -20345,7 +20345,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.105";
+  const PLUGIN_VERSION = "0.4.106";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -31404,7 +31404,7 @@ html[data-theme="light"] .dvi-home-market-launch {
   margin: 0;
   padding: 9px 12px;
   border-left: 3px solid var(--point-accent);
-  border-bottom: 2px solid var(--point-accent);
+  border-bottom: 1px solid var(--edge);
   background: var(--panel-sunken);
   color: var(--point-accent);
   font-size: 14px;
@@ -31667,7 +31667,7 @@ html[data-theme="light"] .dvi-home-market-launch {
     border-radius: 0;
   }
   .dvi-home-market-group > h3 {
-    border-left-width: 4px;
+    border-left-width: 3px;
     padding-block: 11px;
     font-weight: 700;
   }
