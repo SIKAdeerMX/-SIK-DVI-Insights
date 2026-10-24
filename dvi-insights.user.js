@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.103
+// @version      0.4.104
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5352,7 +5352,7 @@ SOFTWARE.
     "use strict";
     const en = {
       价格说明: "About prices",
-      "拖动贴边，点击展开": "Drag to dock, tap to expand",
+      "[SIK] 家园": "[SIK] Home",
       "在售 {qty} 件": "Listed: {qty} items",
       全部设施: "All stations",
       可升级: "Ready",
@@ -20345,7 +20345,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.103";
+  const PLUGIN_VERSION = "0.4.104";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -31022,9 +31022,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
     function create(button, { win = window, storage = win.localStorage, key, anchor, onOpen }) {
       let saved = null,
         drag = null,
-        timer = 0,
         suppress = false,
-        expanded = false,
         disposed = false;
       try {
         const p = JSON.parse(storage.getItem(key));
@@ -31056,29 +31054,13 @@ html.v4 [data-home-veil] .home-actions button:hover {
         button.style.top = next.y + "px";
       }
       function collapse() {
-        expanded = false;
         button.dataset.expanded = "false";
-        button.setAttribute("aria-expanded", "false");
         place();
-      }
-      function idle() {
-        win.clearTimeout(timer);
-        timer = win.setTimeout(() => {
-          if (!button.matches(":focus-visible")) collapse();
-        }, 2400);
-      }
-      function expand() {
-        expanded = true;
-        button.dataset.expanded = "true";
-        button.setAttribute("aria-expanded", "true");
-        place();
-        idle();
       }
       function down(e) {
         if (e.button !== 0 || drag) return;
         suppress = false;
         e.stopPropagation();
-        win.clearTimeout(timer);
         const r = button.getBoundingClientRect();
         drag = {
           id: e.pointerId,
@@ -31098,6 +31080,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
         if (Math.hypot(dx, dy) > 6) drag.moved = true;
         if (!drag.moved) return;
         button.dataset.dragging = "true";
+        button.dataset.expanded = "true";
         const b = bounds(),
           r = button.getBoundingClientRect();
         button.style.left = Math.max(b.x, Math.min(b.x + b.width - r.width, drag.left + dx)) + "px";
@@ -31105,6 +31088,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
       }
       function end(e) {
         if (!drag || e.pointerId !== drag.id) return;
+        e.stopPropagation();
         const moved = drag.moved;
         drag = null;
         delete button.dataset.dragging;
@@ -31116,10 +31100,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
           } catch {}
           suppress = true;
           collapse();
-        } else {
-          place();
-          idle();
-        }
+        } else place();
       }
       function click(e) {
         e.stopPropagation();
@@ -31128,11 +31109,8 @@ html.v4 [data-home-veil] .home-actions button:hover {
           return;
         }
         suppress = false;
-        if (expanded) {
-          win.clearTimeout(timer);
-          onOpen();
-          collapse();
-        } else expand();
+        collapse();
+        onOpen();
       }
       function keyboard(e) {
         const edge = {
@@ -31162,8 +31140,6 @@ html.v4 [data-home-veil] .home-actions button:hover {
         lostpointercapture: end,
         click,
         keydown: keyboard,
-        pointerleave: idle,
-        blur: idle,
       };
       for (const [name, fn] of Object.entries(events)) button.addEventListener(name, fn);
       win.addEventListener("resize", place);
@@ -31175,7 +31151,6 @@ html.v4 [data-home-veil] .home-actions button:hover {
         collapse,
         dispose() {
           disposed = true;
-          win.clearTimeout(timer);
           for (const [name, fn] of Object.entries(events)) button.removeEventListener(name, fn);
           win.removeEventListener("resize", place);
           win.visualViewport?.removeEventListener("resize", place);
@@ -31226,15 +31201,15 @@ html[data-theme="light"] .dvi-home-market-launch {
   align-items: center;
   gap: 7px;
   box-sizing: border-box;
-  min-height: 44px;
-  width: 44px;
+  min-height: 32px;
+  width: auto;
   max-width: calc(100vw - 16px);
-  padding: 8px 12px;
+  padding: 6px 5px;
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--panel);
   color: var(--ink);
-  font: 500 12px/1.4 var(--sans, system-ui, sans-serif);
+  font: 600 11px/1.4 var(--sans, system-ui, sans-serif);
   cursor: grab;
   box-shadow: 0 3px 12px #0004;
   touch-action: none;
@@ -31242,9 +31217,11 @@ html[data-theme="light"] .dvi-home-market-launch {
   -webkit-user-select: none;
 }
 .dvi-home-market-launch b {
-  font-size: 18px;
-  line-height: 1;
-  font-weight: 400;
+  font: inherit;
+  white-space: nowrap;
+}
+.dvi-home-market-launch[hidden] {
+  display: none !important;
 }
 .dvi-home-market-launch span {
   display: none;
@@ -31258,16 +31235,16 @@ html[data-theme="light"] .dvi-home-market-launch {
   display: block;
 }
 .dvi-home-market-launch[data-edge="right"] {
-  border-radius: 12px 0 0 12px;
+  border-radius: 6px 0 0 6px;
 }
 .dvi-home-market-launch[data-edge="left"] {
-  border-radius: 0 12px 12px 0;
+  border-radius: 0 6px 6px 0;
 }
 .dvi-home-market-launch[data-edge="top"] {
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 6px 6px;
 }
 .dvi-home-market-launch[data-edge="bottom"] {
-  border-radius: 12px 12px 0 0;
+  border-radius: 6px 6px 0 0;
 }
 .dvi-home-market-launch[data-dragging] {
   cursor: grabbing;
@@ -31505,6 +31482,9 @@ html[data-theme="light"] .dvi-home-market-launch {
   outline-offset: -3px;
 }
 @media (max-width: 700px), (max-width: 1000px) and (pointer: coarse) {
+  .dvi-home-market-launch {
+    min-height: 40px;
+  }
   .dvi-home-market {
     inset: 0;
     max-height: none;
@@ -31633,8 +31613,11 @@ html[data-theme="light"] .dvi-home-market-launch {
     launch.type = "button";
     launch.className = "dvi-home-market-launch";
     launch.dataset.noI18n = "";
-    launch.innerHTML = '<b aria-hidden="true">⌂</b><span></span>';
+    launch.innerHTML = "<b></b><span></span>";
+    launch.setAttribute("aria-expanded", "false");
+    launch.setAttribute("aria-controls", "dvi-home-market");
     const panel = document.createElement("section");
+    panel.id = "dvi-home-market";
     panel.className = "dvi-home-market";
     panel.dataset.noI18n = "";
     panel.style.setProperty("--dvi-home-item-atlas", 'url("' + HOME_MARKET_ART.source + '")');
@@ -31652,9 +31635,11 @@ html[data-theme="light"] .dvi-home-market-launch {
         return r?.height ? r : null;
       },
       onOpen: () => {
-        view.focus = document.activeElement;
+        view.focus = launch;
         view.open = true;
         panel.hidden = false;
+        launch.hidden = true;
+        launch.setAttribute("aria-expanded", "true");
         renderHomeMarket();
         panel.querySelector("[data-dvi-market-close]").focus({ preventScroll: true });
       },
@@ -31664,6 +31649,9 @@ html[data-theme="light"] .dvi-home-market-launch {
     const close = () => {
       view.open = false;
       panel.hidden = true;
+      launch.hidden = false;
+      launch.setAttribute("aria-expanded", "false");
+      view.dock.collapse();
       homeMarketCache = null;
       view.focus?.focus?.({ preventScroll: true });
     };
@@ -31860,8 +31848,8 @@ html[data-theme="light"] .dvi-home-market-launch {
       text = view.launch.querySelector("span");
     if (text.textContent !== label) {
       text.textContent = label;
+      view.launch.querySelector("b").textContent = t("[SIK] 家园");
       view.launch.setAttribute("aria-label", label);
-      view.launch.title = label + " · " + t("拖动贴边，点击展开");
       view.dock.refresh();
     }
     const anchor = document.querySelector(".away-timers:not([hidden])");
