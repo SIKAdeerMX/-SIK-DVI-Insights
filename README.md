@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.104
+# [SIK] DVI Insights 0.4.105
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.104：家园行情入口默认位于右上角倒计时下方，手机与PC可拖动、吸附屏幕四边并记住位置，使用“[SIK] 家园”窄条，单击打开、关闭收回，无入口悬浮提示。优化手机行情排版，价格说明可折叠，卖单数量明确标为“在售”，移除表格报价悬浮提示。家园购买展开保持列宽和当前卡片位置，转换返回保留列表位置，修复窄屏横向溢出及窗口底部超高。保留0.4.102的性能优化、原设置、有效观测与原生操作。
+0.4.105：手机家园按钮和行情控件改用原生风格的方角描边及内缘明暗，点数分类标题增加整行分割线与底色。家园行情入口默认位于右上角倒计时下方，手机与PC可拖动、吸附屏幕四边并记住位置，使用“[SIK] 家园”窄条，单击打开、关闭收回，无入口悬浮提示。优化手机行情排版，价格说明可折叠，卖单数量明确标为“在售”，移除表格报价悬浮提示。家园购买展开保持列宽和当前卡片位置，转换返回保留列表位置，修复窄屏横向溢出及窗口底部超高。保留0.4.102的性能优化、原设置、有效观测与原生操作。
 
 
 
@@ -54,7 +54,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.104 docks the Home market launcher below the upper-right Home timers. Drag it to any screen edge on mobile or desktop; its position is remembered and its compact “[SIK] Home” edge tab opens with one click and returns on close, without hover tooltips. The mobile market layout is clearer, price notes fold away, offer quantities say “Listed”, and table quote tooltips are removed. Native Home purchase cards retain their column and scroll anchor; conversion returns to the previous list position without horizontal overflow or excess mobile window height. All 0.4.102 performance changes, settings, valid observations and native controls are retained.
+0.4.105 brings squared native-style mobile Home controls, inset button edges, and clear full-width dividers under every material heading. It docks the Home market launcher below the upper-right Home timers. Drag it to any screen edge on mobile or desktop; its position is remembered and its compact “[SIK] Home” edge tab opens with one click and returns on close, without hover tooltips. The mobile market layout is clearer, price notes fold away, offer quantities say “Listed”, and table quote tooltips are removed. Native Home purchase cards retain their column and scroll anchor; conversion returns to the previous list position without horizontal overflow or excess mobile window height. All 0.4.102 performance changes, settings, valid observations and native controls are retained.
 
 
 - Open game **Settings → [SIK] Insights** for 25 feature switches, potion costs and update reminders. Separately control list forecasts and target-level calculations, current work/combat statistics, offline accounting, action potion details, and bank/market value sorting. Disabled functions stop their calculations or recording. Native information-panel write deduplication can be switched off for comparison. Changes apply immediately and persist in this browser; existing preferences are retained.
