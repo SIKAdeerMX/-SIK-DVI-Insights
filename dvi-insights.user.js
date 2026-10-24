@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.106
+// @version      0.4.107
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -20345,7 +20345,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.106";
+  const PLUGIN_VERSION = "0.4.107";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -31086,8 +31086,8 @@ html.v4 [data-home-veil] .home-actions button:hover {
         let p = saved;
         if (!p) {
           const a = anchor?.(),
-            y = a?.bottom ?? b.y + 76;
-          p = { edge: "right", ratio: (y + 8 - b.y) / Math.max(1, b.height - r.height) };
+            y = a?.bottom ?? b.y + 70;
+          p = { edge: "right", ratio: (y + 2 - b.y) / Math.max(1, b.height - r.height) };
         }
         const next = position(p, b, r.width, r.height);
         button.dataset.edge = next.edge;
@@ -31209,8 +31209,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
   const homeMarketIconIndex = new Map(HOME_MARKET_ART.ids.map((id, index) => [id, index]));
   const homeMarketStyle = document.createElement("style");
   homeMarketStyle.textContent = `
-.dvi-home-market,
-.dvi-home-market-launch {
+.dvi-home-market {
   --panel: #27231f;
   --panel-raised: #322d26;
   --panel-sunken: #1f1c18;
@@ -31222,8 +31221,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
   --rarity-rare: #9db4c7;
   --rarity-uncommon: #a5b781;
 }
-html[data-theme="light"] .dvi-home-market,
-html[data-theme="light"] .dvi-home-market-launch {
+html[data-theme="light"] .dvi-home-market {
   --panel: #e5dbc5;
   --panel-raised: #eee5d2;
   --panel-sunken: #d9cdb3;
@@ -31240,19 +31238,25 @@ html[data-theme="light"] .dvi-home-market-launch {
   z-index: 7;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   box-sizing: border-box;
-  min-height: 32px;
+  min-height: 0;
   width: auto;
   max-width: calc(100vw - 16px);
-  padding: 6px 5px;
-  border: 1px solid var(--edge);
-  border-radius: 6px;
+  padding: 3px 8px;
+  border: 2px solid var(--edge-bright);
+  border-radius: 0;
   background: var(--panel);
+  background-image: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transform: none;
   color: var(--ink);
-  font: 600 11px/1.4 var(--sans, system-ui, sans-serif);
+  font: 600 var(--fs-sm, 12px) / 1.25 var(--sans, system-ui, sans-serif);
   cursor: grab;
-  box-shadow: 0 3px 12px #0004;
+  box-shadow:
+    0 0 0 1px var(--panel-sunken),
+    inset 0 0 0 1px var(--panel-sunken);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -31274,18 +31278,6 @@ html[data-theme="light"] .dvi-home-market-launch {
 }
 .dvi-home-market-launch[data-expanded="true"] span {
   display: block;
-}
-.dvi-home-market-launch[data-edge="right"] {
-  border-radius: 6px 0 0 6px;
-}
-.dvi-home-market-launch[data-edge="left"] {
-  border-radius: 0 6px 6px 0;
-}
-.dvi-home-market-launch[data-edge="top"] {
-  border-radius: 0 0 6px 6px;
-}
-.dvi-home-market-launch[data-edge="bottom"] {
-  border-radius: 6px 6px 0 0;
 }
 .dvi-home-market-launch[data-dragging] {
   cursor: grabbing;
@@ -31525,9 +31517,6 @@ html[data-theme="light"] .dvi-home-market-launch {
   outline-offset: -3px;
 }
 @media (max-width: 700px), (max-width: 1000px) and (pointer: coarse) {
-  .dvi-home-market-launch {
-    min-height: 40px;
-  }
   .dvi-home-market {
     inset: 0;
     max-height: none;
@@ -31625,15 +31614,6 @@ html[data-theme="light"] .dvi-home-market-launch {
   .dvi-home-market-note {
     padding: 9px 12px;
   }
-  .dvi-home-market-launch {
-    border: 2px solid var(--outline, var(--edge));
-    border-radius: 0 !important;
-    background: var(--panel-raised);
-    box-shadow:
-      inset 0 2px 0 var(--rim-hi, var(--edge)),
-      inset 0 -2px 0 var(--rim-lo, var(--panel-sunken));
-    font-weight: 700;
-  }
   .dvi-home-market [data-dvi-market-close] {
     border: 2px solid var(--outline, var(--edge));
     border-radius: 0;
@@ -31671,7 +31651,6 @@ html[data-theme="light"] .dvi-home-market-launch {
     padding-block: 11px;
     font-weight: 700;
   }
-  .dvi-home-market-launch:active,
   .dvi-home-market [data-dvi-market-close]:active {
     box-shadow: inset 0 2px 0 var(--rim-lo, var(--edge));
     filter: brightness(0.95);
