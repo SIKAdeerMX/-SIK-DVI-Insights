@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.102
+# [SIK] DVI Insights 0.4.103
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.102：合入原生家园界面美化、紧凑建筑卡片、状态筛选及下一等级点数缺口，家园点数行情显示原生物品贴图、有效点价与挂牌参考，三项分别可关。掉落日志仅打开或内容变化时生成，图标按需缓存，取消全页预扫描；原生信息节点复用，收起的工作/战斗列表不再做无用更新。保留原设置、有效观测和原生操作，不新增诊断工具或游戏指令。
+0.4.103：家园行情入口默认位于右上角倒计时下方，手机与PC可拖动、吸附屏幕四边并记住位置，闲置自动收起。优化手机行情排版，价格说明可折叠，卖单数量明确标为“在售”，移除表格报价悬浮提示。家园购买展开保持列宽和当前卡片位置，转换返回保留列表位置，修复窄屏横向溢出及窗口底部超高。保留0.4.102的性能优化、原设置、有效观测与原生操作。
 
 
 
@@ -54,7 +54,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.102 adds native Home styling, compact building cards, state filters and next-level point shortfalls, plus a separately controlled Home material-price view with native item art and sourced price references. Loot content is generated only while open or changed, icons are cached on demand, native information nodes are reused, and closed route lists skip unnecessary updates. Existing settings, valid observations and native controls are retained. No diagnostics or gameplay commands are added.
+0.4.103 docks the Home market launcher below the upper-right Home timers. Drag it to any screen edge on mobile or desktop; its position is remembered and it collapses while idle. The mobile market layout is clearer, price notes fold away, offer quantities say “Listed”, and table quote tooltips are removed. Native Home purchase cards retain their column and scroll anchor; conversion returns to the previous list position without horizontal overflow or excess mobile window height. All 0.4.102 performance changes, settings, valid observations and native controls are retained.
 
 
 - Open game **Settings → [SIK] Insights** for 25 feature switches, potion costs and update reminders. Separately control list forecasts and target-level calculations, current work/combat statistics, offline accounting, action potion details, and bank/market value sorting. Disabled functions stop their calculations or recording. Native information-panel write deduplication can be switched off for comparison. Changes apply immediately and persist in this browser; existing preferences are retained.
