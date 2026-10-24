@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.92
+// @version      0.4.95
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -391,7 +391,17 @@ SOFTWARE.
             return Math.max(x, y) - Math.min(x, y) + diagonal * Math.min(x, y);
           };
           const key = [ax, ay, bx, by, nativeCombat].join(",");
-          if (paths.has(key)) return paths.get(key);
+          if (paths.has(key)) {
+            const cached = paths.get(key);
+            paths.delete(key);
+            paths.set(key, cached);
+            return cached;
+          }
+          const remember = (result) => {
+            while (paths.size >= 256) paths.delete(paths.keys().next().value);
+            paths.set(key, result);
+            return result;
+          };
           if (!walkable(ax, ay) || !walkable(bx, by)) return null;
           const width = map.width,
             start = ay * width + ax,
@@ -411,9 +421,7 @@ SOFTWARE.
               for (let v = goal; v !== start; v = prev[v])
                 out.push({ x: v % width, y: Math.floor(v / width) });
               out.reverse();
-              if (paths.size > 2048) paths.clear();
-              paths.set(key, out);
-              return out;
+              return remember(out);
             }
             if (closed) closed[u.id] = 1;
             const x = u.id % width,
@@ -431,8 +439,7 @@ SOFTWARE.
               }
             }
           }
-          paths.set(key, null);
-          return null;
+          return remember(null);
         }
         function bankDistance(bank, x, y) {
           let distances = bankFields.get(bank.id);
@@ -5344,6 +5351,47 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      性能: "Performance",
+      原生信息面板重复写入优化: "Deduplicate native information panel updates",
+      "跳过信息面板相同的显隐和纯文字写入，保留游戏更新频率；可关闭对照。":
+        "Skip identical visibility and plain-text writes in information panels without changing game update rates; turn off to compare.",
+      工作列表经验与收益: "Work list XP and income",
+      "工作列表的一小时经验、收益和材料预估。":
+        "One-hour work list estimates for XP, income and materials.",
+      战斗列表经验与收益: "Combat list XP and income",
+      "战斗列表的一小时经验、收益和风险预估。":
+        "One-hour combat list estimates for XP, income and risk.",
+      工作目标升级计算: "Work target level calculator",
+      "单独控制目标等级计算；关闭后停止目标重算，保留工作列表预估。":
+        "Control target level calculations separately; turning this off stops target updates and keeps work previews.",
+      战斗目标升级计算: "Combat target level calculator",
+      "单独控制战斗目标等级计算，保留路线预估。":
+        "Control combat target level calculations separately while keeping route previews.",
+      当前工作收入与经验: "Current work income and XP",
+      "任务面板的工作实测与预估；关闭后停止工作观测及后台预估。":
+        "Observed and expected work income; turning this off stops work sampling and background forecasts.",
+      当前战斗收入与补给: "Current combat income and supplies",
+      "任务面板的战斗实测与期望收益；关闭后停止战斗收益采样。":
+        "Observed and expected combat income; turning this off stops combat income sampling.",
+      离线收支统计: "Offline accounting",
+      "离线报告的产值与成本；关闭后停止保存离线基线。":
+        "Value and costs in offline reports; turning this off stops saving offline baselines.",
+      当前行动药水详情: "Current action potion details",
+      "任务面板的药水品质与剩余时间，可独立保留。":
+        "Potion tiers and remaining times in the task panel, independently enabled.",
+      仓库价值与排序: "Bank values and sorting",
+      "仓库按整堆价值排序，显示物品估值。": "Sort bank stacks by total value and show estimates.",
+      市场持仓价值排序: "Market holding value sorting",
+      "单独控制市场中的持仓价值排序。": "Control holding value sorting in the market separately.",
+      增益面板药水报价: "Buff panel potion prices",
+      "单独控制增益面板的药水价格计算，保留计时。":
+        "Control potion price calculations separately while keeping buff timers.",
+      首领排行与掉落日志: "Boss ranks and loot log",
+      "记录收到的首领排行与掉落；关闭后停止记录和保存。":
+        "Record received boss ranks and loot; turning this off stops recording and saving.",
+      公会捐献性价比: "Guild donation value",
+      "显示当前报价中每点成本较低的捐献物品。":
+        "Show donation items with a low cost per point at received prices.",
       "先完成其他目标，再升 {rooms}": "Finish other targets before upgrading {rooms}",
       "[SIK] 家园采购": "[SIK] Home supplies",
       家园点数总览: "Home point overview",
@@ -23620,7 +23668,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.92";
+  const PLUGIN_VERSION = "0.4.95";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -23630,22 +23678,64 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     const features = [
       {
+        id: "nativeUiEfficiency",
+        group: "性能",
+        name: "原生信息面板重复写入优化",
+        description: "跳过信息面板相同的显隐和纯文字写入，保留游戏更新频率；可关闭对照。",
+      },
+      {
         id: "work",
         group: "行动与计算",
-        name: "工作预估与升级计算",
-        description: "工作列表的经验、收益、材料和升级时间。",
+        name: "工作列表经验与收益",
+        description: "工作列表的一小时经验、收益和材料预估。",
+      },
+      {
+        id: "workLevels",
+        requires: "work",
+        group: "行动与计算",
+        name: "工作目标升级计算",
+        description: "单独控制目标等级计算；关闭后停止目标重算，保留工作列表预估。",
       },
       {
         id: "battle",
         group: "行动与计算",
-        name: "战斗预估与升级计算",
-        description: "战斗列表的经验、收益、风险和升级时间。",
+        name: "战斗列表经验与收益",
+        description: "战斗列表的一小时经验、收益和风险预估。",
       },
       {
-        id: "activity",
+        id: "battleLevels",
+        requires: "battle",
         group: "行动与计算",
-        name: "当前行动与离线统计",
-        description: "任务面板的实测收入、经验和离线收支。",
+        name: "战斗目标升级计算",
+        description: "单独控制战斗目标等级计算，保留路线预估。",
+      },
+      {
+        id: "activityWork",
+        legacy: "activity",
+        group: "行动与计算",
+        name: "当前工作收入与经验",
+        description: "任务面板的工作实测与预估；关闭后停止工作观测及后台预估。",
+      },
+      {
+        id: "activityBattle",
+        legacy: "activity",
+        group: "行动与计算",
+        name: "当前战斗收入与补给",
+        description: "任务面板的战斗实测与期望收益；关闭后停止战斗收益采样。",
+      },
+      {
+        id: "offline",
+        legacy: "activity",
+        group: "行动与计算",
+        name: "离线收支统计",
+        description: "离线报告的产值与成本；关闭后停止保存离线基线。",
+      },
+      {
+        id: "actionPotions",
+        legacy: "activity",
+        group: "增益与提醒",
+        name: "当前行动药水详情",
+        description: "任务面板的药水品质与剩余时间，可独立保留。",
       },
       {
         id: "combatMetrics",
@@ -23662,8 +23752,15 @@ SOFTWARE.
       {
         id: "inventory",
         group: "物品与行情",
-        name: "仓库与市场价值排序",
-        description: "按整堆价值排序，显示物品估值。",
+        name: "仓库价值与排序",
+        description: "仓库按整堆价值排序，显示物品估值。",
+      },
+      {
+        id: "marketInventory",
+        legacy: "inventory",
+        group: "物品与行情",
+        name: "市场持仓价值排序",
+        description: "单独控制市场中的持仓价值排序。",
       },
       {
         id: "equipment",
@@ -23684,6 +23781,12 @@ SOFTWARE.
         description: "饱食、扎根和战斗回血食物的价格与推荐。",
       },
       {
+        id: "buffPrices",
+        group: "增益与提醒",
+        name: "增益面板药水报价",
+        description: "单独控制增益面板的药水价格计算，保留计时。",
+      },
+      {
         id: "homeNotices",
         group: "增益与提醒",
         name: "家园完工提醒",
@@ -23696,6 +23799,18 @@ SOFTWARE.
         description: "替换原生出场提示；关闭后保留原生提示。",
       },
       {
+        id: "bossRecords",
+        group: "增益与提醒",
+        name: "首领排行与掉落日志",
+        description: "记录收到的首领排行与掉落；关闭后停止记录和保存。",
+      },
+      {
+        id: "guildDonation",
+        group: "物品与行情",
+        name: "公会捐献性价比",
+        description: "显示当前报价中每点成本较低的捐献物品。",
+      },
+      {
         id: "simulator",
         group: "其他",
         name: "战斗模拟器入口",
@@ -23704,12 +23819,139 @@ SOFTWARE.
     ];
     function normalize(raw) {
       const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-      return Object.fromEntries(features.map((f) => [f.id, source[f.id] !== false]));
+      return Object.fromEntries(
+        features.map((f) => [
+          f.id,
+          (Object.hasOwn(source, f.id) ? source[f.id] : f.legacy ? source[f.legacy] : undefined) !==
+            false,
+        ]),
+      );
     }
     function enabled(preferences, id) {
-      return !features.some((f) => f.id === id) || preferences?.features?.[id] !== false;
+      const feature = features.find((f) => f.id === id);
+      return (
+        !feature ||
+        (preferences?.features?.[id] !== false &&
+          (!feature.requires || enabled(preferences, feature.requires)))
+      );
     }
     return { features, normalize, enabled };
+  });
+
+  // ---- src/presentation.js ----
+  /* Deduplicate identical writes on informational DOM nodes only. No game APIs. */
+  (function (root, factory) {
+    if (typeof module === "object" && module.exports) module.exports = factory();
+    else root.DVIPresentation = factory();
+  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+    const hiddenSelector =
+      ".away-timers,[data-buffs],[data-buff-sheet],[data-combat-hud],[data-boss-next],[data-hot-pill],.boss-banner,.boss-food,[data-plan]";
+    const textSelector =
+      "[data-health],[data-coins],[data-hot-name],[data-hot-time],[data-sale-time],[data-founder-time],.boss-time,.boss-frac,.plan-state,.plan-text,.plan-meta";
+    function changeHasEffect(change) {
+      if (change.type === "attributes")
+        return change.oldValue !== change.target.getAttribute(change.attributeName);
+      if (
+        change.type === "childList" &&
+        change.addedNodes.length === 1 &&
+        change.removedNodes.length === 1
+      ) {
+        const added = change.addedNodes[0],
+          removed = change.removedNodes[0];
+        if (added.nodeType === 3 && removed.nodeType === 3 && added.data === removed.data)
+          return false;
+      }
+      return true;
+    }
+    function create(doc) {
+      const page = doc.defaultView,
+        descriptors = {
+          hidden: Object.getOwnPropertyDescriptor(page.HTMLElement.prototype, "hidden"),
+          textContent: Object.getOwnPropertyDescriptor(page.Node.prototype, "textContent"),
+        };
+      const records = new Map(),
+        stats = { hidden: 0, text: 0 };
+      function restore(node, record) {
+        for (const [key, installed] of Object.entries(record)) {
+          const current = Object.getOwnPropertyDescriptor(node, key);
+          if (current?.get === installed.get && current?.set === installed.set) delete node[key];
+        }
+        records.delete(node);
+      }
+      function attach(node, key) {
+        if (key === "hidden" && !(node instanceof page.HTMLElement)) return;
+        if (
+          !node.isConnected ||
+          node.matches("button,input,select,textarea,[contenteditable]") ||
+          node.isContentEditable ||
+          node.closest('[contenteditable]:not([contenteditable="false"])')
+        )
+          return;
+        let record = records.get(node);
+        if (
+          record?.[key] ||
+          Object.hasOwn(node, key) ||
+          !descriptors[key]?.get ||
+          !descriptors[key]?.set
+        )
+          return;
+        if (!record) {
+          if (records.size >= 192) return;
+          record = {};
+          records.set(node, record);
+        }
+        const native = descriptors[key],
+          installed = {
+            configurable: true,
+            enumerable: false,
+            get() {
+              return native.get.call(this);
+            },
+            set(value) {
+              // Preserve coercion and hidden="until-found" behavior. A text update
+              // containing an element must still remove it exactly as the native setter does.
+              const comparable =
+                key === "hidden"
+                  ? typeof value === "boolean" &&
+                    (value ? this.getAttribute("hidden") === "" : !this.hasAttribute("hidden"))
+                  : typeof value === "string" &&
+                    !this.firstElementChild &&
+                    (!this.firstChild ||
+                      (this.childNodes.length === 1 && this.firstChild.nodeType === 3));
+              if (comparable && native.get.call(this) === value) {
+                stats[key === "hidden" ? "hidden" : "text"]++;
+                return;
+              }
+              native.set.call(this, value);
+            },
+          };
+        try {
+          Object.defineProperty(node, key, installed);
+          record[key] = installed;
+        } catch {
+          if (!Object.keys(record).length) records.delete(node);
+        }
+      }
+      return {
+        sync() {
+          for (const [node, record] of records)
+            if (!node.isConnected || !node.matches(hiddenSelector + "," + textSelector))
+              restore(node, record);
+          for (const [key, selector] of [
+            ["hidden", hiddenSelector],
+            ["textContent", textSelector],
+          ])
+            for (const node of doc.querySelectorAll(selector)) attach(node, key);
+        },
+        dispose() {
+          for (const [node, record] of records) restore(node, record);
+        },
+        report() {
+          return { ...stats, nodes: records.size };
+        },
+      };
+    }
+    return { create, changeHasEffect };
   });
 
   // ---- Embedded local UI artwork ----
@@ -24886,6 +25128,8 @@ SOFTWARE.
     historicalCache,
     purchaseCache,
   );
+  historicalCache = null;
+  purchaseCache = null;
   function loadObservationHistory(storage) {
     try {
       const raw = storage.getItem("dvi-insights.observations.v1"),
@@ -24907,6 +25151,7 @@ SOFTWARE.
   }
   let observationSaved = loadObservationHistory(localStorage);
   const observationHistory = globalThis.DVIObservations.create({ saved: observationSaved });
+  observationSaved = null;
   let observationSavedAt = 0;
   function saveObservations(force = false) {
     if (!force && Date.now() - observationSavedAt < 30000) return;
@@ -24933,7 +25178,10 @@ SOFTWARE.
       );
     } catch {}
   }
+  let historicalQuoteRevision = store.state.quoteRevision;
   store.subscribe(() => {
+    if (historicalQuoteRevision === store.state.quoteRevision) return;
+    historicalQuoteRevision = store.state.quoteRevision;
     if (!historicalSaveTimer) historicalSaveTimer = setTimeout(saveHistory, 30000);
   });
   // Safari can suspend a background tab before the delayed save runs.
@@ -25341,6 +25589,10 @@ SOFTWARE.
     };
   }
   function renderActionPotions(box, potions) {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("actionPotions")) {
+      box.querySelector("[data-combat-brew-panel]")?.remove();
+      return;
+    }
     let panel = box.querySelector("[data-combat-brew-panel]");
     if (!panel) {
       if (!potions.length) return;
@@ -25367,6 +25619,8 @@ SOFTWARE.
   }
 
   function renderCombat(actual) {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("activityBattle"))
+      return;
     const p = store.observationPlayer(),
       report = p ? combatMonitor.sample(p, store.state.windows) : null;
     const host = document.querySelector("[data-plan]");
@@ -25489,7 +25743,11 @@ SOFTWARE.
     currentWorkWorker = null,
     currentWorkTimeout = null;
   const currentWorkEstimates = new Map();
+  function observesCurrentActivity(p = store.state.player) {
+    return insightFeatureEnabled(p?.route?.zoneId != null ? "activityBattle" : "activityWork");
+  }
   store.subscribeBatches((batch) => {
+    if (!observesCurrentActivity()) return;
     activityMonitor.events(store.observationPlayer(), batch);
     scheduleNative();
   });
@@ -25673,6 +25931,8 @@ SOFTWARE.
     }
   }
   function renderCurrentWork(actual) {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("activityWork"))
+      return;
     const host = document.querySelector("[data-plan]");
     if (!host || actual?.jobId == null || !model.jobs.has(actual.jobId)) {
       currentWorkBox?.remove();
@@ -25754,7 +26014,8 @@ SOFTWARE.
   let offlineBaseline = null,
     gameSeenBaseline = null,
     offlineResumeAt = Date.now(),
-    offlineSavedAt = 0;
+    offlineSavedAt = 0,
+    offlineBaselineRevision = null;
   try {
     offlineBaseline = JSON.parse(localStorage.getItem("dvi-insights.offline-before.v1") || "null");
     gameSeenBaseline = JSON.parse(localStorage.getItem("deepvein-seen") || "null");
@@ -25768,6 +26029,7 @@ SOFTWARE.
     } catch {}
   }
   function captureOfflineBaseline(force = false) {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("offline")) return;
     if (
       !store.state.player ||
       (!force &&
@@ -25776,7 +26038,15 @@ SOFTWARE.
           Date.now() - offlineResumeAt < 10000))
     )
       return;
+    if (
+      !force &&
+      offlineBaseline?.id === store.state.player.id &&
+      offlineBaseline.tick === store.state.player.lastTick &&
+      offlineBaselineRevision === store.state.revision
+    )
+      return;
     offlineBaseline = globalThis.DVIActivity.offlineSnapshot(store.state.player);
+    offlineBaselineRevision = store.state.revision;
     if (force || Date.now() - offlineSavedAt > 60000) saveOfflineBaseline();
   }
   document.addEventListener("visibilitychange", () => {
@@ -25785,6 +26055,7 @@ SOFTWARE.
   });
   window.addEventListener("pagehide", () => captureOfflineBaseline(true));
   function renderOfflineIncome() {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("offline")) return;
     const host = document.querySelector(".away-veil .away");
     if (!host) {
       captureOfflineBaseline();
@@ -26014,6 +26285,8 @@ SOFTWARE.
   }
   let idlePotionBox = null;
   function renderIdlePotions() {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("actionPotions"))
+      return;
     const host = document.querySelector("[data-plan]"),
       p = store.state.player;
     const potions = p ? globalThis.DVICombat.activePotions(model, p) : [];
@@ -26034,22 +26307,24 @@ SOFTWARE.
   }
   function renderCurrentActivity() {
     syncParallelEnhancement();
-    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("activity")) return;
-    const actual = activityMonitor.sample(store.observationPlayer());
+    const observing = observesCurrentActivity(),
+      actual = observing ? activityMonitor.sample(store.observationPlayer()) : null;
     renderCombat(actual);
     renderCurrentWork(actual);
     renderIdlePotions();
     renderOfflineIncome();
-    saveObservations();
+    if (observing) saveObservations();
   }
   function refreshObservationClock() {
+    if (!observesCurrentActivity()) return;
     const p = store.observationPlayer();
     if (!p?.route) return;
     const actual = activityMonitor.sample(p),
       report = p.route.zoneId != null ? combatMonitor.sample(p, store.state.windows) : null;
+    saveObservations();
     const box = report ? combatBox : currentWorkBox,
       seconds = report ? report.seconds : actual?.seconds;
-    if (box?.isConnected && seconds != null) showObservationTime(box, seconds);
+    if (!document.hidden && box?.isConnected && seconds != null) showObservationTime(box, seconds);
   }
   let observationClock = null;
   function startObservationClock() {
@@ -26232,6 +26507,8 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     } catch {}
   }
   function sampleHome() {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("homeNotices"))
+      return;
     homeTracker.sample(store.state.player);
     saveHomeTracker();
   }
@@ -26331,12 +26608,30 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     bossRecordsSaved = JSON.parse(localStorage.getItem("dvi-insights.boss-records.v1") || "null");
   } catch {}
   const bossRecords = globalThis.DVIBossRecords.create(bossRecordsSaved);
-  store.subscribeBoss((event) => {
-    bossRecords.receive(event);
+  bossRecordsSaved = null;
+  let bossRecordsSaveTimer = null,
+    bossRecordsStored = "";
+  function saveBossRecords() {
+    clearTimeout(bossRecordsSaveTimer);
+    bossRecordsSaveTimer = null;
+    const value = JSON.stringify(bossRecords.snapshot());
+    if (value === bossRecordsStored) return;
     try {
-      localStorage.setItem("dvi-insights.boss-records.v1", JSON.stringify(bossRecords.snapshot()));
+      localStorage.setItem("dvi-insights.boss-records.v1", value);
+      bossRecordsStored = value;
     } catch {}
+  }
+  store.subscribeBoss((event) => {
+    if (!insightFeatureEnabled("bossRecords")) return;
+    bossRecords.receive(event);
+    if (event.kind === "rank") {
+      if (!bossRecordsSaveTimer) bossRecordsSaveTimer = setTimeout(saveBossRecords, 5000);
+    } else saveBossRecords();
     scheduleNative();
+  });
+  window.addEventListener("pagehide", saveBossRecords);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && bossRecordsSaveTimer) saveBossRecords();
   });
   function bossRecordText(record) {
     return record.rank
@@ -26354,6 +26649,15 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
   }
   const logItemArt = new Map(),
     lootChatViews = new WeakMap();
+  function disposeLootChat(chat) {
+    const view = lootChatViews.get(chat);
+    if (!view) return;
+    view.setOpen?.(false);
+    chat.removeEventListener("click", view.nativeRoomClick);
+    view.button.remove();
+    view.log.remove();
+    lootChatViews.delete(chat);
+  }
   function rememberLogArt(id, svg) {
     if (!svg || !Number.isSafeInteger(id) || logItemArt.has(id % 1000)) return;
     const copy = svg.cloneNode(true);
@@ -26423,9 +26727,10 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
           e.stopPropagation();
           view.setOpen(!view.open);
         });
-        chat.addEventListener("click", (e) => {
+        view.nativeRoomClick = (e) => {
           if (e.target.closest(".chat-tab[data-room]")) view.setOpen(false);
-        });
+        };
+        chat.addEventListener("click", view.nativeRoomClick);
         view.setOpen(false);
       }
       if (view.setOpen) {
@@ -26465,6 +26770,8 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     }
   }
   function syncBossRecords() {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("bossRecords"))
+      return;
     const rows = bossRecords.list(store.state.player?.id);
     syncLootChat(rows);
     const fall = document.querySelector("[data-boss-fall]:not([hidden])"),
@@ -26753,6 +27060,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
   }
   const damageMeter = createDamageMeter(GAME_DATA);
   store.subscribeCombat((event) => {
+    if (!insightFeatureEnabled("combatMetrics")) return;
     if (event.kind === "reset") damageMeter.reset();
     else if (event.kind === "hit") damageMeter.taken(event);
     else damageMeter.raid(event, store.state.player?.id);
@@ -26762,8 +27070,9 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("combatMetrics"))
       return;
     const p = store.state.player,
-      report = damageMeter.sample(p),
-      host = document.querySelector("[data-combat-hud]");
+      report = damageMeter.sample(p);
+    if (document.hidden) return;
+    const host = document.querySelector("[data-combat-hud]");
     if (
       !p ||
       !report ||
@@ -27086,7 +27395,6 @@ html.dvi-insights.v4:not(.m-on) .plan:before {
 .dvi-insights .dvi-plan-actual:has(.dvi-income-above) {
   border-color: #d8ab49;
   background: linear-gradient(90deg, #fff5d6, #ffe8a1);
-  animation: dvi-income-glow 3s ease-in-out infinite;
 }
 .dvi-insights .dvi-plan-actual .dvi-income-above {
   color: #946015;
@@ -27375,23 +27683,6 @@ html.dvi-insights:lang(en) .dvi-native-combat .dvi-plan-metric {
 }
 .dvi-insights .dvi-plan-brews:not([open]) > .dvi-plan-potion-grid {
   display: none;
-}
-@keyframes dvi-income-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 4px color-mix(in srgb, var(--brass) 18%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 14px color-mix(in srgb, var(--brass) 40%, transparent),
-      inset 0 0 8px color-mix(in srgb, var(--brass) 9%, transparent);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .dvi-insights .dvi-plan-actual:has(.dvi-income-above) {
-    animation: none;
-    box-shadow: 0 0 8px color-mix(in srgb, var(--brass) 30%, transparent);
-  }
 }
 .dvi-insights .dvi-plan-potion-grid {
   display: grid;
@@ -29715,6 +30006,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       }
     }
     function hide() {
+      observer.disconnect();
       win.clearTimeout(timer);
       timer = null;
       if (frame !== null) win.cancelAnimationFrame(frame);
@@ -29776,6 +30068,12 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         const r = el.getBoundingClientRect();
         point = { x: r.left, y: r.bottom };
       }
+      observer.observe(doc.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["title"],
+      });
       timer = win.setTimeout(paint, 200);
     }
     const move = (e) => {
@@ -29860,12 +30158,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           if (!tip.hidden) paint();
         } else if (text === null) hide();
       }
-    });
-    observer.observe(doc.documentElement, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ["title"],
     });
     for (const [event, handler] of [
       ["pointerover", move],
@@ -30443,6 +30735,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     }
   }
   store.subscribe(() => {
+    if (document.hidden) return;
     for (const [kind, record] of guildEditors) {
       if (!guildEditConfirmed(record.pending, kind, store.state.guild, store.state.guildRevision))
         continue;
@@ -30601,6 +30894,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
   }
   const guildDonate = globalThis.DVIGuildDonate.create(GAME_DATA);
   function presentBestDonation(treasury) {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("guildDonation"))
+      return;
     const button = treasury.querySelector(':scope>.guild-row-acts [data-act="donate-open"]'),
       row = button?.parentElement;
     for (const stale of treasury.querySelectorAll(".dvi-guild-best"))
@@ -30735,14 +31030,21 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 @media(max-width:550px){.dvi-insights .buff-sheet .bt-scale>span:not(:last-child){display:none}.dvi-insights .buff-sheet .bt-scale>span:last-child{left:50%!important;transform:translateX(-50%);font-size:10px}}
 `;
   let insightWorker = null,
-    insightSequence = 0;
+    insightSequence = 0,
+    insightIdleTimer = null;
   const insightPending = new Map();
   function cancelInsightCalculations() {
+    clearTimeout(insightIdleTimer);
     for (const task of insightPending.values()) {
       clearTimeout(task.timer);
       task.reject(new Error("Calculation cancelled"));
     }
     insightPending.clear();
+    insightWorker?.terminate();
+    insightWorker = null;
+  }
+  function releaseInsightWorker() {
+    if (insightPending.size) return;
     insightWorker?.terminate();
     insightWorker = null;
   }
@@ -30758,6 +31060,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         insightWorker = null;
       };
       try {
+        clearTimeout(insightIdleTimer);
         if (!insightWorker) {
           const url = URL.createObjectURL(
             new Blob([INSIGHT_WORKER_SOURCE], { type: "application/javascript" }),
@@ -30773,6 +31076,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
             insightPending.delete(e.data.id);
             clearTimeout(task.timer);
             e.data.error ? task.reject(new Error(e.data.error)) : task.resolve(e.data.result);
+            if (!insightPending.size) insightIdleTimer = setTimeout(releaseInsightWorker, 60000);
           };
           insightWorker.onerror = () => fail("Calculation worker failed");
           insightWorker.postMessage({ data: GAME_DATA, kind: "init" });
@@ -30937,6 +31241,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     );
   }
   function updateBuffPrice(row, entry, p) {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("buffPrices")) return;
     if (!entry.id) return;
     const quote = globalThis.DVIBuffs.potionPrice(model, p, store.state.books, entry.kind),
       target = row.querySelector(".bt-left");
@@ -31144,6 +31449,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 
   window.addEventListener("pagehide", (e) => {
     if (e.persisted) return;
+    clearTimeout(insightIdleTimer);
     insightWorker?.terminate();
     for (const task of insightPending.values()) {
       clearTimeout(task.timer);
@@ -31503,6 +31809,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       setNativeText(host.querySelector("[data-level-result]"), "");
     });
     host.querySelector("button").onclick = () => {
+      if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("battleLevels"))
+        return;
       const p = store.state.player,
         entry = battleCache.get(record.monster.id);
       if (!p) return;
@@ -31520,6 +31828,9 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     record.levelReset = reset;
   }
   function syncBattleLevel(record, p, entry) {
+    const on = typeof insightFeatureEnabled !== "function" || insightFeatureEnabled("battleLevels");
+    if (record.levelHost.hidden === on) record.levelHost.hidden = !on;
+    if (!on) return;
     const host = record.levelHost,
       select = host.querySelector("select");
     if (!record.levelReady && entry?.result) {
@@ -31673,7 +31984,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     }
   }
   // Resolve the current grid at click time: native redraws may replace it.
-  function resetInsightValueSorting() {
+  function resetInsightValueSorting(only = null) {
     for (const [selector, views, button, label, css] of [
       ["[data-bank-grid]", bankViews, ".dvi-bank-sort", ".dvi-bank-value", "dvi-bank"],
       [
@@ -31684,6 +31995,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         "dvi-market",
       ],
     ]) {
+      if (only && only !== (css === "dvi-bank" ? "inventory" : "marketInventory")) continue;
       for (const grid of document.querySelectorAll(selector)) {
         const view = views.get(grid);
         if (view) {
@@ -31830,7 +32142,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     }
   }
   function syncMarketInventory() {
-    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("inventory")) return;
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("marketInventory"))
+      return;
     const p = store.state.player;
     if (!p) return;
     const windows = [...document.querySelectorAll(".market-window")].filter(
@@ -32246,7 +32559,8 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
   const insightSettingsStyle = document.createElement("style");
   insightSettingsStyle.textContent = `
 [data-dvi-settings-hidden]{display:none!important}
-html[data-dvi-feature-work=off] .dvi-native-work:not(.dvi-battle-work):not(.dvi-native-combat),html[data-dvi-feature-battle=off] .dvi-battle-work,html[data-dvi-feature-activity=off] .dvi-native-combat{display:none!important}
+html[data-dvi-feature-work=off] .dvi-native-work:not(.dvi-battle-work):not(.dvi-native-combat),html[data-dvi-feature-battle=off] .dvi-battle-work{display:none!important}
+html[data-dvi-feature-workLevels=off] :is(.dvi-native-controls,[data-native-result]),html[data-dvi-feature-battleLevels=off] [data-battle-level]{display:none!important}
 .account-tabs .dvi-insights-settings-tab{white-space:nowrap}
 .dvi-insights-settings-page{font:400 13px/1.5 var(--sans,system-ui);color:var(--ink);min-width:0}
 .dvi-insights-settings-page[hidden]{display:none!important}
@@ -32265,19 +32579,39 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
 `;
   function applyInsightFeature(id) {
     const on = insightFeatureEnabled(id);
+    if (id === "nativeUiEfficiency") syncNativePresentation();
     if (id === "work" && !on) {
       for (const record of nativeRecords.values()) {
-        record.box.hidden = true;
         syncRouteXp(record.row, NaN);
+        record.box.remove();
       }
+      nativeRecords.clear();
       nativeQueue.length = 0;
-      nativeWorker?.terminate();
-      nativeWorker = null;
+      nativeActive = null;
+      releaseNativeWorker();
       clearTimeout(nativeTimeout);
-      if (nativeActive) {
+      nativeCache.clear();
+    }
+    if (id === "workLevels" && !on) {
+      for (let i = nativeQueue.length - 1; i >= 0; i--)
+        if (nativeQueue[i].full) {
+          nativeQueue[i].record.box.querySelector("button").disabled = false;
+          nativeQueue.splice(i, 1);
+        }
+      if (nativeActive?.full) {
         nativeActive.record.box.querySelector("button").disabled = false;
         nativeActive = null;
+        clearTimeout(nativeTimeout);
+        releaseNativeWorker();
       }
+      for (const value of nativeCache.values()) {
+        delete value.plan;
+        delete value.planOptions;
+        delete value.planError;
+        delete value.planAt;
+      }
+      for (const record of nativeRecords.values()) renderNative(record);
+      pumpNative();
     }
     if (id === "battle" && !on) {
       cancelInsightCalculations();
@@ -32289,20 +32623,40 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         syncRouteXp(row, NaN);
       }
     }
-    if (id === "activity" && !on) {
+    if (id === "activityWork" || id === "activityBattle") {
+      activityMonitor.reset(null);
+      combatMonitor.reset("刚开始观测");
+      observationPace = null;
+    }
+    if (id === "activityWork" && !on) {
       currentWorkWorker?.terminate();
       currentWorkWorker = null;
       clearTimeout(currentWorkTimeout);
       currentWorkEstimate = null;
+      currentWorkEstimates.clear();
       currentWorkBox?.remove();
       currentWorkBox = null;
+    }
+    if (id === "activityBattle" && !on) {
       combatBox?.remove();
       combatBox = null;
+      combatLastRendered = 0;
+    }
+    if (id === "offline") {
+      offlineBaseline = null;
+      gameSeenBaseline = null;
+      offlineResumeAt = Date.now();
+      if (on) captureOfflineBaseline(true);
+      else document.querySelectorAll(".dvi-native-offline").forEach((n) => n.remove());
+    }
+    if (id === "actionPotions" && !on) {
+      idlePotionBox?.remove();
+      idlePotionBox = null;
       document
-        .querySelectorAll(".dvi-native-offline,.dvi-native-idle-buffs")
+        .querySelectorAll("[data-combat-brew-panel],.dvi-work-provisions")
         .forEach((n) => n.remove());
     }
-    if (id === "inventory" && !on) resetInsightValueSorting();
+    if ((id === "inventory" || id === "marketInventory") && !on) resetInsightValueSorting(id);
     if (id === "prices" && !on)
       document.querySelectorAll(".dvi-native-prices").forEach((n) => n.remove());
     if (id === "equipment" && !on)
@@ -32313,6 +32667,18 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       combatMetricsBox?.remove();
       combatMetricsBox = null;
       damageMeter.reset();
+    }
+    if (id === "buffPrices" && !on)
+      document
+        .querySelectorAll(".bt-row:not([data-ch-fed]):not([data-ch-rooted]) .dvi-buff-price")
+        .forEach((n) => n.remove());
+    if (id === "guildDonation" && !on)
+      document.querySelectorAll(".dvi-guild-best").forEach((n) => n.remove());
+    if (id === "bossRecords" && !on) {
+      saveBossRecords();
+      for (const chat of document.querySelectorAll(".chat")) disposeLootChat(chat);
+      document.querySelectorAll(".dvi-boss-final-info").forEach((n) => n.remove());
+      logItemArt.clear();
     }
     if (id === "food" && !on) {
       document
@@ -32476,13 +32842,28 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       setNativeText(intro.querySelector("small"), "v" + PLUGIN_VERSION);
       for (const text of host.page.querySelectorAll("[data-dvi-settings-text]"))
         setNativeText(text, t(text.dataset.dviSettingsText));
-      for (const input of host.page.querySelectorAll("[data-dvi-feature]"))
+      for (const input of host.page.querySelectorAll("[data-dvi-feature]")) {
+        const feature = globalThis.DVIInsightsSettings.features.find(
+          (f) => f.id === input.dataset.dviFeature,
+        );
         input.checked =
           input.dataset.dviFeature === "potionCost"
             ? preferences.potionCost
-            : insightFeatureEnabled(input.dataset.dviFeature);
+            : preferences.features[input.dataset.dviFeature] !== false;
+        input.disabled = !!feature?.requires && !insightFeatureEnabled(feature.requires);
+      }
     }
   }
+
+  // ---- src/presentation-ui.js ----
+  const nativePresentation = globalThis.DVIPresentation.create(document);
+  function syncNativePresentation() {
+    if (insightFeatureEnabled("nativeUiEfficiency")) nativePresentation.sync();
+    else nativePresentation.dispose();
+  }
+  window.addEventListener("pagehide", (event) => {
+    if (!event.persisted) nativePresentation.dispose();
+  });
 
   // ---- src/integrated-ui.js ----
   /* Native UI attachments. Reads stable DOM data attributes, never clicks game controls. */
@@ -32564,7 +32945,19 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     nativeActive = null,
     nativeTimeout = null,
     nativeTimer = null,
-    hoveredItem = null;
+    hoveredItem = null,
+    nativeIdleTimer = null;
+  let nativeLastScan = 0;
+  function pruneNativeCache(now = Date.now()) {
+    for (const [key, value] of nativeCache) if (now - value.at > 1800000) nativeCache.delete(key);
+    while (nativeCache.size > 48) nativeCache.delete(nativeCache.keys().next().value);
+  }
+  function releaseNativeWorker() {
+    if (nativeActive) return;
+    nativeWorker?.terminate();
+    nativeWorker = null;
+    clearTimeout(nativeIdleTimer);
+  }
   const nativeStyle = document.createElement("style");
   nativeStyle.textContent = `
 .route[data-dvi-route-xp] > .route-meta:not(.dvi-route-xp) {
@@ -33081,6 +33474,8 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   }
   function queueNative(record, full = false, background = false) {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("work")) return;
+    if (full && typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("workLevels"))
+      return;
     if (!store.state.player || record.row.disabled) return;
     const key = nativeKey(record),
       target = full ? Number(record.box.querySelector("input").value) : null;
@@ -33117,6 +33512,8 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     );
     nativeActive = task;
     try {
+      clearTimeout(nativeIdleTimer);
+      const initialize = !nativeWorker;
       if (!nativeWorker) {
         const url = URL.createObjectURL(
           new Blob([WORKER_SOURCE], { type: "application/javascript" }),
@@ -33141,7 +33538,10 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         },
         task.full ? 45000 : 15000,
       );
-      nativeWorker.postMessage({ data: GAME_DATA, options: task.options });
+      nativeWorker.postMessage({
+        ...(initialize ? { data: GAME_DATA } : {}),
+        options: task.options,
+      });
     } catch {
       finishNative({ error: "浏览器未允许本地计算 Worker" });
     }
@@ -33151,6 +33551,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     const task = nativeActive;
     if (!task) return;
     const old = nativeCache.get(task.key) || {};
+    nativeCache.delete(task.key);
     nativeCache.set(task.key, {
       ...old,
       at: Date.now(),
@@ -33172,10 +33573,12 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
               : {}),
           }),
     });
+    pruneNativeCache();
     task.record.box.querySelector("button").disabled = false;
     nativeActive = null;
     renderNative(task.record);
     pumpNative();
+    if (!nativeActive && nativeWorker) nativeIdleTimer = setTimeout(releaseNativeWorker, 60000);
   }
   function nativeMaterialHtml(materials) {
     const books = store.state.books,
@@ -33376,7 +33779,9 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       text += " · " + t("新版本待核对");
     if (summary.textContent !== text) summary.textContent = text;
     record.box.hidden = !!record.row.disabled;
-    setNativeText(record.box.querySelector(".dvi-native-action"), t("升级计算"));
+    const levels =
+      typeof insightFeatureEnabled !== "function" || insightFeatureEnabled("workLevels");
+    setNativeText(record.box.querySelector(".dvi-native-action"), levels ? t("升级计算") : "");
     setNativeText(record.box.querySelector("[data-native-target-label]"), t("升到"));
     setNativeText(record.box.querySelector("[data-native-level-unit]"), t("级"));
     setNativeText(record.box.querySelector("button"), t("计算"));
@@ -33385,6 +33790,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       .setAttribute("aria-label", t("{name}目标等级", { name: nameOf(record.job.name) }));
     const container = record.box.querySelector("[data-native-result]");
     if (
+      levels &&
       cached?.plan &&
       cached.plan.targetLevel === Number(record.box.querySelector("input").value)
     ) {
@@ -33495,9 +33901,12 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   }
   function scanNative() {
     nativeTimer = null;
-    if (!document.documentElement) return;
+    if (!document.documentElement || document.hidden) return;
+    nativeLastScan = Date.now();
+    pruneNativeCache();
     refreshNativeClientAsset();
     i18n.refresh();
+    syncNativePresentation();
     syncInsightSettings();
     if (!nativeStyle.isConnected) document.documentElement.append(nativeStyle);
     mountAppearance();
@@ -33593,14 +34002,22 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   }
   window.addEventListener("storage", localeStorageChanged);
   function scheduleNative() {
-    if (!nativeTimer) nativeTimer = setTimeout(scanNative, 80);
+    if (!document.hidden && !nativeTimer)
+      nativeTimer = setTimeout(scanNative, Math.max(80, 250 - (Date.now() - nativeLastScan)));
   }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      remountNativeRows();
+      remountBattleRows();
+      scheduleNative();
+    }
+  });
   function shouldScheduleNative(change) {
     const node = change.target.nodeType === 3 ? change.target.parentElement : change.target;
     if (!node?.closest) return false;
     if (
       node.closest(
-        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best,.dvi-home-supplies,.dvi-home-market-note",
+        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best,.dvi-home-supplies,.dvi-home-market-note,.dvi-insights-settings-page,.dvi-loot-log,.dvi-combat-metrics,.dvi-home-notice,.dvi-buff-price,.dvi-buff-time",
       )
     )
       return false;
@@ -33615,6 +34032,9 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     return true;
   }
   const nativeMutations = new MutationObserver((changes) => {
+    if (document.hidden) return;
+    changes = changes.filter(globalThis.DVIPresentation.changeHasEffect);
+    if (!changes.length) return;
     // Native gives enhancement the title but leaves main-route controls beside
     // it. Reconcile before paint, including characterData-only native updates.
     if (
@@ -33702,6 +34122,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     childList: true,
     characterData: true,
     attributes: true,
+    attributeOldValue: true,
     attributeFilter: ["hidden", "aria-pressed", "data-item", "disabled", "lang"],
   });
   const inventoryThemeMutations = new MutationObserver(scheduleNative);
@@ -33717,6 +34138,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       nativeWorker?.terminate();
       nativeWorker = null;
       clearTimeout(nativeTimeout);
+      clearTimeout(nativeIdleTimer);
       nativeActive = null;
       nativeQueue.length = 0;
       nativeCache.clear();
