@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.111
+// @version      0.4.112
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5966,19 +5966,12 @@ SOFTWARE.
           units[index + 1]
         );
       }
-      function clockDuration(seconds, precise = false) {
+      function clockDuration(seconds) {
         if (!Number.isFinite(seconds)) return "—";
         const s = Math.max(0, Math.floor(seconds));
         if (s >= 86400) return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
-        if (s >= 3600)
-          return (
-            Math.floor(s / 3600) +
-            "h " +
-            Math.floor((s % 3600) / 60) +
-            "m" +
-            (precise ? " " + (s % 60) + "s" : "")
-          );
-        return Math.floor(s / 60) + "m " + (s % 60) + "s";
+        if (s >= 3600) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+        return Math.floor(s / 60) + "m";
       }
       function compactDuration(seconds) {
         if (!Number.isFinite(seconds)) return "—";
@@ -20349,7 +20342,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.111";
+  const PLUGIN_VERSION = "0.4.112";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -22527,7 +22520,7 @@ SOFTWARE.
     observationPace = paced.pace;
     setNativeText(
       note.querySelector("[data-observation-time]"),
-      t("观测 {time}", { time: i18n.clockDuration(paced.seconds, true) }),
+      t("观测 {time}", { time: i18n.clockDuration(paced.seconds) }),
     );
     const hint =
       t("近12小时内续记有效观测；切换任务与未观测的断线时间不计入分母。") +
