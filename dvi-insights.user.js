@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.109
+// @version      0.4.110
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -3317,35 +3317,26 @@ SOFTWARE.
         }
         state.books[value.itemId] = { ...old, ...copy, at: now() };
       }
-      let detachedPlayer = false,
-        observedTick = null,
+      let observedTick = null,
         readLivePlayer = null;
       function syncLivePlayer() {
         try {
           const live = readLivePlayer?.();
-          if (validPlayer(live) && (!state.player || live.id === state.player.id)) {
+          if (validPlayer(live) && (!state.player || live.id === state.player.id))
             state.player = live;
-            detachedPlayer = false;
-          }
         } catch {}
       }
       function observationPlayer() {
         syncLivePlayer();
         const p = state.player;
-        if (
-          !p ||
-          !detachedPlayer ||
-          !Number.isSafeInteger(observedTick) ||
-          observedTick <= p.lastTick
-        )
-          return p;
-        // Mobile fallback owns a snapshot, not the native ticking object. Use
-        // only ticks actually received. Monitors reject gaps BETWEEN samples;
-        // snapshot age must not freeze a continuously observed connection.
+        if (!p || !Number.isSafeInteger(observedTick) || observedTick <= p.lastTick) return p;
+        // Even an exposed native object can stop ticking while server batches
+        // keep arriving. Use only ticks actually received, for the same view
+        // that receives their output. Monitors still reject gaps BETWEEN samples.
         // This view never changes the game's object or extrapolates wall time.
         return { ...p, lastTick: observedTick };
       }
-      function receive(frame, { detached = false } = {}) {
+      function receive(frame) {
         syncLivePlayer();
         // The game parses its own last-seen record immediately before building an
         // in-tab away report. Observe that already-read record, without querying.
@@ -3381,7 +3372,6 @@ SOFTWARE.
           switch (m.t) {
             case "welcome":
               if (!validPlayer(m.you)) break;
-              detachedPlayer = detached;
               observedTick = frame.tick;
               state.sessionRevision++;
               state.player = m.you;
@@ -3579,8 +3569,8 @@ SOFTWARE.
               // an object the client never advances, freezing the income clock
               // while received loot continues to accumulate in its numerator.
               if (frame.tick < (state.player?.lastTick ?? 0) - 5) break;
-              if (validPlayer(m.you)) detachedPlayer = detached;
               if (validPlayer(m.you)) {
+                observedTick = frame.tick;
                 state.player = m.you;
                 if (Array.isArray(m.orders)) state.orders = m.orders;
                 if (Array.isArray(m.windows)) state.windows = m.windows;
@@ -3861,9 +3851,7 @@ SOFTWARE.
                   queueMicrotask(() => {
                     if (!active || generation !== socketGeneration) return;
                     try {
-                      store.receive(Reflect.apply(nativeParse, page.JSON, [raw]), {
-                        detached: true,
-                      });
+                      store.receive(Reflect.apply(nativeParse, page.JSON, [raw]));
                     } catch {}
                   });
                 });
@@ -20345,7 +20333,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.109";
+  const PLUGIN_VERSION = "0.4.110";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
