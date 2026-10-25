@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.113
+// @version      0.4.114
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -2808,24 +2808,6 @@ SOFTWARE.
       }
       return core.valueFlows({ [id]: qty }, { [id]: received }, "sell", taxBp, now, pricing).total;
     }
-    // Quote totals are comparison estimates, not executable order depth or proceeds.
-    function quoteTotal(id, qty, books, side, now, ironman = false) {
-      if (ironman || !["ask", "bid"].includes(side) || !Number.isFinite(qty) || qty <= 0)
-        return null;
-      const book = books[id],
-        price = book?.[side],
-        at = book?.[side + "At"] ?? book?.at;
-      if (
-        !Number.isFinite(price) ||
-        price <= 0 ||
-        !Number.isFinite(at) ||
-        at > now ||
-        now - at > (book[side + "Public"] ? 900000 : 300000)
-      )
-        return null;
-      const total = price * qty;
-      return Number.isFinite(total) ? total : null;
-    }
     function bankOrder(bank, order = []) {
       return [
         ...new Set([
@@ -2867,7 +2849,7 @@ SOFTWARE.
       }
       return groups;
     }
-    return { value, quoteTotal, bankOrder, ranks, groupedValues };
+    return { value, bankOrder, ranks, groupedValues };
   });
 
   // ---- src/boss-records.js ----
@@ -5664,15 +5646,6 @@ SOFTWARE.
       单田预估: "Single-field estimate",
       "{tier} {name} · 当前 {current} · 总计 {total}":
         "{tier} {name} · Current {current} · Total {total}",
-      仓库排序: "Bank sorting",
-      原顺序: "Bank order",
-      总卖价: "Total ask",
-      总买价: "Total bid",
-      恢复仓库顺序: "Restore bank order",
-      "整堆总卖价：数量 × 已收到的最低卖价，未扣税，不代表能成交。":
-        "Stack ask estimate: quantity × received best ask; before tax, no guarantee of a sale.",
-      "整堆总买价：数量 × 已收到的最高买价，未扣税，不考虑求购数量。":
-        "Stack bid estimate: quantity × received best bid; before tax, ignores bid depth.",
       价值排序: "Sort by value",
       整堆估值: "Stack value",
       种子说明: "About seeds",
@@ -20310,7 +20283,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.113";
+  const PLUGIN_VERSION = "0.4.114";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -24813,61 +24786,39 @@ html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort[aria-pressed="true"]
 .dvi-insights [data-bank-grid] .dvi-bank-valued:has(> b.plus) > .dvi-bank-value {
   top: 16px !important;
 }
-.dvi-insights [data-bank-sort][data-dvi-bank-sort] {
-  display: none !important;
+/* Native sort stays beside search; original action buttons remain on the right. */
+html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-search-wrap {
+  flex: 0 1 200px;
+  min-width: 90px;
+  margin-right: 0;
 }
-.dvi-insights .bank-tools > .dvi-bank-sorts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  max-width: 100%;
-  padding: 3px;
-  border: 1px solid var(--edge);
-  background: var(--panel-sunken);
-  border-radius: 5px;
-}
-html.dvi-insights .bank-window .dvi-bank-sorts > .dvi-bank-sort {
+html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > [data-bank-sort] {
   flex: none;
-  margin: 0;
-  min-height: 30px;
-  padding: 4px 9px;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  box-shadow: none;
-  background: transparent;
-  color: var(--ink-muted);
-  font: 500 12px/1.3 var(--sans);
-  white-space: nowrap;
-  transform: none;
+  min-height: 32px;
+  max-width: 110px;
+  margin: 0 auto 0 0;
 }
-html.dvi-insights .bank-window .dvi-bank-sorts > .dvi-bank-sort[aria-pressed="true"] {
-  color: var(--ink);
-  border-color: var(--edge-bright);
-  background: var(--panel-raised);
-}
-html.dvi-insights .bank-window .dvi-bank-sorts > .dvi-bank-sort:focus-visible {
-  outline: 2px solid var(--brass);
-  outline-offset: 1px;
+html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-hint {
+  display: none;
 }
 @media (max-width: 700px) {
-  html.dvi-insights .bank-window[data-bank-window] .bank-tools {
+  html.dvi-insights .bank-window[data-bank-window] .bank-tools:has(> .dvi-bank-sort) {
     flex-wrap: wrap;
     overflow-x: visible;
+    gap: 6px;
   }
-  .dvi-insights .bank-tools > .dvi-bank-sorts {
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    order: 10;
-    flex-basis: 100%;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-search-wrap {
+    flex: 1 1 calc(100% - 120px);
+    min-width: 90px;
   }
-  html.dvi-insights .bank-window .dvi-bank-sorts > .dvi-bank-sort {
-    min-width: 0;
-    padding: 6px 2px;
-    min-height: 34px;
-    font-size: 12px;
+  html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > [data-bank-sort] {
+    margin-right: 0;
+  }
+  html.dvi-insights .bank-window .bank-tools > .dvi-bank-sort {
+    margin-left: 0;
+  }
+  html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > [data-bank-arrange] {
+    margin-left: auto;
   }
 }
 .dvi-insights [data-fields] .field-list {
@@ -28780,7 +28731,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         const view = views.get(grid);
         if (view) {
           view.sorted = false;
-          view.mode = "order";
           view.signature = null;
           view.wasSorted = false;
           for (const slot of grid.children) {
@@ -28794,12 +28744,15 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           slot.querySelector(label)?.remove();
         }
       }
-      if (css === "dvi-bank") {
-        document
-          .querySelectorAll("[data-dvi-bank-sort]")
-          .forEach((n) => n.removeAttribute("data-dvi-bank-sort"));
-        document.querySelectorAll(".dvi-bank-sorts").forEach((n) => n.remove());
-      } else document.querySelectorAll(button).forEach((n) => n.remove());
+      if (css === "dvi-bank")
+        for (const grid of document.querySelectorAll(selector)) {
+          const window = grid.closest("[data-bank-window]"),
+            sort = window?.querySelector("[data-bank-sort]"),
+            arrange = window?.querySelector("[data-bank-arrange]");
+          if (sort && arrange && sort.previousElementSibling !== arrange)
+            arrange.insertAdjacentElement("afterend", sort);
+        }
+      document.querySelectorAll(button).forEach((n) => n.remove());
     }
   }
   function bindValueSortingReset(window, selector, views, refresh) {
@@ -28809,7 +28762,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       const view = views.get(window.querySelector(selector));
       if (!view?.sorted) return;
       view.sorted = false;
-      view.mode = "order";
       view.signature = null;
       refresh();
     };
@@ -28819,7 +28771,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         const control = e.target.closest?.(
           'button,[role="button"],input[type="button"],input[type="submit"],select',
         );
-        if (control?.matches("[data-bank-arrange]")) reset();
+        if (control?.matches("[data-bank-arrange],[data-bank-sort]")) reset();
       },
       true,
     );
@@ -28839,30 +28791,20 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       const window = grid.closest("[data-bank-window]");
       if (!window || window.closest("[hidden]")) continue;
       const nativeSort = window.querySelector("[data-bank-sort]"),
-        anchor = nativeSort || window.querySelector("[data-bank-arrange]");
+        anchor = window.querySelector("[data-bank-arrange]"),
+        search = window.querySelector(".bank-search-wrap,[data-bank-search]");
       if (!anchor) continue;
       let view = bankSortWindows.get(window);
       if (!view) {
-        const group = document.createElement("div");
-        group.className = "dvi-bank-sorts";
-        group.dataset.noI18n = "";
-        group.setAttribute("role", "group");
-        const modes = nativeSort ? ["order", "ask", "bid", "value"] : ["order", "value"];
-        for (const mode of modes) {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "dvi-bank-sort";
-          button.dataset.dviBankMode = mode;
-          group.append(button);
-        }
-        view = { group, mode: "order", sorted: false, orders: new WeakMap() };
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "bank-arrange dvi-bank-sort";
+        button.dataset.noI18n = "";
+        view = { button, sorted: false, orders: new WeakMap() };
         bankSortWindows.set(window, view);
-        group.addEventListener("click", (e) => {
-          const button = e.target.closest("[data-dvi-bank-mode]");
-          if (!button) return;
+        button.addEventListener("click", (e) => {
           e.stopPropagation();
-          view.mode = button.dataset.dviBankMode;
-          view.sorted = view.mode !== "order";
+          view.sorted = true;
           syncInventory();
         });
       }
@@ -28879,34 +28821,21 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       }
       if (view.account !== p.id) {
         view.account = p.id;
-        view.mode = "order";
         view.sorted = false;
         view.signature = null;
       }
       bindValueSortingReset(window, "[data-bank-grid]", bankViews, syncInventory);
-      if (nativeSort && !nativeSort.hasAttribute("data-dvi-bank-sort"))
-        nativeSort.setAttribute("data-dvi-bank-sort", "");
-      if (view.group.previousElementSibling !== anchor)
-        anchor.insertAdjacentElement("afterend", view.group);
-      const groupLabel = t("仓库排序");
-      if (view.group.getAttribute("aria-label") !== groupLabel)
-        view.group.setAttribute("aria-label", groupLabel);
-      const names = { order: "原顺序", ask: "总卖价", bid: "总买价", value: "价值排序" };
-      const titles = {
-        order: "恢复仓库顺序",
-        ask: "整堆总卖价：数量 × 已收到的最低卖价，未扣税，不代表能成交。",
-        bid: "整堆总买价：数量 × 已收到的最高买价，未扣税，不考虑求购数量。",
-        value: "整堆估值：税后求购，余量按商人价。",
-      };
-      for (const button of view.group.children) {
-        const mode = button.dataset.dviBankMode;
-        setNativeText(button, t(names[mode]));
-        const pressed = String(view.mode === mode);
-        if (button.getAttribute("aria-pressed") !== pressed)
-          button.setAttribute("aria-pressed", pressed);
-        const title = t(titles[mode]);
-        if (button.title !== title) button.title = title;
-      }
+      // Move the original informational select; its listener and value stay native.
+      if (nativeSort && search && nativeSort.previousElementSibling !== search)
+        search.insertAdjacentElement("afterend", nativeSort);
+      if (view.button.previousElementSibling !== anchor)
+        anchor.insertAdjacentElement("afterend", view.button);
+      setNativeText(view.button, t("价值排序"));
+      const title = t("整堆估值：税后求购，余量按商人价。");
+      if (view.button.title !== title) view.button.title = title;
+      const pressed = String(view.sorted);
+      if (view.button.getAttribute("aria-pressed") !== pressed)
+        view.button.setAttribute("aria-pressed", pressed);
       if (grid.classList.contains("dvi-bank-sorted") !== view.sorted)
         grid.classList.toggle("dvi-bank-sorted", view.sorted);
       const slots = [...grid.children],
@@ -28923,7 +28852,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         store.state.quoteRevision,
         store.state.taxBp,
         p.ironman,
-        view.mode,
+        view.sorted,
+        nativeSort?.value,
         i18n.language,
         document.documentElement.dataset.theme,
         Math.floor(now / 15000),
@@ -28946,6 +28876,15 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         continue;
       view.signature = signature;
       view.slots = slots;
+      if (!view.sorted) {
+        for (const slot of slots) {
+          const old = view.orders.get(slot);
+          if (old !== undefined && slot.style.order !== old) slot.style.order = old;
+          slot.querySelector(".dvi-bank-value")?.remove();
+          slot.classList.remove("dvi-bank-valued");
+        }
+        continue;
+      }
       const entries = slots.map((slot, index) => {
         const id = ids[index],
           item = slot.matches(".slot[data-item]");
@@ -28968,25 +28907,15 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       for (const entry of entries) {
         const { slot, id, item } = entry,
           qty = p.bank?.[id];
-        entry.value =
-          view.mode === "value"
-            ? globalThis.DVIInventory.value(
-                id,
-                qty,
-                store.state.books,
-                store.state.taxBp,
-                now,
-                GAME_DATA,
-                p.ironman,
-              )
-            : globalThis.DVIInventory.quoteTotal(
-                id,
-                qty,
-                store.state.books,
-                view.mode,
-                now,
-                p.ironman,
-              );
+        entry.value = globalThis.DVIInventory.value(
+          id,
+          qty,
+          store.state.books,
+          store.state.taxBp,
+          now,
+          GAME_DATA,
+          p.ironman,
+        );
         if (!view.sorted || !item) {
           slot.querySelector(".dvi-bank-value")?.remove();
           slot.classList.remove("dvi-bank-valued");
@@ -29000,11 +28929,8 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           label.dataset.noI18n = "";
           slot.append(label);
         }
-        setNativeText(
-          label,
-          (view.mode !== "value" && Number.isFinite(entry.value) ? "≈" : "") + fmt(entry.value, 2),
-        );
-        const title = t(titles[view.mode]);
+        setNativeText(label, fmt(entry.value, 2));
+        const title = t("整堆估值");
         if (label.title !== title) label.title = title;
         if (!typography.has(entry.appearance)) {
           const quantity =
@@ -29013,17 +28939,10 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         }
         syncValueTypography(slot, label, typography.get(entry.appearance));
       }
-      const ranks = view.sorted
-        ? globalThis.DVIInventory.ranks(canonical)
-        : new Map(canonical.map((e) => [e.index, e.index]));
+      const ranks = globalThis.DVIInventory.ranks(canonical);
       for (const entry of entries) {
-        const rank = String(ranks.get(entry.index)),
-          old = view.orders.get(entry.slot),
-          cssOrder =
-            view.mode === "order" && nativeSort?.value !== "ask" && nativeSort?.value !== "bid"
-              ? old
-              : rank;
-        if (entry.slot.style.order !== cssOrder) entry.slot.style.order = cssOrder;
+        const rank = String(ranks.get(entry.index));
+        if (entry.slot.style.order !== rank) entry.slot.style.order = rank;
       }
     }
   }
