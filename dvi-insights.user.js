@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.110
+// @version      0.4.111
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4798,6 +4798,9 @@ SOFTWARE.
       const baselines = new Map(),
         totals = new Map();
       const ledgerId = (key, account) => JSON.stringify([key, account]);
+      // Unmatched actual output is retained for inspection, but cannot be valued
+      // against another minute's duration. A live bucket joins once time arrives.
+      const eligible = (row) => !row.key.startsWith("actual:") || row.seconds > 0;
       const bucketId = (row) => JSON.stringify([row.key, row.account, Math.floor(row.at / 60000)]);
       const empty = () => ({
         seconds: 0,
@@ -4825,6 +4828,7 @@ SOFTWARE.
         for (const row of rows) {
           buckets.set(bucketId(row), row);
           nextPrune = Math.min(nextPrune, row.at + AGE + 1);
+          if (!eligible(row)) continue;
           const id = ledgerId(row.key, row.account);
           let out = totals.get(id);
           if (!out) {
@@ -4863,6 +4867,7 @@ SOFTWARE.
         const at = now();
         prune(at);
         const old = buckets.get(JSON.stringify([key, account, Math.floor(at / 60000)]));
+        const counted = old && eligible(old);
         const row = old || {
           key,
           account,
@@ -4885,13 +4890,15 @@ SOFTWARE.
           buckets.set(bucketId(row), row);
           nextPrune = Math.min(nextPrune, at + AGE + 1);
         }
-        const id = ledgerId(key, account);
-        let out = totals.get(id);
-        if (!out) {
-          out = { ...empty(), key, account, jobId: row.jobId, zone: row.zone };
-          totals.set(id, out);
+        if (eligible(row)) {
+          const id = ledgerId(key, account);
+          let out = totals.get(id);
+          if (!out) {
+            out = { ...empty(), key, account, jobId: row.jobId, zone: row.zone };
+            totals.set(id, out);
+          }
+          merge(out, counted ? { ...value, at } : row);
         }
-        merge(out, { ...value, at });
         prune(at);
       }
       function total(key, account) {
@@ -5852,6 +5859,8 @@ SOFTWARE.
       "目标等级须为 1–{max} 的整数": "Target level must be an integer from 1 to {max}",
     };
     Object.assign(en, {
+      "到期记录连同产出移出；没有观测时长的产出不参与折算。":
+        "Expired records leave with their output. Output without observed duration is excluded from rate calculations.",
       "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、无精通和家园；计失败回退、碎片或核心及保护卷轴，比较保护起点后取较低参考。不是原生P50、实际投入或战斗力。缺少保护报价或旧超限装备时仅显示已知下限（≥）。":
         "Enhanced gear ignores +N listings and trades. The reference is the same-quality base item plus expected rebuilding cost at Enhancing 100, with no mastery or home bonus. Includes failures, shards or cores, and protection scrolls; compares protection thresholds. This is not native P50, actual spending or combat power. Missing scroll quotes or legacy levels show only a known lower bound (≥).",
       "强化按统一重做期望成本估值；≈为参考，≥为缺价下限。":
@@ -5957,11 +5966,18 @@ SOFTWARE.
           units[index + 1]
         );
       }
-      function clockDuration(seconds) {
+      function clockDuration(seconds, precise = false) {
         if (!Number.isFinite(seconds)) return "—";
         const s = Math.max(0, Math.floor(seconds));
         if (s >= 86400) return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
-        if (s >= 3600) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+        if (s >= 3600)
+          return (
+            Math.floor(s / 3600) +
+            "h " +
+            Math.floor((s % 3600) / 60) +
+            "m" +
+            (precise ? " " + (s % 60) + "s" : "")
+          );
         return Math.floor(s / 60) + "m " + (s % 60) + "s";
       }
       function compactDuration(seconds) {
@@ -20333,7 +20349,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.110";
+  const PLUGIN_VERSION = "0.4.111";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -22511,9 +22527,12 @@ SOFTWARE.
     observationPace = paced.pace;
     setNativeText(
       note.querySelector("[data-observation-time]"),
-      t("观测 {time}", { time: i18n.clockDuration(paced.seconds) }),
+      t("观测 {time}", { time: i18n.clockDuration(paced.seconds, true) }),
     );
-    const hint = t("近12小时内续记有效观测；切换任务与未观测的断线时间不计入分母。");
+    const hint =
+      t("近12小时内续记有效观测；切换任务与未观测的断线时间不计入分母。") +
+      " " +
+      t("到期记录连同产出移出；没有观测时长的产出不参与折算。");
     if (note.title !== hint) note.title = hint;
   }
   function actualIncomeHtml(actual, expectedIncome = null) {
@@ -30228,11 +30247,57 @@ html.v4 [data-home-veil] .home-actions button:hover {
   // ---- src/home-appearance-ui.js ----
   const homeAppearance = globalThis.DVIHomeAppearance.create(document, HOME_APPEARANCE_CSS);
   const homeBoardViews = new WeakMap();
+  function syncHomeAfterNativeRepaint(changes) {
+    if (!insightFeatureEnabled("homeAppearance") && !insightFeatureEnabled("homeMaterialPrices"))
+      return;
+    const bodies = new Set(
+      changes
+        .filter(
+          (change) =>
+            change.type === "childList" &&
+            change.target.matches?.("[data-home-body]") &&
+            [...change.addedNodes].some(
+              (node) =>
+                node.nodeType === 1 &&
+                node.matches?.(".home-board-list,.home-room-head,.home-conv-head,.home-build"),
+            ),
+        )
+        .map((change) => change.target),
+    );
+    if (!bodies.size) return;
+    // Native replaces the whole body on more than purchase clicks. Reinsert
+    // informational sections in the existing observer microtask, before paint.
+    syncHomeBoard();
+    syncHomeMaterialPrices();
+    for (const body of bodies) homeBoardViews.get(body)?.settle?.();
+  }
   function bindHomeNavigation(body) {
     let view = homeBoardViews.get(body);
     if (view) return view;
     view = { filter: "all", search: "", boardScroll: 0 };
     homeBoardViews.set(body, view);
+    view.settle = () => {
+      const pending = view.pending;
+      if (!pending) return;
+      view.pending = null;
+      if (!body.isConnected || !insightFeatureEnabled("homeAppearance")) return;
+      const { back, buy, id, top, scroll } = pending;
+      if (back) {
+        body.scrollTop = body.querySelector(".home-board-list") ? view.boardScroll : 0;
+        return;
+      }
+      if (!buy) {
+        body.scrollTop = 0;
+        return;
+      }
+      const target = [...body.querySelectorAll(".home-board-row")].find(
+        (r) => r.querySelector("[data-home-goto]")?.getAttribute("data-home-goto") === id,
+      );
+      body.scrollTop =
+        target && Number.isFinite(top)
+          ? body.scrollTop + target.getBoundingClientRect().top - top
+          : scroll;
+    };
     body.addEventListener(
       "click",
       (event) => {
@@ -30249,27 +30314,15 @@ html.v4 [data-home-veil] .home-actions button:hover {
         if (list) view.boardScroll = scroll;
         const back = button.hasAttribute("data-home-back"),
           buy = button.hasAttribute("data-home-board-buy");
+        view.pending = { back, buy, id, top, scroll };
         cancelAnimationFrame(view.frame);
         view.frame = requestAnimationFrame(() => {
           view.frame = 0;
-          if (!body.isConnected || !insightFeatureEnabled("homeAppearance")) return;
+          if (!view.pending || !body.isConnected || !insightFeatureEnabled("homeAppearance"))
+            return;
           syncHomeBoard();
           syncHomeMaterialPrices();
-          if (back) {
-            body.scrollTop = body.querySelector(".home-board-list") ? view.boardScroll : 0;
-            return;
-          }
-          if (!buy) {
-            body.scrollTop = 0;
-            return;
-          }
-          const target = [...body.querySelectorAll(".home-board-row")].find(
-            (r) => r.querySelector("[data-home-goto]")?.getAttribute("data-home-goto") === id,
-          );
-          body.scrollTop =
-            target && Number.isFinite(top)
-              ? body.scrollTop + target.getBoundingClientRect().top - top
-              : scroll;
+          view.settle();
         });
       },
       true,
@@ -33603,6 +33656,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (insightFeatureEnabled("nativeUiEfficiency")) nativePresentation.invalidate(changes);
     changes = changes.filter(globalThis.DVIPresentation.changeHasEffect);
     if (!changes.length) return;
+    syncHomeAfterNativeRepaint(changes);
     // Native gives enhancement the title but leaves main-route controls beside
     // it. Reconcile before paint, including characterData-only native updates.
     if (
