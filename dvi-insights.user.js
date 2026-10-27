@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.115
+// @version      0.4.116
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -945,7 +945,9 @@ SOFTWARE.
             r.successes++;
             const gathering = !ins.length && j.output.itemId !== c.coins;
             const outputProbs = gathering
-              ? rarityProbabilities(p, j, p.lastTick, options.windows)
+              ? j.plain
+                ? [1, 0, 0, 0, 0]
+                : rarityProbabilities(p, j, p.lastTick, options.windows)
               : null;
             const rt = gathering ? draw(outputProbs, random) : rarity;
             const output = j.output.itemId === c.coins ? c.coins : identity(j.output.itemId, rt),
@@ -1319,6 +1321,7 @@ SOFTWARE.
         };
       }
       function vendorPrice(id, books, pricing = {}) {
+        if (pricing.vendorSellExcludedIds?.includes(id % 10000)) return null;
         // Enhancements do not change buyback value; received server floors take precedence.
         const plain = id % 10000,
           price = books[id]?.floor ?? pricing.vendorPrices?.[plain];
@@ -5758,6 +5761,7 @@ SOFTWARE.
       "{name}目标等级": "{name} target level",
       "{tier}材料": "{tier} materials",
       概率产出: "Random drops",
+      "普通煤，宝石仍可出稀有": "Common coal; gems can still roll rarity",
       待报价: "Price unavailable",
       缺买价: "Purchase price missing",
       估价: "Estimate",
@@ -6112,6 +6116,19 @@ SOFTWARE.
         inputs: [],
         output: { itemId: 5, qty: 1 },
         bonus: { itemId: 100, chance: 0.001 },
+      },
+      {
+        id: 344,
+        name: "Pure coal",
+        skill: "mining",
+        group: "Ore",
+        levelReq: 40,
+        baseTicks: 8,
+        xp: 14,
+        inputs: [],
+        output: { itemId: 5, qty: 1 },
+        bonus: { itemId: 100, chance: 0.001 },
+        plain: true,
       },
       {
         id: 6,
@@ -18969,6 +18986,7 @@ SOFTWARE.
           jobIds: [160, 161, 162, 163, 164, 165, 210, 211, 212],
         },
         { id: 394, x: 251, y: 49, kind: "scenery", jobIds: [], look: "ob-crystal" },
+        { id: 395, x: 200, y: 41, kind: "rock", jobIds: [344] },
       ],
       banks: [
         { id: 1, x: 200, y: 82 },
@@ -19796,20 +19814,21 @@ SOFTWARE.
       "Jewel crown": "宝石王冠",
       "Dragon egg": "龙蛋",
       "Firework powder": "烟花火药",
+      "Pure coal": "纯煤炭",
     },
     version: {
-      version: "1.0.3359",
+      version: "1.0.3375",
       env: "live",
-      commit: "f0e69d32",
+      commit: "bdc3b120",
       branch: "modmail",
       subject:
-        "Changelog 1.0.1203: a line that the economy will be tuned step by step over the next two to four weeks (Phocked, 27 Oct)",
-      committedAt: "2026-10-27T08:42:08+01:00",
+        "Changelog 1.0.1204: pure coal, tasks panel, top bar, chat bar, boss tap and gem pack vendor fixes, EN and ZH",
+      committedAt: "2026-10-27T18:33:31+01:00",
       dirty: true,
-      builtAt: "2026-10-27T07:47:21.207Z",
+      builtAt: "2026-10-27T17:39:11.393Z",
     },
-    clientAsset: "index-vJFGxo7G.js",
-    sourceSha256: "4fda6390ffba7e98bb7149f99cce4322a1f2e8338be70f34a28e405977a3caf1",
+    clientAsset: "index-CIBqYo8K.js",
+    sourceSha256: "37840e4f3fd11aeb8ff7671fb24232e6b4020076bde0e6bbae426aa1938662af",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -19827,6 +19846,7 @@ SOFTWARE.
       masteryBonusCap: 0.5,
       petChance: 3.3333333333333335e-7,
     },
+    vendorSellExcludedIds: [293],
   };
   GAME_DATA.world.collision = [
     289, -51, 28, -95, 32, -48, 2, -30, 2, -51, 29, -94, 33, -2, 1, -44, 2, -30, 2, -47, 6, -1, 25,
@@ -19854,17 +19874,17 @@ SOFTWARE.
     5, -9, 7, -17, 34, -94, 15, -88, 1, -14, 1, -1, 7, -7, 10, -16, 34, -94, 16, -64, 1, -10, 1, -7,
     1, -3, 1, -17, 6, -7, 3, -2, 1, -1, 3, -16, 34, -93, 19, -4, 1, -97, 9, -12, 1, -18, 34, -94,
     24, -2, 2, -49, 1, -4, 1, -37, 9, -2, 2, -18, 1, -8, 34, -94, 31, -76, 1, -13, 15, -15, 3, -6,
-    34, -92, 1, -1, 22, -5, 5, -35, 1, -19, 1, -7, 1, -6, 1, -22, 12, -9, 8, -6, 34, -98, 17, -9, 2,
-    -93, 11, -9, 5, -1, 3, -6, 34, -102, 14, -9, 1, -40, 1, -5, 1, -46, 12, -8, 2, -1, 2, -1, 2, -7,
-    34, -25, 2, -75, 14, -52, 3, -49, 11, -11, 2, -10, 34, -25, 2, -74, 14, -46, 1, -4, 1, -1, 3,
-    -14, 1, -13, 1, -18, 8, -10, 5, -1, 1, -11, 34, -99, 1, -1, 16, -1, 2, -98, 7, -11, 7, -11, 34,
-    -99, 22, -36, 1, -12, 1, -47, 7, -10, 5, -14, 34, -99, 2, -2, 12, -3, 7, -82, 2, -1, 1, -6, 10,
-    -4, 3, -3, 6, -11, 34, -103, 12, -3, 7, -6, 1, -63, 1, -7, 1, -3, 2, -8, 11, -3, 3, -6, 3, -6,
-    3, -2, 34, -103, 10, -6, 6, -2, 6, -77, 1, -1, 1, -4, 11, -1, 5, -4, 5, -5, 1, -3, 36, -103, 9,
-    -5, 1, -3, 4, -3, 4, -76, 5, -3, 18, -5, 10, -1, 1, -2, 35, -103, 9, -5, 2, -1, 2, -4, 4, -69,
-    1, -6, 28, -7, 8, -3, 36, -103, 9, -5, 5, -3, 5, -75, 27, -1, 1, -9, 45, -103, 9, -4, 6, -2, 6,
-    -67, 1, -6, 27, -2, 2, -11, 42, -103, 1, -1, 4, -7, 6, -2, 2, -1, 3, -11, 2, -60, 29, -1, 2,
-    -13, 40, -103, 1, -2, 1, -8, 7, -2, 1, -2, 4, -5, 3, -1, 2, -57, 1, -4, 28, -20, 36, -114, 8,
+    34, -92, 1, -1, 22, -5, 5, -35, 1, -19, 1, -7, 1, -6, 1, -2, 1, -19, 12, -9, 8, -6, 34, -98, 17,
+    -9, 2, -93, 11, -9, 5, -1, 3, -6, 34, -102, 14, -9, 1, -40, 1, -5, 1, -46, 12, -8, 2, -1, 2, -1,
+    2, -7, 34, -25, 2, -75, 14, -52, 3, -49, 11, -11, 2, -10, 34, -25, 2, -74, 14, -46, 1, -4, 1,
+    -1, 3, -14, 1, -13, 1, -18, 8, -10, 5, -1, 1, -11, 34, -99, 1, -1, 16, -1, 2, -98, 7, -11, 7,
+    -11, 34, -99, 22, -36, 1, -12, 1, -47, 7, -10, 5, -14, 34, -99, 2, -2, 12, -3, 7, -82, 2, -1, 1,
+    -6, 10, -4, 3, -3, 6, -11, 34, -103, 12, -3, 7, -6, 1, -63, 1, -7, 1, -3, 2, -8, 11, -3, 3, -6,
+    3, -6, 3, -2, 34, -103, 10, -6, 6, -2, 6, -77, 1, -1, 1, -4, 11, -1, 5, -4, 5, -5, 1, -3, 36,
+    -103, 9, -5, 1, -3, 4, -3, 4, -76, 5, -3, 18, -5, 10, -1, 1, -2, 35, -103, 9, -5, 2, -1, 2, -4,
+    4, -69, 1, -6, 28, -7, 8, -3, 36, -103, 9, -5, 5, -3, 5, -75, 27, -1, 1, -9, 45, -103, 9, -4, 6,
+    -2, 6, -67, 1, -6, 27, -2, 2, -11, 42, -103, 1, -1, 4, -7, 6, -2, 2, -1, 3, -11, 2, -60, 29, -1,
+    2, -13, 40, -103, 1, -2, 1, -8, 7, -2, 1, -2, 4, -5, 3, -1, 2, -57, 1, -4, 28, -20, 36, -114, 8,
     -15, 6, -52, 1, -7, 30, -19, 36, -113, 8, -16, 1, -2, 3, -61, 29, -20, 35, -112, 9, -16, 1, -66,
     30, -20, 34, -111, 13, -12, 2, -61, 1, -4, 29, -21, 34, -112, 12, -1, 5, -6, 2, -63, 2, -2, 29,
     -20, 34, -14, 1, -2, 3, -92, 26, -20, 1, -36, 1, -5, 2, -1, 1, -1, 31, -17, 34, -11, 7, -1, 2,
@@ -20298,7 +20318,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.115";
+  const PLUGIN_VERSION = "0.4.116";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -33556,7 +33576,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       box.innerHTML = `<details><summary><span class="dvi-native-summary" data-native-summary></span><span class="dvi-native-action">${t("升级计算")}</span></summary><div data-native-pricing></div><div class="dvi-native-controls"><label><span data-native-target-label>${t("升到")}</span> <input aria-label="${escape(t("{name}目标等级", { name: nameOf(job.name) }))}" type="number" min="1" max="${GAME_DATA.xpTable.length - 1}" step="1" value="${target}"> <span data-native-level-unit>${t("级")}</span></label><button type="button">${t("计算")}</button><small data-native-rarity></small></div><div data-native-unit-price></div><div data-native-result></div></details>`;
       record = { row, box, job, list: row.closest("[data-routes]") };
       nativeRecords.set(row, record);
-      row.insertAdjacentElement("afterend", box);
+      nativeRowAnchor(row).insertAdjacentElement("afterend", box);
       // A sibling, not a nested button: local planning cannot invoke pickJob/start.
       box.addEventListener("click", (e) => e.stopPropagation());
       box.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -33580,7 +33600,9 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         ? t("稀有优先；缺料按普通补齐")
         : job.inputs.length
           ? t("{tier}材料", { tier: t(TIERS[nativeRarity(job)]) })
-          : t("概率产出");
+          : job.plain
+            ? t("普通煤，宝石仍可出稀有")
+            : t("概率产出");
     if (rarity.textContent !== text) rarity.textContent = text;
     renderNative(record);
     const cached = nativeCache.get(nativeKey(record));
@@ -33597,8 +33619,9 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       floor = globalThis.DVIPlannerCore.vendorPrice(id, store.state.books, GAME_DATA),
       tax = globalThis.DVIPlannerCore.marketTaxBp(id, store.state, Date.now());
     const knownNontrade =
-      Object.hasOwn(GAME_DATA.vendorPrices, id % 10000) &&
-      GAME_DATA.vendorPrices[id % 10000] === null;
+      GAME_DATA.vendorSellExcludedIds?.includes(id % 10000) ||
+      (Object.hasOwn(GAME_DATA.vendorPrices, id % 10000) &&
+        GAME_DATA.vendorPrices[id % 10000] === null);
     if (id === 200) return `<span>${t("金币按面值计价")}</span>`;
     return `<span title="${tax == null ? t("税率待接收") : t("税前 {value}", { value: fmt(b.bid, 2) })}">${t("求购")}${tax != null ? t("（税后）") : ""}: ${b.bidPublic && b.bid > 0 ? "≈ " : ""}${b.bid > 0 ? fmt(b.bid * (tax != null ? 1 - tax / 10000 : 1), 2) : "—"}</span><span title="${t("需等待买家")}">${t("挂售")}: ${b.askPublic && b.ask > 0 ? "≈ " : ""}${b.ask > 0 ? fmt(b.ask) : "—"}</span><span title="${t("稀有度和强化不抬高商人回收价")}">${t("商人")}: ${floor ? fmt(floor) : knownNontrade ? t("不可出售") : "—"}</span>${!(b.ask > 0) && b.purchaseCache?.price > 0 && Date.now() - b.purchaseCache.at <= 86400000 ? `<span>${t("缓存买价")}: ≈ ${fmt(b.purchaseCache.price)}</span>` : ""}${GAME_DATA.vendorBuys[id] ? `<span>${t("商人买价")}: ${fmt(GAME_DATA.vendorBuys[id])}</span>` : ""}${b.bidPublic || b.askPublic ? `<small>${t("含公开行情估价；仅最优报价，无完整深度，批量成交可能不同。")}</small>` : ""}${b.at && Date.now() - b.at > 300000 ? `<small>${t("报价已过期")}</small>` : ""}`;
   }
@@ -33683,6 +33706,10 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (icon)
       injectItemPrices(sheet.querySelector(".sheet-title") || sheet, Number(icon.dataset.item));
   }
+  function nativeRowAnchor(row) {
+    const next = row.nextElementSibling;
+    return next?.classList?.contains("route-variant") ? next : row;
+  }
   function remountNativeRows() {
     const restores = [],
       replaced = new Set();
@@ -33695,7 +33722,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       nativeRecords.delete(row);
       record.row = next;
       nativeRecords.set(next, record);
-      next.insertAdjacentElement("afterend", record.box);
+      nativeRowAnchor(next).insertAdjacentElement("afterend", record.box);
       replaced.add(list);
       // The retained box already has its prices, disclosure and input. Native
       // idle batches only replace the route button: restore its XP before paint
@@ -33725,7 +33752,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (
       old?.ids === nativeListIds(list) &&
       Array.from(list.querySelectorAll(".route[data-job],.route[data-zone]")).every((row) =>
-        row.nextElementSibling?.classList.contains("dvi-native-work"),
+        nativeRowAnchor(row).nextElementSibling?.classList.contains("dvi-native-work"),
       )
     )
       old.scrollTop = list.scrollTop;
