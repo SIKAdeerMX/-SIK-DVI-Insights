@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.114
+// @version      0.4.115
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -1324,7 +1324,15 @@ SOFTWARE.
           price = books[id]?.floor ?? pricing.vendorPrices?.[plain];
         return price > 0 ? price : null;
       }
-      function valueFlows(flow, books, mode, taxBp, now = Date.now(), pricing = {}) {
+      function marketTaxBp(id, tax, now = Date.now()) {
+        const base = typeof tax === "object" && tax !== null ? tax.taxBp : tax;
+        if (!Number.isFinite(base) || base < 0 || base > 10000) return null;
+        const ramp = tax?.packTaxRampMs;
+        return id % 1000 === 293 && Number.isFinite(ramp) && ramp >= 0
+          ? Math.max(base, Math.min(1500, base + 200 * Math.floor((now - ramp) / 86400000)))
+          : base;
+      }
+      function valueFlows(flow, books, mode, tax, now = Date.now(), pricing = {}) {
         const missing = [],
           stale = [],
           partial = [],
@@ -1334,7 +1342,8 @@ SOFTWARE.
           unknownTax = false;
         const put = (id, qty, price, source, extra = {}) => {
           if (qty <= 1e-9) return;
-          const taxed = source === "market" && mode !== "buy";
+          const taxed = source === "market" && mode !== "buy",
+            taxBp = marketTaxBp(id, tax, now);
           if (taxed && taxBp == null) unknownTax = true;
           const value = qty * price * (taxed ? 1 - (taxBp ?? 0) / 10000 : 1);
           total += value;
@@ -1347,7 +1356,8 @@ SOFTWARE.
             put(id, qty, 1, "coins");
             continue;
           }
-          const b = books[id] || {},
+          const taxBp = marketTaxBp(id, tax, now),
+            b = books[id] || {},
             sell = mode !== "buy",
             vendor = sell ? vendorPrice(id, books, pricing) : pricing.vendorBuys?.[id],
             factor = sell ? 1 - (taxBp ?? 0) / 10000 : 1;
@@ -1499,6 +1509,7 @@ SOFTWARE.
         rng,
         fillBook,
         vendorPrice,
+        marketTaxBp,
         valueFlows,
         profits,
         dailyProfits,
@@ -2788,7 +2799,7 @@ SOFTWARE.
       const book = books[id] || {},
         received = { floor: book.floor };
       // Old orders are not available liquidity. Unknown tax cannot imply no tax.
-      if (!ironman && Number.isFinite(taxBp)) {
+      if (!ironman && core.marketTaxBp(id, taxBp, now) !== null) {
         const quoteAt = book.bidAt ?? book.at,
           depthAt = book.bidDepthAt ?? book.depthAt;
         if (
@@ -3173,6 +3184,7 @@ SOFTWARE.
         books: {},
         orders: [],
         taxBp: null,
+        packTaxRampMs: null,
         frameTick: null,
         receivedAt: null,
         revision: 0,
@@ -3417,6 +3429,8 @@ SOFTWARE.
                 Number.isInteger(m.marketTaxBp) && m.marketTaxBp >= 0 && m.marketTaxBp <= 10000
                   ? m.marketTaxBp
                   : null;
+              state.packTaxRampMs =
+                Number.isFinite(m.packTaxRampMs) && m.packTaxRampMs >= 0 ? m.packTaxRampMs : null;
               state.offline =
                 m.offline && Number.isFinite(m.offline.ticksApplied)
                   ? {
@@ -17192,7 +17206,7 @@ SOFTWARE.
       204: 16000,
       205: 48000,
       206: 140000,
-      207: 360000,
+      207: 288000,
       208: 600,
       209: 100000,
       210: 400000,
@@ -19784,17 +19798,18 @@ SOFTWARE.
       "Firework powder": "烟花火药",
     },
     version: {
-      version: "1.0.3302",
+      version: "1.0.3359",
       env: "live",
-      commit: "6fae546e",
+      commit: "f0e69d32",
       branch: "modmail",
-      subject: "1.0.1202: changelog for the live push (EN + ZH)",
-      committedAt: "2026-10-25T14:48:23+01:00",
+      subject:
+        "Changelog 1.0.1203: a line that the economy will be tuned step by step over the next two to four weeks (Phocked, 27 Oct)",
+      committedAt: "2026-10-27T08:42:08+01:00",
       dirty: true,
-      builtAt: "2026-10-25T13:51:40.338Z",
+      builtAt: "2026-10-27T07:47:21.207Z",
     },
-    clientAsset: "index-DnkTQC5A.js",
-    sourceSha256: "5d0a565eeaa1e79c635a428da7a3d53420a0d063cfc0f9a75d44dc9daa2330dc",
+    clientAsset: "index-vJFGxo7G.js",
+    sourceSha256: "4fda6390ffba7e98bb7149f99cce4322a1f2e8338be70f34a28e405977a3caf1",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -20283,7 +20298,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.114";
+  const PLUGIN_VERSION = "0.4.115";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -22002,7 +22017,11 @@ SOFTWARE.
     return globalThis.DVIPlannerCore.dailyProfits(
       hour,
       options.player?.ironman ? {} : store.state.books,
-      options.player?.ironman ? 0 : store.state.taxBp,
+      options.player?.ironman
+        ? 0
+        : store.state.packTaxRampMs == null
+          ? store.state.taxBp
+          : store.state,
       Date.now(),
       GAME_DATA,
     );
@@ -22316,7 +22335,7 @@ SOFTWARE.
       profit = core.dailyProfits(
         report.hour,
         books,
-        p.ironman ? 0 : store.state.taxBp,
+        p.ironman ? 0 : store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
         Date.now(),
         GAME_DATA,
       );
@@ -22481,7 +22500,7 @@ SOFTWARE.
       actual.outputs,
       actual.seconds,
       ironman ? {} : store.state.books,
-      ironman ? 0 : store.state.taxBp,
+      ironman ? 0 : store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
       Date.now(),
       GAME_DATA,
     );
@@ -22774,7 +22793,7 @@ SOFTWARE.
     const p = globalThis.DVIPlannerCore.profits(
       flow,
       store.state.books,
-      store.state.taxBp,
+      store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
       Date.now(),
       GAME_DATA,
     );
@@ -28417,7 +28436,11 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
             profit = globalThis.DVIPlannerCore.dailyProfits(
               result.hour,
               entry.player?.ironman ? {} : store.state.books,
-              entry.player?.ironman ? 0 : store.state.taxBp,
+              entry.player?.ironman
+                ? 0
+                : store.state.packTaxRampMs == null
+                  ? store.state.taxBp
+                  : store.state,
               Date.now(),
               GAME_DATA,
             );
@@ -28851,6 +28874,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         store.state.sessionRevision,
         store.state.quoteRevision,
         store.state.taxBp,
+        store.state.packTaxRampMs,
         p.ironman,
         view.sorted,
         nativeSort?.value,
@@ -28911,7 +28935,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
           id,
           qty,
           store.state.books,
-          store.state.taxBp,
+          store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
           now,
           GAME_DATA,
           p.ironman,
@@ -28959,7 +28983,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       groups = globalThis.DVIInventory.groupedValues(
         p.bank,
         store.state.books,
-        store.state.taxBp,
+        store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
         now,
         GAME_DATA,
         p.ironman,
@@ -29007,7 +29031,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
               id,
               p.bank?.[id],
               store.state.books,
-              store.state.taxBp,
+              store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
               now,
               GAME_DATA,
               p.ironman,
@@ -29329,6 +29353,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
           books: store.state.books,
           windows: store.state.windows,
           taxBp: store.state.taxBp,
+          packTaxRampMs: store.state.packTaxRampMs ?? null,
         },
       }),
     );
@@ -33345,7 +33370,13 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       price = (n) => (n === null ? "—" : fmt(n, 2));
     return `<details class="dvi-unit-price"><summary>${t("成品单价参考")}<span class="dvi-native-action" aria-hidden="true"></span></summary><div style="overflow:auto"><table><thead><tr>${["稀有度", "材料/件", "即卖/件", "挂售/件"].map((x) => "<th>" + t(x) + "</th>").join("")}</tr></thead><tbody>${tiers
       .map((tier) => {
-        const r = craftUnitReference(job, tier, p, store.state.books, store.state.taxBp);
+        const r = craftUnitReference(
+          job,
+          tier,
+          p,
+          store.state.books,
+          store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
+        );
         return (
           "<tr><td>" +
           t(TIERS[tier]) +
@@ -33564,7 +33595,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   function itemPriceHtml(id) {
     const b = store.state.books[id] || {},
       floor = globalThis.DVIPlannerCore.vendorPrice(id, store.state.books, GAME_DATA),
-      tax = store.state.taxBp;
+      tax = globalThis.DVIPlannerCore.marketTaxBp(id, store.state, Date.now());
     const knownNontrade =
       Object.hasOwn(GAME_DATA.vendorPrices, id % 10000) &&
       GAME_DATA.vendorPrices[id % 10000] === null;

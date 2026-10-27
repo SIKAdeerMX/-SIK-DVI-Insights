@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.114
+# [SIK] DVI Insights 0.4.115
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.115：适配正式服1.0.3359。深渊之眼商人价更新为288,000；宝石包按服务器已发送的起始时间计算每日增加2个百分点、最高15%的独立交易税，其他物品维持基础税率。仓库价值排序、税后物品提示与收入估值同步，跨日无需重新收报价，买入成本不扣卖方税。保留新版家园金币加速与原生确认，以及原仓库布局、设置和分钟观测。先锋服内容另行调研，不混入正式数据。
 
 0.4.114：按用户偏好恢复仓库原来的按钮：左侧搜索框紧邻官方新增排序下拉框，右侧依次为“自动整理／价值排序／快速出售”，不再使用四选按钮组。保留官方下拉框本身与原生交互；切换官方排序退出价值排序，点击价值排序显示原来的税后整堆估值，分类、子分类与搜索保留价值排序。保留无变化计价缓存及字体读取优化，以及1.0.3302家园、强化、单田种植适配；观测与已有设置不变。
 
@@ -23,7 +25,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
 - 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
-- 规则跟随正式服 1.0.3302：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
+- 规则跟随正式服 1.0.3359：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
 - PC 原生战斗浮窗内增加可折叠的 DPS 与承伤统计，手机顶部原生血条恢复血量数字。DPS 按怪物有效掉血计算，承伤按已收到的受击事件统计，缺数据显示未知，重连重新观测。制作升级计算增加分品质的材料成本、税后即卖和挂售单价参考，缺价保留未知。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示静态金色高亮。普通战斗补充 EPH、食物续航；普通工作和战斗的药水默认显示当前品质最先到期的实际图标与时长，名称保留在提示中，待机和单独强化时也保留生效药水摘要，按时间计时；八种药水图标均内嵌，不依赖仓库是否打开；瓶子与倒计时紧邻显示，点击展开按剩余时间排序的列表。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。饱食与扎根优先从近期报价量足够的食物中比较续24小时总成本，名称后只加“数量个”，费用另列金币/d；公开快照标估价。保留历史与缓存估价，悬浮提示简列续24小时、价源和报价时间。到期后仍保留推荐并标记未生效；原生战斗倒计时保持。扎根、饱食和药水的右侧剩余时间统一使用 d/h/m/s 两个相邻单位，世界增益与祝福同步，不足一分钟只显示 s。
@@ -55,6 +57,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.115 adapts to live 1.0.3359. The Abyssal eye vendor value is now 288,000. Gem pack selling tax follows the received ramp epoch, rising by two percentage points per day up to 15%; other goods retain the base rate. Stack valuation, after-tax item tips and income estimates use the appropriate tax across day boundaries without another quote. Buy costs, finite depth, vendor fallback and unknown prices retain their existing rules. Native Home gold-finish controls and confirmations, bank layout, settings and minute-only observations remain. Next-server research is kept separate from live data.
 
 0.4.114 restores the original bank buttons. Search and the native sort dropdown sit together on the left; Auto arrange, Sort by value and Quick sell remain on the right with their original styling. The four-button group is removed. Changing native sort exits local value sorting; Sort by value reveals the existing taxed stack estimates and survives category, shelf and name filters. Stable-state caching, equivalent-slot typography reuse, 1.0.3302 Home and calculation compatibility, existing settings and observations are retained.
 
