@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.117
+// @version      0.4.118
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -19822,18 +19822,18 @@ SOFTWARE.
       "Pure coal": "纯煤炭",
     },
     version: {
-      version: "1.0.3416",
+      version: "1.0.3465",
       env: "live",
-      commit: "00bb3fc1",
-      branch: "push-1028",
+      commit: "8ecab74a",
+      branch: "HEAD",
       subject:
-        "Changelog 1.0.1205 for live: no translation line (off on live), no picture-check line (log only), the guild grid fix",
-      committedAt: "2026-10-28T10:38:57+01:00",
+        "Changelog 1.0.1206: chat in every language, EN and ZH; 1.0.1205 as live published it",
+      committedAt: "2026-10-28T15:31:24+01:00",
       dirty: false,
-      builtAt: "2026-10-28T09:45:13.620Z",
+      builtAt: "2026-10-28T14:34:36.223Z",
     },
-    clientAsset: "index-CXncQ7hL.js",
-    sourceSha256: "6a2edd98093a204d24f41ef2f26e1ee2260fd027931213287471b1b131d84282",
+    clientAsset: "index-5Gl3O5se.js",
+    sourceSha256: "0797ba1915b4a5bc66f15063c2f00e229259e0569129a6574672816bc5c9e48e",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -20323,7 +20323,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.117";
+  const PLUGIN_VERSION = "0.4.118";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
