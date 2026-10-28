@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.116
+# [SIK] DVI Insights 0.4.117
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.116：适配正式服1.0.3375。新增40级纯煤炭及对应矿点、地图与路线，主产煤炭固定普通品质，额外宝石仍按原生概率掷品质；经验与收益使用对应规则。原生普通／纯净选项完整保留，预估和升级计算放在选项下方并随任务切换。宝石包不再使用商人回收价，旧报价中的商人兜底也不计入；仍按有效求购数量和独立税率估价，缺价保留未知。保留深渊之眼288,000商人价、原仓库按钮布局、家园原生操作、设置及分钟观测。
+0.4.117：适配正式服1.0.3416，更新利维坦护符总等级750的穿戴条件。优化大量仓库物品的价值排序，先读取原生字体样式快照，再统一更新价格标签，减少逐项样式重算。保留原仓库按钮、计价规则、锁定与筛选、设置和分钟观测。
 
 0.4.115：适配正式服1.0.3359。深渊之眼商人价更新为288,000；宝石包按服务器已发送的起始时间计算每日增加2个百分点、最高15%的独立交易税，其他物品维持基础税率。仓库价值排序、税后物品提示与收入估值同步，跨日无需重新收报价，买入成本不扣卖方税。保留新版家园金币加速与原生确认，以及原仓库布局、设置和分钟观测。先锋服内容另行调研，不混入正式数据。
 
@@ -27,7 +27,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
 - 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
-- 规则跟随正式服 1.0.3375：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
+- 规则跟随正式服 1.0.3416：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
 - PC 原生战斗浮窗内增加可折叠的 DPS 与承伤统计，手机顶部原生血条恢复血量数字。DPS 按怪物有效掉血计算，承伤按已收到的受击事件统计，缺数据显示未知，重连重新观测。制作升级计算增加分品质的材料成本、税后即卖和挂售单价参考，缺价保留未知。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示静态金色高亮。普通战斗补充 EPH、食物续航；普通工作和战斗的药水默认显示当前品质最先到期的实际图标与时长，名称保留在提示中，待机和单独强化时也保留生效药水摘要，按时间计时；八种药水图标均内嵌，不依赖仓库是否打开；瓶子与倒计时紧邻显示，点击展开按剩余时间排序的列表。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。饱食与扎根优先从近期报价量足够的食物中比较续24小时总成本，名称后只加“数量个”，费用另列金币/d；公开快照标估价。保留历史与缓存估价，悬浮提示简列续24小时、价源和报价时间。到期后仍保留推荐并标记未生效；原生战斗倒计时保持。扎根、饱食和药水的右侧剩余时间统一使用 d/h/m/s 两个相邻单位，世界增益与祝福同步，不足一分钟只显示 s。
@@ -60,7 +60,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.116 adapts to live 1.0.3375. Level-40 Pure coal, its site, map and route are included. Coal always has common rarity; bonus gems retain native rarity rolls. XP and income estimates follow those rules. Native Normal/Pure controls remain above the estimates and level planner, which follow the selected job. Gem packs no longer use vendor fallback, including old quote floors; valid finite bids and the separate pack tax still apply, with missing values left unknown. The 288,000 Abyssal eye vendor value, bank layout, native Home actions, settings and minute-only observations remain.
+0.4.117 adapts to live 1.0.3416 and includes the Leviathan amulet total-level requirement of 750. Large bank value sorting now snapshots native font styles before updating price labels, avoiding repeated style recalculation per item. Native buttons, pricing rules, locked slots, filters, settings and minute-only observations remain.
 
 0.4.115 adapts to live 1.0.3359. The Abyssal eye vendor value is now 288,000. Gem pack selling tax follows the received ramp epoch, rising by two percentage points per day up to 15%; other goods retain the base rate. Stack valuation, after-tax item tips and income estimates use the appropriate tax across day boundaries without another quote. Buy costs, finite depth, vendor fallback and unknown prices retain their existing rules. Native Home gold-finish controls and confirmations, bank layout, settings and minute-only observations remain. Next-server research is kept separate from live data.
 

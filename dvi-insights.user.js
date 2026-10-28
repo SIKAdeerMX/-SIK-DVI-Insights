@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.116
+// @version      0.4.117
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -11291,6 +11291,7 @@ SOFTWARE.
         luck: 1.5,
         levelReq: 95,
         needs: "none",
+        totalLevel: 750,
       },
       {
         itemId: 304,
@@ -15215,6 +15216,7 @@ SOFTWARE.
         luck: 1.9500000000000002,
         levelReq: 95,
         needs: "none",
+        totalLevel: 750,
       },
       {
         itemId: 2357,
@@ -15225,6 +15227,7 @@ SOFTWARE.
         luck: 2.4000000000000004,
         levelReq: 95,
         needs: "none",
+        totalLevel: 750,
       },
       {
         itemId: 3357,
@@ -15235,6 +15238,7 @@ SOFTWARE.
         luck: 3.3000000000000003,
         levelReq: 95,
         needs: "none",
+        totalLevel: 750,
       },
       {
         itemId: 4357,
@@ -15245,6 +15249,7 @@ SOFTWARE.
         luck: 4.5,
         levelReq: 95,
         needs: "none",
+        totalLevel: 750,
       },
       {
         itemId: 1304,
@@ -19817,18 +19822,18 @@ SOFTWARE.
       "Pure coal": "纯煤炭",
     },
     version: {
-      version: "1.0.3375",
+      version: "1.0.3416",
       env: "live",
-      commit: "bdc3b120",
-      branch: "modmail",
+      commit: "00bb3fc1",
+      branch: "push-1028",
       subject:
-        "Changelog 1.0.1204: pure coal, tasks panel, top bar, chat bar, boss tap and gem pack vendor fixes, EN and ZH",
-      committedAt: "2026-10-27T18:33:31+01:00",
-      dirty: true,
-      builtAt: "2026-10-27T17:39:11.393Z",
+        "Changelog 1.0.1205 for live: no translation line (off on live), no picture-check line (log only), the guild grid fix",
+      committedAt: "2026-10-28T10:38:57+01:00",
+      dirty: false,
+      builtAt: "2026-10-28T09:45:13.620Z",
     },
-    clientAsset: "index-CIBqYo8K.js",
-    sourceSha256: "37840e4f3fd11aeb8ff7671fb24232e6b4020076bde0e6bbae426aa1938662af",
+    clientAsset: "index-CXncQ7hL.js",
+    sourceSha256: "6a2edd98093a204d24f41ef2f26e1ee2260fd027931213287471b1b131d84282",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -20318,7 +20323,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.116";
+  const PLUGIN_VERSION = "0.4.117";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -28947,7 +28952,33 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       // from the read-only snapshot so switching back has an unambiguous result.
       const canonical = [...entries].sort((a, b) => a.position - b.position);
       canonical.forEach((entry, index) => (entry.index = index));
+      // Read resolved font values before changing any slots. Computed styles are live:
+      // retaining CSSStyleDeclaration across label writes forces style resolution per item.
       const typography = new Map();
+      for (const entry of entries) {
+        if (!entry.item || typography.has(entry.appearance)) continue;
+        const quantity =
+          entry.slot.querySelector(":scope>b:not(.plus):not(.dvi-bank-value)") ||
+          nativeValueQuantity();
+        const style = getComputedStyle(quantity),
+          values = new Map();
+        for (const property of [
+          "font-family",
+          "font-size",
+          "font-style",
+          "font-weight",
+          "font-stretch",
+          "line-height",
+          "letter-spacing",
+          "font-variant-numeric",
+          "color",
+          "text-shadow",
+          "-webkit-text-stroke-width",
+          "-webkit-text-stroke-color",
+        ])
+          values.set(property, style.getPropertyValue(property));
+        typography.set(entry.appearance, { getPropertyValue: (property) => values.get(property) });
+      }
       for (const entry of entries) {
         const { slot, id, item } = entry,
           qty = p.bank?.[id];
@@ -28976,11 +29007,6 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         setNativeText(label, fmt(entry.value, 2));
         const title = t("整堆估值");
         if (label.title !== title) label.title = title;
-        if (!typography.has(entry.appearance)) {
-          const quantity =
-            slot.querySelector(":scope>b:not(.plus):not(.dvi-bank-value)") || nativeValueQuantity();
-          typography.set(entry.appearance, getComputedStyle(quantity));
-        }
         syncValueTypography(slot, label, typography.get(entry.appearance));
       }
       const ranks = globalThis.DVIInventory.ranks(canonical);
