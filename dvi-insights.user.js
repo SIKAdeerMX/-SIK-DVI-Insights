@@ -30347,7 +30347,7 @@ html[data-theme="light"] [data-home-window] {
   [data-home-veil] .home-place button {
     min-height: 36px;
   }
-  [data-home-veil] .home-conv-row {
+  [data-home-veil] [data-home-body] .home-conv-row {
     grid-template-columns: 20px 24px minmax(0, 1fr) 92px;
     gap: 6px 7px;
     padding: 9px;
