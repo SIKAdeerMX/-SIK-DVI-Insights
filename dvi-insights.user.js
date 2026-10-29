@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.118
+// @version      0.4.119
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5535,7 +5535,6 @@ SOFTWARE.
       "仅下载已收到的角色和行情，不上传数据。":
         "Download received character and prices only; no upload.",
       尚未读取角色: "Character not received yet",
-      "游戏版本已变化，请先更新插件": "Game version changed; update Insights first",
       请在代工结束后导出计算快照: "Export a calculation snapshot after your commission finishes",
       "{qty}个": "{qty} pcs",
       "伤害 +{n}%": "+{n}% damage",
@@ -5767,7 +5766,6 @@ SOFTWARE.
       估价: "Estimate",
       材料估价: "Material value",
       补齐成本: "Restock cost",
-      新版本待核对: "New version unchecked",
       产物收入: "Output income",
       材料成本: "Material cost",
       药水成本: "Potion cost",
@@ -5840,7 +5838,6 @@ SOFTWARE.
       等待角色数据: "Waiting for character data",
       未来一小时平均经验: "Average XP over the next hour",
       单田参考: "Single-field estimate",
-      "客户端已更新，规则待校验": "Client updated; rules need verification",
       "工作 {work}；跑路 {walk}；存取 {bank}；被抓 {stun}；95% 尝试预算 {attempts} 次":
         "Work {work}; travel {walk}; banking {bank}; stun {stun}; 95% attempt budget {attempts}",
       时间明细: "Time details",
@@ -19822,18 +19819,17 @@ SOFTWARE.
       "Pure coal": "纯煤炭",
     },
     version: {
-      version: "1.0.3465",
+      version: "1.0.3467",
       env: "live",
-      commit: "8ecab74a",
-      branch: "HEAD",
-      subject:
-        "Changelog 1.0.1206: chat in every language, EN and ZH; 1.0.1205 as live published it",
-      committedAt: "2026-10-28T15:31:24+01:00",
+      commit: "8df06d02",
+      branch: "hotfix-chatperf",
+      subject: "Changelog 1.0.1207: a smoother chat, EN and ZH",
+      committedAt: "2026-10-28T16:49:28+01:00",
       dirty: false,
-      builtAt: "2026-10-28T14:34:36.223Z",
+      builtAt: "2026-10-28T20:57:10.780Z",
     },
-    clientAsset: "index-5Gl3O5se.js",
-    sourceSha256: "0797ba1915b4a5bc66f15063c2f00e229259e0569129a6574672816bc5c9e48e",
+    clientAsset: "index-BTzc_xUu.js",
+    sourceSha256: "3f7d0421391cf0b7cf70b99bf74cfd647a92e95430221813a3ff6da4d2c03944",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -20323,7 +20319,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.118";
+  const PLUGIN_VERSION = "0.4.119";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -29379,7 +29375,6 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     const asset = [...document.querySelectorAll("script[src]")]
       .map((s) => s.getAttribute("src").split("?")[0].split("/").pop())
       .find((s) => /^index-.+\.js$/.test(s));
-    if (asset && asset !== GAME_DATA.clientAsset) throw Error(t("游戏版本已变化，请先更新插件"));
     const fields =
       "id,x,y,skills,equipment,hp,eatAt,foodItemId,foodMaxTier,foodPerTrip,foeIndex,foeHp,foeTicks,pack,bank,overflow,bankOrder,coins,route,enhance,lastStop,plots,plotChoice,plantPlainest,house,housePoints,houseCells,houseFurniture,houseBuild,houseUpgrades,houseUpgradePaid,queue,quests,questPoints,queueSlots,perks,streak,brews,brewTier,homeBank,stunUntil,tally,collection,collections,masteries,masteryResets,ironman,bankSlotsBought,strideSpeed,stride,unlimitedBank,achievements,activity,path,pathIndex,workSiteId,workJobId,attemptTicks,actionIndex,workRarity,offlineCapTicks,lastTick,rollIndex,guildBonus,lastFoe,held,raidHeld,eventBox,bankLocked,brewBuckets,forgeLog,fallback".split(
         ",",
@@ -29392,7 +29387,8 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     return JSON.parse(
       JSON.stringify({
         schema: "SIK-calculation-snapshot-1",
-        clientAsset: GAME_DATA.clientAsset,
+        clientAsset: asset || null,
+        factsClientAsset: GAME_DATA.clientAsset,
         receivedAt: store.state.receivedAt,
         character,
         market: {
@@ -33550,8 +33546,6 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         );
     } else text = cached?.error ? errorText(cached.error) : t("正在估算经验与收益…");
     if (pricing && !cached?.result) updateNativeResult(pricing, "");
-    if (nativeClientAsset && nativeClientAsset !== GAME_DATA.clientAsset)
-      text += " · " + t("新版本待核对");
     if (summary.textContent !== text) summary.textContent = text;
     record.box.hidden = !!record.row.disabled;
     const levels =
@@ -33671,19 +33665,11 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     const tip = document.querySelector(".tip[data-tip]:not([hidden])");
     if (tip && hoveredItem !== null) injectItemPrices(tip, hoveredItem);
   }
-  let nativeClientAsset = "";
-  function refreshNativeClientAsset() {
-    nativeClientAsset =
-      Array.from(document.scripts)
-        .map((s) => s.src.match(/index-[A-Za-z0-9_-]+\.js/)?.[0])
-        .find(Boolean) || nativeClientAsset;
-  }
   function scanNative() {
     nativeTimer = null;
     if (!document.documentElement || document.hidden) return;
     nativeLastScan = Date.now();
     pruneNativeCache();
-    refreshNativeClientAsset();
     i18n.refresh();
     syncNativePresentation();
     syncInsightSettings();
