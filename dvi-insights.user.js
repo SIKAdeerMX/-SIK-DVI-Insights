@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.119
+// @version      0.4.120
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -735,6 +735,68 @@ SOFTWARE.
               mode === "hour"
                 ? startTick + Math.max(1, Math.min(144000, Math.floor(options.ticks || 6000)))
                 : Infinity;
+          // Bound the work, rather than rejecting every target after 150k actions.
+          const attemptLimit =
+            options.maxAttempts ||
+            (mode === "hour"
+              ? 150000
+              : Math.max(
+                  150000,
+                  Math.min(
+                    10000000,
+                    Math.ceil(Math.max(0, target - p.skills[j.skill]) / Math.max(1, j.xp)) * 8,
+                  ),
+                ));
+          // Rates only change at levels, rotation/window edges and potion bucket
+          // transitions. Reuse those facts without skipping any random action.
+          const fast =
+            !options.onAdvance &&
+            !options.onAttempt &&
+            !options.onCollected &&
+            !options.progression &&
+            !options.nextBoundary;
+          const edges = [];
+          if (fast) {
+            for (const w of options.windows || []) edges.push(w.fromTick, w.toTick + 1);
+            for (const [k, end] of Object.entries(p.brews || {})) {
+              edges.push(end);
+              const buckets = p.brewBuckets?.[k];
+              if (buckets?.length) {
+                let at = end - sum(buckets);
+                for (let i = buckets.length - 1; i >= 0; i--) {
+                  at += buckets[i];
+                  edges.push(at);
+                }
+              }
+            }
+            edges.sort((a, b) => a - b);
+          }
+          let edge = 0,
+            until = -Infinity,
+            facts,
+            levelUntil = -Infinity,
+            rate,
+            fail;
+          function rates() {
+            if (p.skills[j.skill] >= levelUntil) {
+              const lev = level(p.skills[j.skill]);
+              levelUntil = data.xpTable[lev + 1] ?? Infinity;
+              rate = chance(p, j);
+              fail = failure(p, j);
+            }
+            return { rate, fail };
+          }
+          function timedFacts() {
+            if (p.lastTick >= until) {
+              while (edge < edges.length && edges[edge] <= p.lastTick) edge++;
+              until = Math.min((Math.floor(p.lastTick / 3000) + 1) * 3000, edges[edge] ?? Infinity);
+              facts = {
+                probs: rarityProbabilities(p, j, p.lastTick, options.windows),
+                xp: [0, 1, 2, 3, 4].map((t) => xp(p, j, p.lastTick, options.windows, t)),
+              };
+            }
+            return facts;
+          }
           const r = {
             attempts: 0,
             successes: 0,
@@ -828,7 +890,7 @@ SOFTWARE.
           }
           while (p.lastTick < deadline && (mode === "hour" || p.skills[j.skill] < target)) {
             if (options.stopWhen?.(p, r)) break;
-            if (r.attempts >= (options.maxAttempts || 150000))
+            if (r.attempts >= attemptLimit)
               throw new Error("目标需要过多工作次数；请缩小目标等级或选择更高经验的工作");
             if (phase === "toWork") {
               if (!travel(site, p.id)) break;
@@ -910,7 +972,12 @@ SOFTWARE.
               !advance(p.stunUntil - p.lastTick - 1, "stunTicks")
             )
               break;
-            const probability = j.inputs.length === 0 && p.skills[j.skill] === 0 ? 1 : chance(p, j);
+            const probability =
+              j.inputs.length === 0 && p.skills[j.skill] === 0
+                ? 1
+                : fast
+                  ? rates().rate
+                  : chance(p, j);
             const wait =
               probability === 1
                 ? 1
@@ -930,7 +997,7 @@ SOFTWARE.
               remove(p, x.itemId, x.qty);
               add(r.inputs, x.itemId, x.qty);
             }
-            if (random() < failure(p, j)) {
+            if (random() < (fast ? rates().fail : failure(p, j))) {
               if (j.burn) {
                 r.burnt++;
                 put(p, j.burn.itemId, 1);
@@ -944,14 +1011,15 @@ SOFTWARE.
             }
             r.successes++;
             const gathering = !ins.length && j.output.itemId !== c.coins;
+            const current = fast ? timedFacts() : null;
             const outputProbs = gathering
               ? j.plain
                 ? [1, 0, 0, 0, 0]
-                : rarityProbabilities(p, j, p.lastTick, options.windows)
+                : current?.probs || rarityProbabilities(p, j, p.lastTick, options.windows)
               : null;
             const rt = gathering ? draw(outputProbs, random) : rarity;
             const output = j.output.itemId === c.coins ? c.coins : identity(j.output.itemId, rt),
-              gain = xp(p, j, p.lastTick, options.windows, rt);
+              gain = current ? current.xp[rt] : xp(p, j, p.lastTick, options.windows, rt);
             p.skills[j.skill] += gain;
             r.xp += gain;
             if (options.progression && output === c.coins) p.coins = (p.coins || 0) + j.output.qty;
@@ -973,7 +1041,7 @@ SOFTWARE.
             }
             if (j.bonus) {
               const probs = eligible.has(j.bonus.itemId)
-                ? rarityProbabilities(p, j, p.lastTick, options.windows)
+                ? current?.probs || rarityProbabilities(p, j, p.lastTick, options.windows)
                 : [1, 0, 0, 0, 0];
               const bonusTier = draw(probs, random);
               // Expected auxiliary loot is priced separately, avoiding rare-drop sample noise.
@@ -20319,7 +20387,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.119";
+  const PLUGIN_VERSION = "0.4.120";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -31423,7 +31491,57 @@ html.v4 [data-home-veil] .home-actions button:hover {
         ratio: edge === "left" || edge === "right" ? (h ? dy / h : 0) : w ? dx / w : 0,
       };
     }
-    function create(button, { win = window, storage = win.localStorage, key, anchor, onOpen }) {
+    function avoid(saved, bounds, width, height, obstacles = []) {
+      const wanted = position(saved, bounds, width, height),
+        clear = (p) =>
+          obstacles.every(
+            (r) =>
+              p.x + width + 4 <= r.left ||
+              p.x >= r.right + 4 ||
+              p.y + height + 4 <= r.top ||
+              p.y >= r.bottom + 4,
+          );
+      if (clear(wanted)) return wanted;
+      const candidates = [];
+      for (const edge of [
+        wanted.edge,
+        ...["left", "right", "top", "bottom"].filter((e) => e !== wanted.edge),
+      ]) {
+        const vertical = edge === "left" || edge === "right",
+          span = Math.max(0, vertical ? bounds.height - height : bounds.width - width),
+          origin = vertical ? bounds.y : bounds.x;
+        const offsets = [
+          (vertical ? wanted.y : wanted.x) - origin,
+          0,
+          span,
+          ...obstacles.flatMap((r) =>
+            vertical
+              ? [r.top - origin - height - 4, r.bottom - origin + 4]
+              : [r.left - origin - width - 4, r.right - origin + 4],
+          ),
+        ];
+        for (const offset of offsets) {
+          const p = position(
+            { edge, ratio: span ? Math.max(0, Math.min(span, offset)) / span : 0 },
+            bounds,
+            width,
+            height,
+          );
+          if (clear(p)) candidates.push(p);
+        }
+        if (candidates.length) break;
+      }
+      return (
+        candidates.sort(
+          (a, b) =>
+            Math.hypot(a.x - wanted.x, a.y - wanted.y) - Math.hypot(b.x - wanted.x, b.y - wanted.y),
+        )[0] || wanted
+      );
+    }
+    function create(
+      button,
+      { win = window, storage = win.localStorage, key, anchor, obstacles, onOpen },
+    ) {
       let saved = null,
         drag = null,
         suppress = false,
@@ -31443,7 +31561,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
         };
       }
       function place() {
-        if (disposed || drag) return;
+        if (disposed || drag || button.hidden) return;
         const b = bounds(),
           r = button.getBoundingClientRect();
         let p = saved;
@@ -31452,10 +31570,10 @@ html.v4 [data-home-veil] .home-actions button:hover {
             y = a?.bottom ?? b.y + 70;
           p = { edge: "right", ratio: (y - b.y) / Math.max(1, b.height - r.height) };
         }
-        const next = position(p, b, r.width, r.height);
-        button.dataset.edge = next.edge;
-        button.style.left = next.x + "px";
-        button.style.top = next.y + "px";
+        const next = avoid(p, b, r.width, r.height, obstacles?.() || []);
+        if (button.dataset.edge !== next.edge) button.dataset.edge = next.edge;
+        if (button.style.left !== next.x + "px") button.style.left = next.x + "px";
+        if (button.style.top !== next.y + "px") button.style.top = next.y + "px";
       }
       function collapse() {
         button.dataset.expanded = "false";
@@ -31562,7 +31680,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
         },
       };
     }
-    return { position, nearest, create };
+    return { position, nearest, avoid, create };
   });
 
   // ---- src/home-market-ui.js ----
@@ -31598,7 +31716,7 @@ html[data-theme="light"] .dvi-home-market {
 }
 .dvi-home-market-launch {
   position: fixed;
-  z-index: 7;
+  z-index: 91;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -31658,7 +31776,7 @@ html[data-theme="light"] .dvi-home-market {
 }
 .dvi-home-market {
   position: fixed;
-  z-index: 30;
+  z-index: 92;
   inset: 5vh max(12px, calc((100vw - 1080px) / 2));
   display: flex;
   flex-direction: column;
@@ -32077,6 +32195,15 @@ html[data-theme="light"] .dvi-home-market {
     (document.body || document.documentElement).append(launch, panel);
     view.dock = globalThis.DVIEdgeDock.create(launch, {
       key: "dvi-insights.home-market-dock.v1",
+      obstacles: () =>
+        Array.from(
+          document.querySelectorAll(
+            ".nav-strip,.nav-more-menu,.panels,.ui-float,.chat,.m-tabs,.m-top,.away-timers,.home-window,.bank-window,[data-market-sheet],.item-menu,.hot-sheet,.chat-card",
+          ),
+        )
+          .filter((e) => !e.closest("[hidden]"))
+          .map((e) => e.getBoundingClientRect())
+          .filter((r) => r.width > 0 && r.height > 0),
       anchor: () => {
         const r = view.anchor?.getBoundingClientRect();
         return r?.height ? r : null;
@@ -32300,6 +32427,7 @@ html[data-theme="light"] .dvi-home-market {
       if (anchor) view.resize?.observe(anchor);
       view.dock.refresh();
     }
+    view.dock.refresh();
     renderHomeMarket();
   }
 
@@ -33200,10 +33328,8 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       Date.now() - (cached.planAt ?? cached.at ?? 0) < 5000
     )
       return;
-    if (
-      p.lastTick !== old.lastTick ||
+    const changed =
       JSON.stringify([
-        p.skills,
         p.equipment,
         p.perks,
         p.masteries,
@@ -33215,19 +33341,30 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         p.guildBonus,
         store.state.windows,
       ]) !==
-        JSON.stringify([
-          old.skills,
-          old.equipment,
-          old.perks,
-          old.masteries,
-          old.house,
-          old.houseFurniture,
-          old.brews,
-          old.brewTier,
-          old.brewBuckets,
-          old.guildBonus,
-          cached.planOptions.windows,
-        ])
+      JSON.stringify([
+        old.equipment,
+        old.perks,
+        old.masteries,
+        old.house,
+        old.houseFurniture,
+        old.brews,
+        old.brewTier,
+        old.brewBuckets,
+        old.guildBonus,
+        cached.planOptions.windows,
+      ]);
+    // Large plans retain their last result between refreshes; changed equipment
+    // or buffs still refresh promptly, without running a long plan every 5s.
+    if (
+      !changed &&
+      cached.plan.plan?.attempts > 150000 &&
+      Date.now() - (cached.planAt ?? cached.at ?? 0) < 60000
+    )
+      return;
+    if (
+      changed ||
+      p.lastTick !== old.lastTick ||
+      JSON.stringify(p.skills) !== JSON.stringify(old.skills)
     )
       queueNative(record, true, true);
   }

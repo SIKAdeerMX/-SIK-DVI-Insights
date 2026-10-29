@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.119
+# [SIK] DVI Insights 0.4.120
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.120：修复长目标升级计算的15万次工作限制，可继续用现有工作估算更高等级，保留存仓跑路。按等级、热门轮换、世界窗口和药水分段缓存计算数据，仍逐次模拟，不以当前经验率直接外推；大目标自动刷新降为每分钟，装备和增益变化仍及时重算。家园点数入口自动避让菜单，修复拖动后被遮挡，并恢复旧保存位置的可见性。
 
 0.4.119：适配正式服1.0.3467，本次引擎计算规则、仓库家园结构与CSS保持一致。取消资源名变化触发的待核对提示和快照导出拦截；今后小更新可继续使用，有实际规则或接口变化再适配。保留仓库优化、原按钮、设置及分钟观测。
 
@@ -59,6 +61,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.120 removes the fixed 150,000-action ceiling for longer level goals while retaining bank trips. Cached rates follow levels, rotations, world windows and potion transitions; actions remain individually simulated. Large plans refresh once a minute, with equipment and buff changes handled promptly. The home-points launcher avoids open menus and stays reachable after dragging or restoring a saved position.
 
 0.4.119 adapts to live 1.0.3467, with unchanged calculation rules, Bank/Home structures and CSS. Asset-name changes no longer trigger unchecked notices or block local snapshot exports. Small updates can keep working; actual rule or interface changes still need maintenance. Bank optimizations, native buttons, settings and minute-only observations remain.
 
