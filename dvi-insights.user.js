@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.120
+// @version      0.4.121
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5469,6 +5469,7 @@ SOFTWARE.
       全部设施: "All stations",
       可升级: "Ready",
       缺点数: "Need points",
+      已满级: "Max level",
       未放置: "Not placed",
       搜索设施: "Search stations",
       "房间 {total} · 未放家具 {empty}": "Rooms {total} · Without furniture {empty}",
@@ -16580,6 +16581,7 @@ SOFTWARE.
         name: "The rune lectern",
         bonus: { kind: "enhanceChance" },
         feeds: "stone",
+        maxLevel: 50,
         look: "house-lectern",
         blurb:
           "A lectern of cut stone and a book that glows: the more is written, the surer a charm takes -- every level lifts the odds of an enhance landing by a percent of themselves.",
@@ -16997,6 +16999,7 @@ SOFTWARE.
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "gather",
@@ -17006,6 +17009,7 @@ SOFTWARE.
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "craft",
@@ -17014,6 +17018,7 @@ SOFTWARE.
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "offline",
@@ -17022,6 +17027,7 @@ SOFTWARE.
         lane: "efficiency",
         perRank: 0.005,
         unit: "hours",
+        maxRanks: 200,
       },
       {
         id: "move",
@@ -17030,6 +17036,7 @@ SOFTWARE.
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "hp",
@@ -17038,6 +17045,7 @@ SOFTWARE.
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "maxhit",
@@ -17046,6 +17054,7 @@ SOFTWARE.
         lane: "power",
         perRank: 0.005,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "accuracy",
@@ -17054,6 +17063,7 @@ SOFTWARE.
         lane: "power",
         perRank: 0.01,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "rare",
@@ -17062,6 +17072,7 @@ SOFTWARE.
         lane: "power",
         perRank: 0.005,
         unit: "percent",
+        maxRanks: 200,
       },
       {
         id: "enhance",
@@ -17070,6 +17081,7 @@ SOFTWARE.
         lane: "power",
         perRank: 0.0025,
         unit: "percent",
+        maxRanks: 200,
       },
     ],
     xpTable: [
@@ -19887,17 +19899,17 @@ SOFTWARE.
       "Pure coal": "纯煤炭",
     },
     version: {
-      version: "1.0.3467",
+      version: "1.0.3555",
       env: "live",
-      commit: "8df06d02",
-      branch: "hotfix-chatperf",
-      subject: "Changelog 1.0.1207: a smoother chat, EN and ZH",
-      committedAt: "2026-10-28T16:49:28+01:00",
+      commit: "25918db0b",
+      branch: "HEAD",
+      subject: "Changelog 1.0.1208: skill animations",
+      committedAt: "2026-10-29T14:19:06+01:00",
       dirty: false,
-      builtAt: "2026-10-28T20:57:10.780Z",
+      builtAt: "2026-10-29T13:26:50.978Z",
     },
-    clientAsset: "index-BTzc_xUu.js",
-    sourceSha256: "3f7d0421391cf0b7cf70b99bf74cfd647a92e95430221813a3ff6da4d2c03944",
+    clientAsset: "index-mrevWXcW.js",
+    sourceSha256: "654fd8927fcd1015d0a2ca09503340501862048ed8ed97ff02c4201fb8f4d746",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -20387,7 +20399,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.120";
+  const PLUGIN_VERSION = "0.4.121";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -29533,7 +29545,8 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
           const level = player.house[room.id] ?? 0,
             placed = !!player.houseFurniture[room.id];
           const upgrading = Number.isFinite(player.houseUpgrades[room.id]);
-          const need = Math.round(facts.firstCost * facts.costFactor ** level);
+          const capped = level >= (room.maxLevel ?? facts.maxLevel ?? Infinity);
+          const need = capped ? 0 : Math.round(facts.firstCost * facts.costFactor ** level);
           const have = [room.feeds, ...(room.alsoFeeds ?? [])].reduce(
             (sum, f) => sum + Math.max(0, player.housePoints[f] ?? 0),
             0,
@@ -29542,6 +29555,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
             id: room.id,
             placed,
             upgrading,
+            capped,
             need,
             have,
             gap: Math.max(0, need - have),
@@ -29549,9 +29563,11 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
               ? "unplaced"
               : upgrading
                 ? "upgrading"
-                : have >= need
-                  ? "ready"
-                  : "short",
+                : capped
+                  ? "capped"
+                  : have >= need
+                    ? "ready"
+                    : "short",
           };
         });
       const occupied = new Set(
@@ -30150,9 +30166,31 @@ html[data-theme="light"] [data-home-window] {
 }
 [data-home-veil] .home-conv-row {
   min-width: 0;
-  grid-template-columns: 28px minmax(0, 1fr) 64px 104px;
+  grid-template-columns: 20px 28px minmax(0, 1fr) 64px 104px;
   gap: 8px;
   padding: 8px;
+  overflow-wrap: anywhere;
+}
+[data-home-veil] .home-conv-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 32px;
+}
+[data-home-veil] .home-conv-pick input {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 0;
+}
+[data-home-veil] .home-pick-bar {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+[data-home-veil] .home-pick-bar > span {
+  min-width: 0;
+  flex: 1 1 140px;
   overflow-wrap: anywhere;
 }
 [data-home-veil] .home-conv-list {
@@ -30310,18 +30348,23 @@ html[data-theme="light"] [data-home-window] {
     min-height: 36px;
   }
   [data-home-veil] .home-conv-row {
-    grid-template-columns: 24px minmax(0, 1fr) 92px;
-    gap: 6px 9px;
+    grid-template-columns: 20px 24px minmax(0, 1fr) 92px;
+    gap: 6px 7px;
     padding: 9px;
   }
-  [data-home-veil] .home-conv-icon {
+  [data-home-veil] .home-conv-pick {
     grid-column: 1;
+    grid-row: 1/3;
+    align-self: stretch;
+  }
+  [data-home-veil] .home-conv-icon {
+    grid-column: 2;
     grid-row: 1;
     width: 24px;
     height: 24px;
   }
   [data-home-veil] .home-conv-text {
-    grid-column: 2/-1;
+    grid-column: 3/-1;
     grid-row: 1;
     font-size: 13px;
     line-height: 1.45;
@@ -30330,14 +30373,14 @@ html[data-theme="light"] [data-home-window] {
     font-size: 11px;
   }
   [data-home-veil] [data-conv-qty] {
-    grid-column: 2;
+    grid-column: 2/4;
     grid-row: 2;
     width: 100%;
     max-width: 110px;
     justify-self: end;
   }
   [data-home-veil] .home-conv-btn {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 2;
     font-size: 13px;
   }
@@ -30581,6 +30624,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
       ready: "可升级",
       short: "缺点数",
       upgrading: "升级中",
+      capped: "已满级",
       unplaced: "未放置",
     };
     for (const body of bodies) {
@@ -30888,6 +30932,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
 
   // ---- Home material conversion facts ----
   const HOME_MATERIAL_FACTS = {
+    maxLevel: 50,
     firstCost: 300,
     costFactor: 1.2639,
     rarityFactor: 3,
