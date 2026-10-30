@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.122
+# [SIK] DVI Insights 0.4.123
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.123：修复桌面农耕田地卡片过高、挤占作物列表的问题；田地改为紧凑行并缩短滚动区域，保留原生选择与收获控件。
 
 0.4.122：修复刷新或重新进入游戏后观测时间与掉落跨会话混算；面板计时统一采用每日收入实际使用的时长，保留有效记录。
 
@@ -65,6 +67,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.123 makes desktop farming fields compact rows and reduces their scroll height, leaving more room for crop selection. Native crop selectors and harvest controls are preserved.
 
 0.4.122 fixes pending drops from before a reload being paired with a new observation period. The combat income clock now shows the same duration used by measured daily income. Valid observations remain saved.
 

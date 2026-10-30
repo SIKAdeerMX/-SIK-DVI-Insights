@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.122
+// @version      0.4.123
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -20403,7 +20403,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.122";
+  const PLUGIN_VERSION = "0.4.123";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -24947,19 +24947,20 @@ html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-hint {
 }
 .dvi-insights [data-fields] .field-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr));
-  gap: 5px;
-  margin: 4px 0 7px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  margin: 3px 0;
 }
 .dvi-insights [data-fields] .field-scroll {
-  max-height: clamp(190px, 34vh, 380px);
+  max-height: clamp(120px, 23dvh, 210px);
   min-width: 0;
 }
 .dvi-insights [data-fields] .field-row.dvi-field-tile {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-  gap: 3px;
+  grid-template-columns: minmax(32px, 0.6fr) minmax(0, 1.6fr) minmax(80px, 1fr);
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
 }
 .dvi-insights [data-fields] .field-row .field-name {
   min-width: 0;
@@ -24970,8 +24971,9 @@ html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-hint {
 }
 .dvi-insights [data-fields] .field-row .field-status {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 4px;
   min-width: 0;
   font-size: 11px;
 }
@@ -24979,8 +24981,8 @@ html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-hint {
 .dvi-insights [data-fields] .field-row .field-time:before {
   content: none;
 }
-.dvi-insights [data-fields] .field-row .field-crop,
-.dvi-insights [data-fields] .field-row .field-time {
+.dvi-insights [data-fields] .field-row .field-crop {
+  flex: 1 1 100%;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -24990,9 +24992,10 @@ html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-hint {
 .dvi-insights [data-fields] .field-row .field-pick {
   box-sizing: border-box;
   width: 100%;
+  max-width: none;
   min-width: 0;
-  margin: 2px 0 0;
-  padding: 4px;
+  margin: 0;
+  padding: 3px;
   font: inherit;
   font-size: 11px;
   color: var(--ink);
