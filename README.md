@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.124
+# [SIK] DVI Insights 0.4.125
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.125：农耕新增的“照料我的田地”按钮改为紧凑的圆角描边样式，颜色跟随深浅主题，补齐悬停、按下、禁用与键盘焦点状态。适配桌面和手机，保留原生照料操作、作物选择及计时。
 
 0.4.124：适配正式服1.0.3659。工作地点按实际可达路程选择，制作计算遵守材料锁定；装备升级按新版工作站耗时及完整材料计算当前任务收益，保留品质和强化等级，观测与普通制作分开。同步烟花相关仓库格数规则，保留长目标计算、收入记录、农耕布局及无版本锁策略。农耕仍为单田估算，未模拟多田照料的全部路线。
 
@@ -69,6 +71,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.125 restyles the new “Tend my fields” button with a compact rounded outline and theme-aware colors. Hover, pressed, disabled and keyboard focus states work on desktop and mobile. Native tending, crop selection and field timers are preserved.
 
 0.4.124 adapts to live 1.0.3659. Work sites follow the shortest reachable route and crafting respects locked materials. Timed equipment upgrades use native station duration and full material costs, retain rarity and enhancement, and have separate observations from ordinary crafting. Firework bank-slot rules are updated. Long level goals, income history, farming layout and the version-unlocked policy remain. Farming estimates still use one field and exclude complete multi-field tending routes.
 

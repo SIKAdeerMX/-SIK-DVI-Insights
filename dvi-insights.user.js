@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.124
+// @version      0.4.125
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -15233,7 +15233,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.124";
+  const PLUGIN_VERSION = "0.4.125";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -19785,6 +19785,55 @@ html.dvi-insights .bank-window .bank-tools:has(> .dvi-bank-sort) > .bank-hint {
 .dvi-insights [data-fields] .field-scroll {
   max-height: clamp(120px, 23dvh, 210px);
   min-width: 0;
+}
+html.dvi-insights [data-fields] .fields-head {
+  gap: 6px;
+  padding: 2px 0 5px;
+}
+html.dvi-insights [data-fields] .tend-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  height: auto;
+  min-height: 28px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--brass) 5%, var(--panel-raised));
+  color: var(--ink);
+  font: 500 12px/1.35 var(--sans);
+  letter-spacing: 0;
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 #ffffff10;
+  white-space: nowrap;
+  cursor: pointer;
+}
+html.dvi-insights [data-fields] .tend-go:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brass) 12%, var(--panel-raised));
+  border-color: var(--brass);
+}
+html.dvi-insights [data-fields] .tend-go:active:not(:disabled) {
+  background: color-mix(in srgb, var(--brass) 18%, var(--panel-raised));
+  box-shadow: inset 0 1px 2px #00000018;
+  transform: none;
+}
+html.dvi-insights [data-fields] .tend-go:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+html.dvi-insights [data-fields] .tend-go:disabled {
+  background: var(--panel);
+  border-color: var(--edge);
+  color: var(--ink-faint);
+  box-shadow: none;
+  cursor: default;
+  opacity: 0.65;
+}
+html.dvi-insights.m-on [data-fields] .tend-go {
+  min-height: 32px;
 }
 .dvi-insights [data-fields] .field-row.dvi-field-tile {
   display: grid;
