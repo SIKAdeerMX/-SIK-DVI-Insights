@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.121
+# [SIK] DVI Insights 0.4.122
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.122：修复刷新或重新进入游戏后观测时间与掉落跨会话混算；面板计时统一采用每日收入实际使用的时长，保留有效记录。
 
 0.4.121：适配正式服1.0.3555，家园50级后不再显示升级点数缺口，新增已满级筛选；同步勾选多项转换布局，保留原生控件。精通分页按当前生效精通计算，原有属性加成规则保持。
 
@@ -63,6 +65,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.122 fixes pending drops from before a reload being paired with a new observation period. The combat income clock now shows the same duration used by measured daily income. Valid observations remain saved.
 
 0.4.121 adapts to live 1.0.3555. Capped home stations no longer display upgrade-point gaps, and a max-level filter is available. The layout supports native batch-conversion checkboxes and preserves the original controls. Calculations use the active mastery page with unchanged stat formulas.
 

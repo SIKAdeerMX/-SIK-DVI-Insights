@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.121
+// @version      0.4.122
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -4859,6 +4859,7 @@ SOFTWARE.
               account: r.account,
               at: r.at,
               seconds: r.seconds,
+              run: Number.isSafeInteger(r.run) && r.run >= 0 ? r.run : 0,
               jobId: Number.isSafeInteger(r.jobId) ? r.jobId : null,
               zone: Number.isSafeInteger(r.zone) ? r.zone : null,
               kills: count(r.kills),
@@ -4894,10 +4895,11 @@ SOFTWARE.
               ),
             }))
         : [];
-      // Actual income and combat estimates share this history and alternate on
-      // each refresh. Compact restored fragments before applying the row budget;
-      // otherwise 1440 per-sample rows hold minutes instead of twelve hours.
       const buckets = new Map();
+      const bucketId = (row) =>
+        JSON.stringify([row.key, row.account, Math.floor(row.at / 60000), row.run || 0]);
+      // A fresh run must not lend its time to output left pending before a reload or break.
+      let nextRun = rows.reduce((n, row) => Math.max(n, row.run), 0);
       function merge(row, value) {
         row.at = Math.max(row.at ?? value.at, value.at);
         row.seconds += value.seconds;
@@ -4906,7 +4908,7 @@ SOFTWARE.
           row[name] += count(value[name]);
       }
       for (const row of rows) {
-        const id = JSON.stringify([row.key, row.account, Math.floor(row.at / 60000)]),
+        const id = bucketId(row),
           old = buckets.get(id);
         if (old) merge(old, row);
         else buckets.set(id, row);
@@ -4918,7 +4920,6 @@ SOFTWARE.
       // Unmatched actual output is retained for inspection, but cannot be valued
       // against another minute's duration. A live bucket joins once time arrives.
       const eligible = (row) => !row.key.startsWith("actual:") || row.seconds > 0;
-      const bucketId = (row) => JSON.stringify([row.key, row.account, Math.floor(row.at / 60000)]);
       const empty = () => ({
         seconds: 0,
         outputs: {},
@@ -4963,9 +4964,6 @@ SOFTWARE.
       }
       index();
       function prune(at = now()) {
-        // Rows expire at their last sample, including the boundary millisecond.
-        // Rebuild only when a row can expire, the budget is exceeded, or the
-        // system clock moves backwards; ordinary reads never walk the history.
         if (at >= nextPrune || at < lastNow || rows.length > 1440) {
           rows = rows.filter((r) => r.at <= at && at - r.at <= AGE).slice(-1440);
           index();
@@ -4983,12 +4981,14 @@ SOFTWARE.
           return;
         const at = now();
         prune(at);
-        const old = buckets.get(JSON.stringify([key, account, Math.floor(at / 60000)]));
+        const run = value.run || 0,
+          old = buckets.get(bucketId({ key, account, at, run }));
         const counted = old && eligible(old);
         const row = old || {
           key,
           account,
           at,
+          run,
           seconds: 0,
           outputs: {},
           inputs: {},
@@ -5030,7 +5030,11 @@ SOFTWARE.
         total,
         observe(key, account, value) {
           const old = baselines.get(key),
-            delta = { ...value, seconds: Math.max(0, value.seconds - (old?.seconds || 0)) };
+            delta = {
+              ...value,
+              run: old?.run ?? ++nextRun,
+              seconds: Math.max(0, value.seconds - (old?.seconds || 0)),
+            };
           for (const name of ["outputs", "inputs", "xp"])
             delta[name] = Object.fromEntries(
               Object.entries(value[name] || {}).map(([id, n]) => [
@@ -5039,7 +5043,7 @@ SOFTWARE.
               ]),
             );
           delta.attempts = Math.max(0, (value.attempts || 0) - (old?.attempts || 0));
-          baselines.set(key, JSON.parse(JSON.stringify(value)));
+          baselines.set(key, JSON.parse(JSON.stringify({ ...value, run: delta.run })));
           if (
             delta.seconds ||
             Object.values(delta.outputs).some((n) => n > 0) ||
@@ -20399,7 +20403,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.121";
+  const PLUGIN_VERSION = "0.4.122";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -22405,7 +22409,7 @@ SOFTWARE.
       combatLastRendered = 0;
       return;
     }
-    if (combatBox?.isConnected) showObservationTime(combatBox, report.seconds);
+    if (combatBox?.isConnected) showObservationTime(combatBox, actual?.seconds || 0);
     const displayKey = `${i18n.language}:${report.zone}:${report.ready}:${store.state.quoteRevision}`;
     if (
       combatBox?.isConnected &&
@@ -22429,7 +22433,7 @@ SOFTWARE.
     }
     setNativeText(combatBox.querySelector(".dvi-native-action"), "");
     refreshActionIncomeHeading(combatBox);
-    showObservationTime(combatBox, report.seconds);
+    showObservationTime(combatBox, actual?.seconds || 0);
     setNativeText(combatBox.querySelector("[data-plan-net-label]"), t("期望日利"));
     const core = globalThis.DVIPlannerCore,
       books = p.ironman ? {} : store.state.books,
@@ -23101,7 +23105,7 @@ SOFTWARE.
       report = p.route.zoneId != null ? combatMonitor.sample(p, store.state.windows) : null;
     saveObservations();
     const box = report ? combatBox : currentWorkBox,
-      seconds = report ? report.seconds : actual?.seconds;
+      seconds = actual?.seconds;
     if (!document.hidden && box?.isConnected && seconds != null) showObservationTime(box, seconds);
   }
   let observationClock = null;
