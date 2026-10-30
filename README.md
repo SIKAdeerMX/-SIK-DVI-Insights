@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.123
+# [SIK] DVI Insights 0.4.124
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.124：适配正式服1.0.3659。工作地点按实际可达路程选择，制作计算遵守材料锁定；装备升级按新版工作站耗时及完整材料计算当前任务收益，保留品质和强化等级，观测与普通制作分开。同步烟花相关仓库格数规则，保留长目标计算、收入记录、农耕布局及无版本锁策略。农耕仍为单田估算，未模拟多田照料的全部路线。
 
 0.4.123：修复桌面农耕田地卡片过高、挤占作物列表的问题；田地改为紧凑行并缩短滚动区域，保留原生选择与收获控件。
 
@@ -35,7 +37,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 展开工作行可直接查看投入计价明细，包括材料稀有度、每日用量、单价及客户端/公开快照/缓存/历史来源。公开快照保留客户端缓存，不误删较近报价；现价缺失或数量不足时继续用有效缓存和历史估价兜底。
 - 采集经验与升级时间跟随当前“丢弃采集物”开关，计入减少的仓库往返；丢弃与存仓模式分别缓存，丢弃模式不显示可出售的产物收益。
 - 制作支持“稀有优先”，按已有完整配方选品质，缺料按普通材料补齐；同时强化时仍显示主行动收入和经验，强化状态单独显示。
-- 规则跟随正式服 1.0.3555：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
+- 规则跟随正式服 1.0.3659：同步新路径算法及新增通道，工作和战斗走到最近一侧；原生分批刷新行动列表时同步恢复缓存日利，减少文字闪动。已确认原生菜单因固定模拟时钟漏算世界增益，经验率恢复独立实际路线预估，保留原生阵亡警告；升级计算继续使用同一增益规则。战斗补给同步出发前补回已吃食物，农田顺序同步分区收割规则。角色状态跟随服务器快照采用的新对象；有效观测时长不凭墙钟空增，并行强化不计入主任务耗材。农田显示 0–200% 进度，自动收获仍按 100% 估算；代工订单收益暂不估算。
 - PC 原生战斗浮窗内增加可折叠的 DPS 与承伤统计，手机顶部原生血条恢复血量数字。DPS 按怪物有效掉血计算，承伤按已收到的受击事件统计，缺数据显示未知，重连重新观测。制作升级计算增加分品质的材料成本、税后即卖和挂售单价参考，缺价保留未知。
 - 当前任务依次显示每天收入、期望日入、期望日利；期望日入为未扣消耗的期望产值。每天收入超过期望日入时显示静态金色高亮。普通战斗补充 EPH、食物续航；普通工作和战斗的药水默认显示当前品质最先到期的实际图标与时长，名称保留在提示中，待机和单独强化时也保留生效药水摘要，按时间计时；八种药水图标均内嵌，不依赖仓库是否打开；瓶子与倒计时紧邻显示，点击展开按剩余时间排序的列表。
 - buff 弹层对齐名称、时间轴和剩余时长，保留未生效的灰色图标；药水显示当前生效品质的单瓶价格，时长提示明确为“当前品质剩余时间”。饱食与扎根优先从近期报价量足够的食物中比较续24小时总成本，名称后只加“数量个”，费用另列金币/d；公开快照标估价。保留历史与缓存估价，悬浮提示简列续24小时、价源和报价时间。到期后仍保留推荐并标记未生效；原生战斗倒计时保持。扎根、饱食和药水的右侧剩余时间统一使用 d/h/m/s 两个相邻单位，世界增益与祝福同步，不足一分钟只显示 s。
@@ -67,6 +69,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.124 adapts to live 1.0.3659. Work sites follow the shortest reachable route and crafting respects locked materials. Timed equipment upgrades use native station duration and full material costs, retain rarity and enhancement, and have separate observations from ordinary crafting. Firework bank-slot rules are updated. Long level goals, income history, farming layout and the version-unlocked policy remain. Farming estimates still use one field and exclude complete multi-field tending routes.
 
 0.4.123 makes desktop farming fields compact rows and reduces their scroll height, leaving more room for crop selection. Native crop selectors and harvest controls are preserved.
 
