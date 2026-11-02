@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.127
+// @version      0.4.128
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5775,6 +5775,9 @@ SOFTWARE.
       增益面板药水报价: "Buff panel potion prices",
       "单独控制增益面板的药水价格计算，保留计时。":
         "Control potion price calculations separately while keeping buff timers.",
+      未使用药水收纳: "Compact unused potions",
+      "将未使用药水和原生喝药控件合并到增益面板底部；关闭恢复原生展示。":
+        "Move unused potions and their native drink controls to the bottom of the buff panel; turn off to restore the native layout.",
       首领排行与掉落日志: "Boss ranks and loot log",
       "记录收到的首领排行与掉落；关闭后停止记录和保存。":
         "Record received boss ranks and loot; turning this off stops recording and saving.",
@@ -15237,7 +15240,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.127";
+  const PLUGIN_VERSION = "0.4.128";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -15354,6 +15357,12 @@ SOFTWARE.
         group: "增益与提醒",
         name: "增益面板药水报价",
         description: "单独控制增益面板的药水价格计算，保留计时。",
+      },
+      {
+        id: "buffCompact",
+        group: "增益与提醒",
+        name: "未使用药水收纳",
+        description: "将未使用药水和原生喝药控件合并到增益面板底部；关闭恢复原生展示。",
       },
       {
         id: "homeNotices",
@@ -22761,6 +22770,25 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
 .dvi-buff-food-choice.rarity-legendary {color:var(--rarity-legendary);}
 .dvi-buff-idle-row:has(.dvi-buff-food-choice) {flex-wrap:wrap;}
 .dvi-buff-idle-row>.dvi-buff-price {margin-left:auto;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet .dvi-buff-idle-row {
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0;min-height:32px;padding:4px 6px;
+  border:1px solid color-mix(in srgb,var(--edge) 55%,transparent);border-radius:6px;
+  background:color-mix(in srgb,var(--panel-sunken) 35%,var(--panel));
+}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet .dvi-buff-idle-row .bt-who {display:flex;gap:7px;min-width:0;flex:1;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet .dvi-buff-idle-row .bt-name b {font-size:12px;overflow-wrap:anywhere;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet .dvi-buff-idle-row :is(.bt-name small,.bt-left,.bt-gonetrack>span:not(.bt-pick-name):not(.bt-pick-qty)) {display:none;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet .dvi-buff-idle-row .bt-gonetrack {display:flex;align-items:center;justify-content:flex-end;gap:6px;height:auto;min-height:0;overflow:visible;border:0;background:none;box-shadow:none;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet .dvi-buff-idle-row .bt-pick {flex:1 0 100%;flex-wrap:wrap;justify-content:flex-start;padding:3px 0 0;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet .dvi-buff-idle-row .bt-pick-name {max-width:100%;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]) {
+  box-sizing:border-box;min-height:28px;padding:3px 9px;border:1px solid color-mix(in srgb,var(--brass) 45%,var(--edge));border-radius:5px;
+  background:color-mix(in srgb,var(--brass) 9%,var(--panel));color:var(--ink);font:500 12px/1.3 var(--sans);box-shadow:none;cursor:pointer;
+}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):hover:not(:disabled) {background:color-mix(in srgb,var(--brass) 20%,var(--panel));}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):active:not(:disabled) {background:color-mix(in srgb,var(--brass) 30%,var(--panel));}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):focus-visible {outline:2px solid var(--brass);outline-offset:2px;}
+html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):disabled {opacity:.55;cursor:default;}
 
 @media(max-width:550px){.dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,44%) minmax(0,1fr) 96px;gap:6px}.dvi-insights .buff-sheet .dvi-buff-idle{grid-template-columns:minmax(0,1fr)}.dvi-insights .buff-sheet .dvi-buff-price{font-size:10px}}
 @media(max-width:550px){.dvi-insights .buff-sheet .bt-scale>span:not(:last-child){display:none}.dvi-insights .buff-sheet .bt-scale>span:last-child{left:50%!important;transform:translateX(-50%);font-size:10px}}
@@ -23056,6 +23084,16 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       );
   }
   function buffRowEntry(row) {
+    const action = row.querySelector("[data-buff-drink],[data-bp-id]"),
+      base = Number(action?.dataset.buffDrink ?? action?.dataset.bpId) % 1000;
+    if (Number.isSafeInteger(base)) {
+      const entry = buffKinds.find((entry) => entry.id === base);
+      if (entry) {
+        const glyph = row.querySelector(".buff-glyph");
+        if (glyph) buffGlyphs.set(entry.key, glyph.innerHTML);
+        return entry;
+      }
+    }
     const name = row.querySelector(".bt-name b")?.textContent.trim();
     const kind = ["Well fed", "饱食", "饱腹"].includes(name)
       ? "fed"
@@ -23064,7 +23102,101 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
         : null;
     if (kind) return buffKinds.find((entry) => entry.kind === kind);
     const glyph = row.querySelector(".buff-glyph")?.innerHTML;
-    return glyph ? buffKinds.find((entry) => buffGlyphs.get(entry.key) === glyph) : null;
+    return (
+      (glyph ? buffKinds.find((entry) => buffGlyphs.get(entry.key) === glyph) : null) ||
+      buffKinds.find((entry) => {
+        if (!entry.id) return false;
+        const original = model.item(entry.id)?.name,
+          aliases = { gatherer: "采集者药剂", hunter: "猎人酿剂", warrior: "战士补剂" };
+        return [
+          original,
+          GAME_DATA.labels[original],
+          aliases[entry.kind],
+          itemName(entry.id).trim(),
+          buffName(entry),
+        ].includes(name);
+      }) ||
+      null
+    );
+  }
+  // Relocate native rows within their delegated event root; never clone or invoke a game control.
+  const compactBuffRows = new Map();
+  function resetCompactBuffs() {
+    for (const [row, anchor] of compactBuffRows) {
+      if (anchor.isConnected) {
+        anchor.replaceWith(row);
+      }
+      row.classList.remove("dvi-buff-idle-row");
+    }
+    compactBuffRows.clear();
+    document.querySelectorAll(".dvi-buff-idle").forEach((node) => node.remove());
+  }
+  function syncCompactBuffs(sheet, p) {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("buffCompact")) {
+      resetCompactBuffs();
+      return;
+    }
+    for (const [row, anchor] of compactBuffRows)
+      if (!anchor.isConnected || !row.isConnected) compactBuffRows.delete(row);
+    let idle = sheet.querySelector(".dvi-buff-idle");
+    const nativeRows = [...sheet.querySelectorAll(".bt-row.bt-gone")]
+      .map((row) => ({ row, entry: buffRowEntry(row) }))
+      .filter((value) => value.entry?.id);
+    const inactiveKinds = buffKinds.filter(
+      (entry) => entry.id && (p.brews?.[entry.kind] || 0) <= p.lastTick,
+    );
+    if (!nativeRows.length && !inactiveKinds.length) {
+      idle?.remove();
+      return;
+    }
+    if (!idle) {
+      idle = document.createElement("div");
+      idle.className = "dvi-buff-idle";
+      idle.dataset.noI18n = "";
+      sheet.append(idle);
+    }
+    const nativeKeys = new Set();
+    for (const { row, entry } of nativeRows) {
+      nativeKeys.add(entry.key);
+      if (row.dataset.idleKey !== entry.key) row.dataset.idleKey = entry.key;
+      if (!compactBuffRows.has(row)) {
+        const anchor = document.createComment("SIK native buff position");
+        row.before(anchor);
+        compactBuffRows.set(row, anchor);
+      }
+      if (row.parentElement !== idle) {
+        const focus = document.activeElement,
+          keep = focus && row.contains(focus),
+          start = keep ? focus.selectionStart : null,
+          end = keep ? focus.selectionEnd : null;
+        idle.append(row);
+        if (keep) {
+          focus.focus({ preventScroll: true });
+          if (start !== null) focus.setSelectionRange(start, end);
+        }
+      }
+      if (!row.classList.contains("dvi-buff-idle-row")) row.classList.add("dvi-buff-idle-row");
+    }
+    const inactive = inactiveKinds.filter((entry) => !nativeKeys.has(entry.key));
+    const wanted = new Set(inactive.map((entry) => entry.key));
+    for (const row of idle.querySelectorAll("[data-dvi-idle-fallback]"))
+      if (!wanted.has(row.dataset.idleKey) || row.dataset.language !== i18n.language) row.remove();
+    for (const entry of inactive) {
+      if ([...idle.children].some((row) => row.dataset.idleKey === entry.key)) continue;
+      const row = document.createElement("div");
+      row.className = "dvi-buff-idle-row";
+      row.dataset.dviIdleFallback = "";
+      row.dataset.idleKey = entry.key;
+      row.dataset.language = i18n.language;
+      row.innerHTML =
+        '<span class="buff-glyph">' +
+        buffGlyph(entry) +
+        "</span><span>" +
+        escape(buffName(entry)) +
+        '</span><span class="dvi-buff-inactive-mark">—</span>';
+      idle.append(row);
+    }
+    if (!idle.children.length) idle.remove();
   }
   let buffFoodCache = null;
   function currentFoodQuotes() {
@@ -23161,26 +23293,7 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
       }
     }
     syncInactiveFood(sheet, activeFood, foodQuotes);
-    let idle = sheet.querySelector(".dvi-buff-idle");
-    if (!idle) {
-      idle = document.createElement("div");
-      idle.className = "dvi-buff-idle";
-      idle.dataset.noI18n = "";
-      sheet.append(idle);
-    }
-    const inactive = buffKinds.filter(
-        (x) => !["fed", "rooted"].includes(x.kind) && (p.brews?.[x.kind] || 0) <= p.lastTick,
-      ),
-      keys = inactive.map((x) => x.key).join(",") + ":" + i18n.language;
-    if (idle.dataset.keys !== keys) {
-      idle.dataset.keys = keys;
-      idle.innerHTML = inactive
-        .map(
-          (entry) =>
-            `<div class="dvi-buff-idle-row" data-idle-key="${entry.key}"><span class="buff-glyph">${buffGlyph(entry)}</span><span>${escape(buffName(entry))}</span><span class="dvi-buff-inactive-mark">—</span></div>`,
-        )
-        .join("");
-    }
+    syncCompactBuffs(sheet, p);
   }
 
   window.addEventListener("pagehide", (e) => {
@@ -27501,6 +27614,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       document
         .querySelectorAll(".bt-row:not([data-ch-fed]):not([data-ch-rooted]) .dvi-buff-price")
         .forEach((n) => n.remove());
+    if (id === "buffCompact" && !on) resetCompactBuffs();
     if (id === "guildDonation" && !on)
       document.querySelectorAll(".dvi-guild-best").forEach((n) => n.remove());
     if (id === "bossRecords" && !on) {
