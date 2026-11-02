@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.125
+// @version      0.4.126
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -15233,7 +15233,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.125";
+  const PLUGIN_VERSION = "0.4.126";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -25083,6 +25083,12 @@ html[data-theme="light"] [data-home-window] {
 [data-home-veil] .home-conv-list {
   min-width: 0;
   max-width: 100%;
+}
+/* The skin scrolls the whole body. Native list containment would trap touch
+   gestures even when the expanded list has no overflow of its own. */
+[data-home-veil] [data-home-body] > .home-conv-list {
+  overflow: visible;
+  overscroll-behavior: auto;
 }
 [data-home-veil] .home-conv-head {
   margin: 0 0 9px;
