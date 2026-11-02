@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.126
+// @version      0.4.127
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -1625,7 +1625,7 @@ SOFTWARE.
             continue;
           }
           const taxBp = marketTaxBp(id, tax, now),
-            b = books[id] || {},
+            b = pricing.marketExcludedIds?.includes(id % 1000) ? {} : books[id] || {},
             sell = mode !== "buy",
             vendor = sell ? vendorPrice(id, books, pricing) : pricing.vendorBuys?.[id],
             factor = sell ? 1 - (taxBp ?? 0) / 10000 : 1;
@@ -9381,6 +9381,7 @@ SOFTWARE.
       { id: 703, name: "Golden arrow rain", stackable: true, value: 0 },
       { id: 704, name: "Jewel crown", stackable: true, value: 0 },
       { id: 705, name: "Dragon egg", stackable: true, value: 0 },
+      { id: 762, name: "Community gift box", stackable: true, value: 25 },
       { id: 629, name: "Drakestring shortbow", stackable: false, value: 2820 },
       { id: 630, name: "Drakestring longbow", stackable: false, value: 3420 },
       { id: 631, name: "Emberwood staff", stackable: false, value: 4420 },
@@ -11674,6 +11675,7 @@ SOFTWARE.
       703: 1,
       704: 1,
       705: 1,
+      762: 10,
       1001: 1,
       1002: 1,
       1003: 4,
@@ -14124,20 +14126,21 @@ SOFTWARE.
       "Dragon egg": "龙蛋",
       "Firework powder": "烟花火药",
       "Pure coal": "纯煤炭",
+      "Community gift box": "社区礼盒",
     },
     version: {
-      version: "1.0.3659",
+      version: "1.0.3738",
       env: "live",
-      commit: "079bfa789",
+      commit: "93668cea9",
       branch: "HEAD",
       subject:
-        "Wishlist looks carry no West/East label anywhere, staff view included (Phocked, 30 Oct)",
-      committedAt: "2026-10-30T21:21:28+01:00",
+        "The community gift card for every player again; only Chinese players see the QQ button, number and pill (Phocked, 2 Nov)",
+      committedAt: "2026-11-02T13:25:37+01:00",
       dirty: false,
-      builtAt: "2026-10-30T20:32:23.220Z",
+      builtAt: "2026-11-02T12:38:03.204Z",
     },
-    clientAsset: "index-Dl-tsZav.js",
-    sourceSha256: "c1a36630767b766e8274ea78bc794b9a0368a6e5365265596aab97081e7e7038",
+    clientAsset: "index-BekcQPgi.js",
+    sourceSha256: "6b09b7931327345c471f8fab26bb691911b63f2a9dd7dc3da02e8987e7033e07",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -14156,6 +14159,7 @@ SOFTWARE.
       petChance: 3.3333333333333335e-7,
     },
     vendorSellExcludedIds: [293],
+    marketExcludedIds: [762],
   };
   GAME_DATA.gear = [
     [110, "weapon", 6, 5, 0, 4, 1, "melee", null, null, null, null, null, null],
@@ -15233,7 +15237,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.126";
+  const PLUGIN_VERSION = "0.4.127";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -28710,7 +28714,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       queueNative(record);
   }
   function itemPriceHtml(id) {
-    const b = store.state.books[id] || {},
+    const b = GAME_DATA.marketExcludedIds?.includes(id % 1000) ? {} : store.state.books[id] || {},
       floor = globalThis.DVIPlannerCore.vendorPrice(id, store.state.books, GAME_DATA),
       tax = globalThis.DVIPlannerCore.marketTaxBp(id, store.state, Date.now());
     const knownNontrade =

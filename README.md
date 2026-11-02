@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.126
+# [SIK] DVI Insights 0.4.127
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.127：适配正式服1.0.3738，补齐社区礼盒名称和10金币商人回收价；按原生规则排除其市场交易估值。现有计算规则、设置和有效收入记录保持。
 
 0.4.126：修复家园材料兑换点数界面在部分手机浏览器中上下滑动卡住的问题，移除物品列表多余的滚动拦截，保留原生勾选、数量输入、转换及购买控件。
 
@@ -73,6 +75,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.127: Updated for live 1.0.3738. Adds the Community gift box name and its 10-coin vendor value, and excludes it from market-based pricing as required by the native client. Existing calculations, settings and valid observations are preserved.
 
 0.4.126 fixes touch scrolling getting stuck in the home material-to-points screen on some mobile browsers. Removes redundant nested scroll containment while retaining the native selection, quantity, conversion, and purchase controls.
 
