@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.128
+# [SIK] DVI Insights 0.4.129
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.129：适配正式服1.0.3771，补齐双十一礼盒与玉貅资料、估价和宠物仓库豁免，战斗预估同步关闭自动进食时不再预取食物。保留药水收纳设置和有效收益记录。
 
 0.4.128：未使用药水统一收纳到增益面板底部，合并重复展示并保留原生喝药、品质和数量选择；按钮使用紧凑圆角样式。新增“未使用药水收纳”开关，关闭恢复原生布局。
 
@@ -77,6 +79,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.129: Updated for live 1.0.3771. Adds Singles' Day box and Jade Pixiu data, pricing and pet storage exemptions. Combat forecasts follow the native fix that avoids withdrawing travel food when auto-eating is disabled. Existing settings and valid observations are retained.
 
 0.4.128: Unused potions now share one compact section at the bottom of the buff panel, retaining native Drink, rarity and quantity controls. Buttons use a compact rounded style. The new Compact unused potions setting restores the native layout when disabled.
 

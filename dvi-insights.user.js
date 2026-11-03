@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.128
+// @version      0.4.129
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -2697,7 +2697,7 @@ SOFTWARE.
               : p.foodPerTrip === -2
                 ? Math.max(1, cap() - 1)
                 : Math.max(0, p.foodPerTrip);
-          withdraw(target);
+          if (!facts.combat.balance?.foodWithdrawRequiresAuto || p.eatAt > 0) withdraw(target);
           let eaten = 0;
           for (let i = 0; i < 64; i++) {
             const old = p.hp;
@@ -9384,6 +9384,8 @@ SOFTWARE.
       { id: 703, name: "Golden arrow rain", stackable: true, value: 0 },
       { id: 704, name: "Jewel crown", stackable: true, value: 0 },
       { id: 705, name: "Dragon egg", stackable: true, value: 0 },
+      { id: 760, name: "Singles' Day box", stackable: true, value: 25 },
+      { id: 761, name: "Jade Pixiu", stackable: false, value: 0 },
       { id: 762, name: "Community gift box", stackable: true, value: 25 },
       { id: 629, name: "Drakestring shortbow", stackable: false, value: 2820 },
       { id: 630, name: "Drakestring longbow", stackable: false, value: 3420 },
@@ -11169,6 +11171,7 @@ SOFTWARE.
         bankPreheal: true,
         bankPrehealLimit: 2000,
         bankFoodReplacement: true,
+        foodWithdrawRequiresAuto: true,
       },
       mountDrops: {
         itemId: 328,
@@ -11678,6 +11681,7 @@ SOFTWARE.
       703: 1,
       704: 1,
       705: 1,
+      760: 10,
       762: 10,
       1001: 1,
       1002: 1,
@@ -13484,7 +13488,7 @@ SOFTWARE.
       dropBoxItem: 396,
       petIds: [
         316, 317, 318, 319, 320, 321, 322, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410,
-        280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292,
+        280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 761,
       ],
       petsNoBankSlots: true,
       pathDiagonal: 1.0001220703125,
@@ -13497,8 +13501,8 @@ SOFTWARE.
       bankSlotExcludedIds: [
         316, 317, 318, 319, 320, 321, 322, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410,
         280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 700, 701, 702, 703, 704,
-        705, 1701, 2701, 3701, 4701, 1702, 2702, 3702, 4702, 1703, 2703, 3703, 4703, 1704, 2704,
-        3704, 4704, 1705, 2705, 3705, 4705,
+        705, 761, 1701, 2701, 3701, 4701, 1702, 2702, 3702, 4702, 1703, 2703, 3703, 4703, 1704,
+        2704, 3704, 4704, 1705, 2705, 3705, 4705,
       ],
       siteExitGaps: [
         [9135, 9424],
@@ -14130,20 +14134,22 @@ SOFTWARE.
       "Firework powder": "烟花火药",
       "Pure coal": "纯煤炭",
       "Community gift box": "社区礼盒",
+      "Singles' Day box": "双十一礼盒",
+      "Jade Pixiu": "玉貅",
     },
     version: {
-      version: "1.0.3738",
+      version: "1.0.3771",
       env: "live",
-      commit: "93668cea9",
+      commit: "f86132b06",
       branch: "HEAD",
       subject:
-        "The community gift card for every player again; only Chinese players see the QQ button, number and pill (Phocked, 2 Nov)",
-      committedAt: "2026-11-02T13:25:37+01:00",
+        "VAT note corrected: Stripe still sells, so its sales still count for our own returns",
+      committedAt: "2026-11-03T13:15:28+01:00",
       dirty: false,
-      builtAt: "2026-11-02T12:38:03.204Z",
+      builtAt: "2026-11-03T12:53:16.329Z",
     },
-    clientAsset: "index-BekcQPgi.js",
-    sourceSha256: "6b09b7931327345c471f8fab26bb691911b63f2a9dd7dc3da02e8987e7033e07",
+    clientAsset: "index-CZTesadh.js",
+    sourceSha256: "5b1234190b980ab6ad057b60429ea2c9cfde570e3d7f447ddbfe06dbf1a0f830",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [160, 161, 162, 190, 80, 85, 90, 60, 328, 700],
     commonOnlyJobs: [421],
@@ -14162,7 +14168,7 @@ SOFTWARE.
       petChance: 3.3333333333333335e-7,
     },
     vendorSellExcludedIds: [293],
-    marketExcludedIds: [762],
+    marketExcludedIds: [761, 762],
   };
   GAME_DATA.gear = [
     [110, "weapon", 6, 5, 0, 4, 1, "melee", null, null, null, null, null, null],
@@ -15240,7 +15246,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.128";
+  const PLUGIN_VERSION = "0.4.129";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
