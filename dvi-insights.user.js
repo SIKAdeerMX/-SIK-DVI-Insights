@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.129
+// @version      0.4.130
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5291,7 +5291,15 @@ SOFTWARE.
     else root.DVIEquipmentValue = factory();
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     // Identical items use one benchmark, independent of the wearer's build.
-    const REFERENCE = { level: 100, mastery: 0, house: 0, statistic: "expected-cost" };
+    const REFERENCE = Object.freeze({
+      level: 100,
+      mastery: 200,
+      masteryBonus: 0.5,
+      house: 50,
+      houseBonus: 0.5,
+      protectFrom: 4,
+      statistic: "expected-cost",
+    });
     function expectedFromZero(steps, cost) {
       const differences = [];
       let total = 0;
@@ -5427,50 +5435,51 @@ SOFTWARE.
           scroll = prices.scroll,
           key = JSON.stringify([tier, rate, plus, shard, corePrice, scroll]);
         if (enhancementCache.has(key)) return enhancementCache.get(key);
-        let best = null;
-        for (const protectFrom of [
-          null,
-          ...(scroll == null ? [] : Array.from({ length: Math.max(0, plus - 2) }, (_, i) => i + 2)),
-        ]) {
-          const steps = Array.from({ length: plus }, (_, k) => {
-            const shards = rules.shardsByTier[tier - 1] * (k + 1),
-              useCore = k >= rules.coreFrom && corePrice != null && corePrice < shards * shard,
-              baseChance =
-                rules.baseFloor != null
-                  ? Math.max(rules.baseFloor, 1 - rules.linearStep * k)
-                  : k <= rules.tailAfter
-                    ? 1 - rules.linearStep * k
-                    : rules.tailBase * rules.tailDecay ** (k - rules.tailAfter);
-            return {
-              chance: Math.min(1, baseChance * (1 + rules.levelBonus * (REFERENCE.level - 1))),
-              gold: rate * (k + 1),
-              shards: useCore ? 0 : shards,
-              cores: useCore ? 1 : 0,
-              protected: protectFrom != null && k >= protectFrom,
-            };
-          });
-          const bill = (s) =>
-              s.gold +
-              s.shards * shard +
-              s.cores * (corePrice || 0) +
-              (s.protected ? (1 - s.chance) * (scroll || 0) : 0),
-            cost = expectedFromZero(steps, bill);
-          if (cost != null && (!best || cost < best.cost)) {
-            const totals = {};
-            for (const [kind, fn] of Object.entries({
-              gold: (s) => s.gold,
-              shards: (s) => s.shards,
-              cores: (s) => s.cores,
-              scrolls: (s) => (s.protected ? 1 - s.chance : 0),
-              attempts: () => 1,
-            }))
-              totals[kind] = expectedFromZero(steps, fn);
-            best = { cost, protectFrom, totals, steps, reference: REFERENCE };
-          }
-        }
+        const protectFrom = REFERENCE.protectFrom;
+        const steps = Array.from({ length: plus }, (_, k) => {
+          const shards = rules.shardsByTier[tier - 1] * (k + 1),
+            useCore = k >= rules.coreFrom && corePrice != null && corePrice < shards * shard,
+            baseChance =
+              rules.baseFloor != null
+                ? Math.max(rules.baseFloor, 1 - rules.linearStep * k)
+                : k <= rules.tailAfter
+                  ? 1 - rules.linearStep * k
+                  : rules.tailBase * rules.tailDecay ** (k - rules.tailAfter);
+          return {
+            chance: Math.min(
+              1,
+              baseChance *
+                (1 + rules.levelBonus * (REFERENCE.level - 1)) *
+                (1 + REFERENCE.houseBonus) *
+                (1 + Math.min(rules.masteryBonusCap ?? 0.5, REFERENCE.masteryBonus)),
+            ),
+            gold: rate * (k + 1),
+            shards: useCore ? 0 : shards,
+            cores: useCore ? 1 : 0,
+            protected: k >= protectFrom,
+          };
+        });
+        if (scroll == null && steps.some((s) => s.protected && s.chance < 1)) return null;
+        const bill = (s) =>
+            s.gold +
+            s.shards * shard +
+            s.cores * (corePrice || 0) +
+            (s.protected ? (1 - s.chance) * (scroll || 0) : 0),
+          cost = expectedFromZero(steps, bill);
+        if (cost == null) return null;
+        const totals = {};
+        for (const [kind, fn] of Object.entries({
+          gold: (s) => s.gold,
+          shards: (s) => s.shards,
+          cores: (s) => s.cores,
+          scrolls: (s) => (s.protected ? 1 - s.chance : 0),
+          attempts: () => 1,
+        }))
+          totals[kind] = expectedFromZero(steps, fn);
+        const result = { cost, protectFrom, totals, steps, reference: REFERENCE };
         if (enhancementCache.size >= 128) enhancementCache.clear();
-        enhancementCache.set(key, best);
-        return best;
+        enhancementCache.set(key, result);
+        return result;
       }
       function value(player, books, now = Date.now()) {
         const buy = (id) => {
@@ -5500,9 +5509,12 @@ SOFTWARE.
               source: baseSource,
             };
           const ref = enhancement(plain, plus, prices),
-            missingMaterials = !(prices.shard > 0) || (plus > 3 && prices.scroll == null);
+            missingMaterials = !(prices.shard > 0);
           if (!ref || missingMaterials) {
-            const minimum = ref ? (enhanceRate(plain) * plus * (plus + 1)) / 2 : 0;
+            const minimum =
+              plus <= (data.constants.enhanceMaxPlus || 20)
+                ? (enhanceRate(plain) * plus * (plus + 1)) / 2
+                : 0;
             return {
               price: (basePrice || 0) + minimum || null,
               estimated: true,
@@ -6197,10 +6209,10 @@ SOFTWARE.
     Object.assign(en, {
       "到期记录连同产出移出；没有观测时长的产出不参与折算。":
         "Expired records leave with their output. Output without observed duration is excluded from rate calculations.",
-      "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、无精通和家园；计失败回退、碎片或核心及保护卷轴，比较保护起点后取较低参考。不是原生P50、实际投入或战斗力。缺少保护报价或旧超限装备时仅显示已知下限（≥）。":
-        "Enhanced gear ignores +N listings and trades. The reference is the same-quality base item plus expected rebuilding cost at Enhancing 100, with no mastery or home bonus. Includes failures, shards or cores, and protection scrolls; compares protection thresholds. This is not native P50, actual spending or combat power. Missing scroll quotes or legacy levels show only a known lower bound (≥).",
-      "强化按统一重做期望成本估值；≈为参考，≥为缺价下限。":
-        "Enhancement uses a shared expected rebuilding cost: ≈ reference, ≥ known lower bound.",
+      "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、书台50级（+50%）、强化精通200阶（+50%）；从已有+4开始保护，保护失败退1级并消耗卷轴，无保护失败归零。计碎片或核心替代，不含代强化利润或税费。不是P50、实际投入、成交价值或战斗力。缺少所需保护报价或旧超限装备时仅显示已知下限（≥）。":
+        "Enhanced gear ignores +N listings and trades. Uses the same-quality base item plus expected rebuilding cost at Enhancing 100, placed Rune lectern 50 (+50%) and enhance mastery rank 200 (+50%). Protection starts at existing +4: failure loses one level and consumes a scroll; unprotected failure resets to zero. Includes shards or alternative cores; excludes service profit and tax. Not P50, actual spending, sale value or combat power. Missing required scroll prices or legacy levels show a known lower bound (≥).",
+      "强化100级 · 书台50级 · 精通+50% · 已有+4起保护；≈参考，≥下限。":
+        "Enhancing 100 · lectern 50 · mastery +50% · protect from existing +4; ≈ reference, ≥ lower bound.",
       "按观测产出速度折算24小时，报价数量只使用一次；产值不等于到账金币。":
         "Project the observed output rate over 24 hours, using each quote quantity once. Output value is not cash received.",
       "按当前状态模拟未来一小时，再折算24小时；稀有优先会计入高品质材料耗尽后的变化。":
@@ -15246,7 +15258,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.129";
+  const PLUGIN_VERSION = "0.4.130";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -18493,7 +18505,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       t("穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。") +
       " " +
       t(
-        "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、无精通和家园；计失败回退、碎片或核心及保护卷轴，比较保护起点后取较低参考。不是原生P50、实际投入或战斗力。缺少保护报价或旧超限装备时仅显示已知下限（≥）。",
+        "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、书台50级（+50%）、强化精通200阶（+50%）；从已有+4开始保护，保护失败退1级并消耗卷轴，无保护失败归零。计碎片或核心替代，不含代强化利润或税费。不是P50、实际投入、成交价值或战斗力。缺少所需保护报价或旧超限装备时仅显示已知下限（≥）。",
       )
     );
   }
@@ -18578,7 +18590,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
           .map((name, i) => "<span>" + t(name) + "</span><b>" + score(v.parts[i] / 1e6) + "</b>")
           .join("") +
         "<small>" +
-        t("强化按统一重做期望成本估值；≈为参考，≥为缺价下限。") +
+        t("强化100级 · 书台50级 · 精通+50% · 已有+4起保护；≈参考，≥下限。") +
         "</small>";
       const body = box.querySelector("div");
       if (body.innerHTML !== html) body.innerHTML = html;
