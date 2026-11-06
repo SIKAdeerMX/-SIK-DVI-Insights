@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.137
+# [SIK] DVI Insights 0.4.138
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.137：生活首领喂食推荐去掉123排名，沿用原生名称后数量的布局：最优项显示“最佳”，另外两项显示该品质在银行和背包中的持有数量。移除物品名品质前缀及行情列品质小字，推荐与原生列表使用游戏原生稀有度颜色。保留360px内部卡片、32px原图标、14px正文和原生操作。
+0.4.138：升级预估提前读取目标工作绑定的精通页，选择行动和赶路时即可更新，普通工作模拟保留切页冷却。生活首领新增经验与成本计算：初始采用原生最佳或手选物品，固定物品品质供备料，角色分别保存；三推荐仅供计算。显示精通页、单件经验、净经验/时、逐级材料、净喂食时间与材料/药水成本；净喂食不含切页冷却、往返、阶段停喂和奖励。补齐最佳数量；再点首领收起，切普通工作消除占位。
 
 0.4.133：生活首领原生材料推荐弹窗新增金币/积分列，按当前库存可喂品质的成品买价计算，保留历史估价标记；经验/时、积分/时和金币/积分三列可点击切换升降序，缺值置后。只改变展示排序，保留原生图标、物品选择、最佳算法及操作流程；新增独立设置开关。
 
@@ -90,7 +90,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.137: Feed recommendations now use native name-and-count styling: the cheapest item shows Best in the count position, and the next two show owned quantities for that exact quality. Numeric ranks and quality words are removed; native rarity colors identify quality in both recommendations and the list. The compact inset card, original icons and native controls remain.
+0.4.138: Work forecasts use the target skill's assigned mastery page while choosing or walking, with the page cooldown retained in ordinary work simulations. Skilling boss calculations pin the initial native/manual item and quality for preparation; the three recommendations are calculation-only options. They show the projected page, per-item XP, level-aware materials, net feeding time and material/potion costs. Net feeding excludes page cooldown, travel, phase waits and rewards. Best quantities and folding are fixed.
 
 0.4.133: Native skilling-boss feed popups now show coins/point for the eligible owned quality. Click XP/h, points/h or coins/point to sort in either direction; missing values stay last. Native icons, choices and Best selection remain intact. Includes an independent setting.
 
