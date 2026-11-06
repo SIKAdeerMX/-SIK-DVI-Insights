@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.136
+# [SIK] DVI Insights 0.4.137
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.136：生活首领喂食弹窗收窄至最多360px；前三名改为贴合原生面板的内部卡片。上下物品图标统一32px整数倍像素显示，正文统一14px原生字体，取消文字阴影和细小混用字号，并对齐排序表头。保留原物品/功勋图标、当前工作跨类别性价比前三名、原生选择及三列双向排序。
+0.4.137：生活首领喂食推荐去掉123排名，沿用原生名称后数量的布局：最优项显示“最佳”，另外两项显示该品质在银行和背包中的持有数量。移除物品名品质前缀及行情列品质小字，推荐与原生列表使用游戏原生稀有度颜色。保留360px内部卡片、32px原图标、14px正文和原生操作。
 
 0.4.133：生活首领原生材料推荐弹窗新增金币/积分列，按当前库存可喂品质的成品买价计算，保留历史估价标记；经验/时、积分/时和金币/积分三列可点击切换升降序，缺值置后。只改变展示排序，保留原生图标、物品选择、最佳算法及操作流程；新增独立设置开关。
 
@@ -90,7 +90,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.136: The feed popup now uses a narrower 360px layout and an inset card for the top three. Original item icons use crisp 32px integer scaling; recommendation and list text share the native font at 14px. Tiny mixed sizes and text shadows are removed. Work-wide rankings, native merit icons, controls and sorting are preserved.
+0.4.137: Feed recommendations now use native name-and-count styling: the cheapest item shows Best in the count position, and the next two show owned quantities for that exact quality. Numeric ranks and quality words are removed; native rarity colors identify quality in both recommendations and the list. The compact inset card, original icons and native controls remain.
 
 0.4.133: Native skilling-boss feed popups now show coins/point for the eligible owned quality. Click XP/h, points/h or coins/point to sort in either direction; missing values stay last. Native icons, choices and Best selection remain intact. Includes an independent setting.
 

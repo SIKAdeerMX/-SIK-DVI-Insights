@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.136
+// @version      0.4.137
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5720,6 +5720,7 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      最佳: "Best",
       暂无可比较报价: "No comparable quotes",
       "金币/积分": "Coins/point",
       "积分/时": "Points/h",
@@ -17213,7 +17214,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.136";
+  const PLUGIN_VERSION = "0.4.137";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -29707,6 +29708,12 @@ html[data-theme="light"] .dvi-home-market {
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     function create(facts, data) {
       const items = new Map(data.items.map((x) => [x.id, x]));
+      function quantity(player, itemId) {
+        return (
+          (player?.bank?.[itemId] || 0) +
+          (player?.pack || []).filter((s) => s.itemId === itemId).reduce((n, s) => n + s.qty, 0)
+        );
+      }
       function select(player, cls, maxTier, base = null) {
         const group = facts.groups.find((g) => g[1] === cls);
         if (!group || !player || !Number.isInteger(maxTier) || maxTier < 0 || maxTier > 4)
@@ -29718,11 +29725,7 @@ html[data-theme="light"] .dvi-home-market {
           if ((base !== null && id !== base) || xp < (data.xpTable[level] ?? Infinity)) continue;
           for (let tier = 0; tier <= maxTier; tier++) {
             const itemId = id + 1000 * tier,
-              qty =
-                (player.bank?.[itemId] || 0) +
-                (player.pack || [])
-                  .filter((s) => s.itemId === itemId)
-                  .reduce((n, s) => n + s.qty, 0),
+              qty = quantity(player, itemId),
               value = items.get(itemId)?.value;
             if (!(qty > 0) || !Number.isFinite(value)) continue;
             const row = {
@@ -29774,7 +29777,7 @@ html[data-theme="light"] .dvi-home-market {
         ranked.sort((a, b) => a.coins - b.coins || a.itemId - b.itemId);
         return { best: ranked[0] ?? null, ranked: ranked.slice(0, 3), total, priced };
       }
-      return { select, recommend };
+      return { select, recommend, quantity };
     }
     function number(text) {
       const clean = String(text ?? "")
@@ -30012,6 +30015,13 @@ html[data-theme="light"] .dvi-home-market {
   /* Enrich the native popup in place; never synthesize native controls or choices. */
   const bossFeedModel = globalThis.DVIBossFeed.create(BOSS_FEED_FACTS, GAME_DATA);
   const bossFeedMenus = new Map();
+  const bossFeedRarities = [
+    "",
+    "rarity-uncommon",
+    "rarity-rare",
+    "rarity-epic",
+    "rarity-legendary",
+  ];
   let bossFeedSort = null;
   const bossFeedStyle = document.createElement("style");
   bossFeedStyle.textContent = `
@@ -30045,6 +30055,9 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-name {
   overflow-wrap: anywhere;
   line-height: 1.35;
 }
+html.dvi-insights .bo-menu[data-dvi-boss-feed] :is(.bm-name.row-name, .dvi-feed-item-name) {
+  font: inherit;
+}
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-name b {
   white-space: nowrap;
 }
@@ -30066,11 +30079,6 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-cost {
   color: var(--ink);
   font-size: inherit;
   overflow-wrap: anywhere;
-}
-html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-cost small {
-  display: block;
-  font-size: 12px;
-  color: var(--ink-muted);
 }
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-head > span {
   min-width: 0;
@@ -30122,24 +30130,34 @@ html.dvi-insights .dvi-feed-best {
 }
 html.dvi-insights .dvi-feed-choice {
   display: grid;
-  grid-template-columns: 16px 32px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-height: 38px;
 }
 html.dvi-insights .dvi-feed-choice + .dvi-feed-choice {
   border-top: 1px solid var(--edge);
 }
-html.dvi-insights .dvi-feed-rank {
-  color: var(--brass);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  text-align: center;
-}
 html.dvi-insights .dvi-feed-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+html.dvi-insights .dvi-feed-item-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+html.dvi-insights .dvi-feed-qty {
+  flex: none;
+  color: var(--ink-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+html.dvi-insights .dvi-feed-choice:first-child .dvi-feed-qty {
+  color: var(--brass);
 }
 html.dvi-insights .dvi-feed-ratio {
   display: inline-flex;
@@ -30178,6 +30196,8 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
     menu
       .querySelectorAll(".dvi-feed-cost,.dvi-feed-cost-head,.dvi-feed-best")
       .forEach((n) => n.remove());
+    for (const { node, className } of record.names)
+      if (node && node.className !== className) node.className = className;
     for (const row of record.original)
       if (row.parentNode === menu)
         menu.insertBefore(row, record.anchor?.parentNode === menu ? record.anchor : null);
@@ -30218,6 +30238,10 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
       if (!record) {
         record = {
           original: rows,
+          names: rows.map((row) => {
+            const node = row.querySelector(".bm-name");
+            return { node, className: node?.className || "" };
+          }),
           anchor: rows.at(-1).nextSibling,
           left: menu.style.left,
           top: menu.style.top,
@@ -30316,10 +30340,9 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
       const bestHtml = result.ranked.length
         ? result.ranked
             .map((best, index) => {
-              const name =
-                  t(TIERS[best.tier]) +
-                  " " +
-                  nameOf(model.item(model.base(best.itemId))?.name || itemName(best.itemId)),
+              const name = nameOf(
+                  model.item(model.base(best.itemId))?.name || itemName(best.itemId),
+                ),
                 price =
                   (best.quote.estimated ? "≈ " : "") +
                   best.coins.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
@@ -30330,17 +30353,22 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
                   -((tile % HOME_MARKET_ART.columns) * 32) +
                   "px -" +
                   Math.floor(tile / HOME_MARKET_ART.columns) * 32 +
-                  "px";
+                  "px",
+                qty = index
+                  ? bossFeedModel.quantity(p, best.itemId).toLocaleString("en-GB")
+                  : t("最佳");
               return (
                 '<div class="dvi-feed-choice" style="--dvi-feed-pos:' +
                 pos +
-                '"><span class="dvi-feed-rank">' +
-                (index + 1) +
-                "</span>" +
+                '">' +
                 homeMarketItemIcon(best.itemId) +
-                '<span class="dvi-feed-name">' +
+                '<span class="dvi-feed-name"><span class="dvi-feed-item-name row-name ' +
+                bossFeedRarities[best.tier] +
+                '">' +
                 escape(name) +
-                '</span><span class="dvi-feed-ratio">' +
+                '</span><b class="dvi-feed-qty">' +
+                escape(qty) +
+                '</b></span><span class="dvi-feed-ratio">' +
                 escape(price) +
                 " " +
                 unit +
@@ -30361,7 +30389,6 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
         }
         const price = selected ? bossFeedPrice(selected.itemId, p, now) : null;
         const coins = price && selected?.points > 0 ? price.price / selected.points : null;
-        const quality = selected ? t(TIERS[selected.tier]) : "";
         const value =
           coins === null
             ? t("待报价")
@@ -30370,8 +30397,13 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
                 maximumFractionDigits: 2,
                 minimumFractionDigits: 0,
               });
-        const html = escape(value) + (quality ? "<small>" + escape(quality) + "</small>" : "");
+        const html = escape(value);
         if (cell.innerHTML !== html) cell.innerHTML = html;
+        const savedName = record.names[rowIndex],
+          nameClass =
+            savedName.className + (selected ? " row-name " + bossFeedRarities[selected.tier] : "");
+        if (savedName.node && savedName.node.className !== nameClass)
+          savedName.node.className = nameClass;
         const title = selected
           ? t("成品买价 ÷ 原生每件积分；按当前可喂品质计价，不含制作耗时。") +
             " " +
