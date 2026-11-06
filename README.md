@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.130
+# [SIK] DVI Insights 0.4.131
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.131：适配正式服1.0.4631：更新地图、新工具、副手、升级配方及物品交易规则；计算同步技能副手、战斗预留背包格、锁定种子。家园点数同步新版制造倍率，并修正行情把小数理论点数当成每件可兑点数的问题。保留原设置和收益记录。
 
 0.4.130：装备评分统一按强化100级、书台50级（+50%）、强化精通200阶（+50%）计算，从已有+4开始保护，修正高强化装备的零加成重做估值偏高。保留100万金币/分、排除代强化挂单和缺价下限标记。
 
@@ -81,6 +83,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.131: Updated for live 1.0.4631, including the expanded map, new tools, skilling off-hands, upgrade recipes and trade rules. Forecasts respect food inventory reserves and locked seeds. Home point prices use the new crafting multipliers and whole points per item.
 
 0.4.130: Equipment score now uses Enhancing 100, Rune lectern 50 (+50%) and enhance mastery rank 200 (+50%), with protection from existing +4. Corrects inflated high-enhancement rebuilding estimates from the old zero-bonus baseline. Keeps one point per million coins, excludes service listings and marks incomplete prices as lower bounds.
 
