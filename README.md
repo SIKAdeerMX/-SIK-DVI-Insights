@@ -1,10 +1,10 @@
-# [SIK] DVI Insights 0.4.134
+# [SIK] DVI Insights 0.4.135
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
 
-0.4.134：生活首领新增全目录金币/积分最佳：比较当前首领全部类别、等级及品质上限内的可喂物品，零库存也参与，最低有效成品报价/积分胜出；缺报价不当免费，历史估价保留≈。在原生弹窗展示制作/采购参考，保留原生最佳、选择按钮及三列排序，不自动选料或操作游戏。
+0.4.135：生活首领喂食推荐改为当前工作全部可喂类别统一评选性价比前三名，含零库存，按金币/功勋从低到高排序。每名仅一行：排名、原物品图标、单次品质名称、单位成本；去除大卡片和说明，功勋使用原生图标。保留等级与品质上限、原生选择和三列双向排序。
 
 0.4.133：生活首领原生材料推荐弹窗新增金币/积分列，按当前库存可喂品质的成品买价计算，保留历史估价标记；经验/时、积分/时和金币/积分三列可点击切换升降序，缺值置后。只改变展示排序，保留原生图标、物品选择、最佳算法及操作流程；新增独立设置开关。
 
@@ -90,7 +90,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
-0.4.134: Best coins/point now compares the full eligible catalogue for the current boss across categories, level gates and the rarity cap, including unowned items. The cheapest quoted finished-item cost per point is shown as a craft/buy reference. Native Best, controls and three-column sorting are preserved.
+0.4.135: Feed recommendations now show the three cheapest items per merit across all feed categories for the current work, including unowned items. Each compact row shows rank, original item icon, quality/name once and unit cost. Native merit icons replace point labels; native controls and three-column sorting remain.
 
 0.4.133: Native skilling-boss feed popups now show coins/point for the eligible owned quality. Click XP/h, points/h or coins/point to sort in either direction; missing values stay last. Native icons, choices and Best selection remain intact. Includes an independent setting.
 
