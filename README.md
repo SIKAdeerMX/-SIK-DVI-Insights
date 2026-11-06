@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.131
+# [SIK] DVI Insights 0.4.132
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.132：轻量美化生活首领交互：品质上限改为柔和分段选项，统一优先材料、前往、高级菜单和阶段勾选的边框、圆角、留白及焦点状态；区分开始和加入队列。保留原生按钮、选择状态与操作流程，不改喂食算法；装备评分保留数字，移除悬浮提示与展开浮层。
 
 0.4.131：适配正式服1.0.4631：更新地图、新工具、副手、升级配方及物品交易规则；计算同步技能副手、战斗预留背包格、锁定种子。家园点数同步新版制造倍率，并修正行情把小数理论点数当成每件可兑点数的问题。保留原设置和收益记录。
 
@@ -83,6 +85,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.132: Refined skilling boss controls with softer quality segments, consistent material selectors and phase menus, clearer action buttons and keyboard focus. Native controls, selection states and feeding logic are preserved. Equipment scores remain visible without hover tooltips or expandable popovers.
 
 0.4.131: Updated for live 1.0.4631, including the expanded map, new tools, skilling off-hands, upgrade recipes and trade rules. Forecasts respect food inventory reserves and locked seeds. Home point prices use the new crafting multipliers and whole points per item.
 

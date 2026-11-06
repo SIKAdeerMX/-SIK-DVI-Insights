@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.131
+// @version      0.4.132
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -17200,7 +17200,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.131";
+  const PLUGIN_VERSION = "0.4.132";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -20443,15 +20443,6 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
   function equipmentScorePrefix(v) {
     return v.complete ? (v.estimated ? "≈ " : "") : "≥ ";
   }
-  function equipmentScoreHint() {
-    return (
-      t("穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。") +
-      " " +
-      t(
-        "强化装备忽略 +N 挂单与成交价，采用同品质底装价加标准重做期望成本。统一强化100级、书台50级（+50%）、强化精通200阶（+50%）；从已有+4开始保护，保护失败退1级并消耗卷轴，无保护失败归零。计碎片或核心替代，不含代强化利润或税费。不是P50、实际投入、成交价值或战斗力。缺少所需保护报价或旧超限装备时仅显示已知下限（≥）。",
-      )
-    );
-  }
   function syncInspectScores() {
     const live = store.state.inspect,
       fmt = globalThis.DVIEquipmentValue.formatScore;
@@ -20480,7 +20471,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
       );
       const text = t("装备评分") + "\u00a0" + equipmentScorePrefix(v) + fmt(v.score);
       setNativeText(note, text);
-      note.title = equipmentScoreHint();
+      note.removeAttribute("title");
     }
   }
   function syncEquipmentValue() {
@@ -20497,17 +20488,18 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         head = mobile?.previousElementSibling || worn.closest(".panel")?.querySelector("h2");
       if (!head) continue;
       let box = head.querySelector("[data-dvi-score-head]");
+      if (box?.tagName === "DETAILS") {
+        box.remove();
+        box = null;
+      }
       if (!box) {
-        box = document.createElement("details");
+        box = document.createElement("span");
         box.className = "dvi-equipment-value";
         box.dataset.dviScoreHead = "";
         box.dataset.noI18n = "";
-        box.innerHTML = "<summary></summary><div></div>";
         const meta = head.querySelector("[data-panel-meta]");
         if (meta) meta.before(box);
         else head.append(box);
-        for (const event of ["click", "pointerdown", "keydown"])
-          box.addEventListener(event, (e) => e.stopPropagation());
       }
       active.add(box);
       if (box.hidden) box.hidden = false;
@@ -20523,20 +20515,8 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         equipmentValueCache = { key, value: equipmentValuer.value(p, store.state.books) };
       const v = equipmentValueCache.value;
       const score = globalThis.DVIEquipmentValue.formatScore;
-      setNativeText(
-        box.querySelector("summary"),
-        t("装备评分") + " " + equipmentScorePrefix(v) + score(v.score),
-      );
-      box.querySelector("summary").title = equipmentScoreHint();
-      const html =
-        ["战斗装备", "工具", "坐骑"]
-          .map((name, i) => "<span>" + t(name) + "</span><b>" + score(v.parts[i] / 1e6) + "</b>")
-          .join("") +
-        "<small>" +
-        t("强化100级 · 书台50级 · 精通+50% · 已有+4起保护；≈参考，≥下限。") +
-        "</small>";
-      const body = box.querySelector("div");
-      if (body.innerHTML !== html) body.innerHTML = html;
+      setNativeText(box, t("装备评分") + " " + equipmentScorePrefix(v) + score(v.score));
+      box.removeAttribute("title");
       const meta = head.querySelector("[data-panel-meta]");
       if (meta && /^(?:combat|战斗等级)\s+\d+$/i.test(meta.textContent.trim()))
         setNativeText(meta, t("战斗等级 {level}", { level: meta.textContent.match(/\d+/)[0] }));
@@ -20546,10 +20526,7 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
   }
   const equipmentValueStyle = document.createElement("style");
   equipmentValueStyle.textContent =
-    "[data-dvi-score-head]{position:relative;display:inline-block;margin-left:auto;margin-right:8px;vertical-align:middle;font-size:11px;font-weight:400;letter-spacing:0;line-height:1.4}" +
-    "[data-dvi-score-head][hidden]{display:none}[data-dvi-score-head]>summary{cursor:pointer;white-space:nowrap;color:var(--brass)}" +
-    "[data-dvi-score-head]>div{position:absolute;right:0;top:100%;z-index:5;min-width:148px;padding:9px 12px;display:grid;grid-template-columns:1fr auto;gap:5px 16px;border:1px solid var(--edge);border-radius:4px;background:var(--panel);box-shadow:0 3px 10px #0003;color:var(--ink)}" +
-    "[data-dvi-score-head] b{font-weight:400;font-variant-numeric:tabular-nums}[data-dvi-score-head] small{grid-column:1/-1;color:var(--ink-faint)}";
+    "[data-dvi-score-head]{display:inline-block;margin-left:auto;margin-right:8px;vertical-align:middle;font-size:11px;font-weight:400;letter-spacing:0;line-height:1.4;white-space:nowrap;color:var(--brass);font-variant-numeric:tabular-nums}[data-dvi-score-head][hidden]{display:none}";
   (document.head || document.documentElement).append(equipmentValueStyle);
 
   // ---- src/combat-metrics-ui.js ----
@@ -23567,6 +23544,231 @@ html.dvi-insights .guild-window :is(.dvi-guild-edit, .dvi-guild-cancel):focus-vi
     grid-column: 3/-1;
     grid-row: 3;
     justify-self: end;
+  }
+}
+
+/* Skilling boss controls: preserve native nodes, states and event delegation. */
+html.dvi-insights .route-options .boss-opts.bo-shown {
+  padding: 4px 2px;
+}
+html.dvi-insights .route-options .boss-opts .bo-label {
+  padding: 7px 2px 5px;
+  gap: 8px;
+}
+html.dvi-insights .route-options .boss-opts .bo-row {
+  gap: 8px;
+  margin: 6px 0;
+}
+html.dvi-insights .route-options .boss-opts .bo-rarity .rarity-choices {
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel-sunken);
+}
+html.dvi-insights .route-options .boss-opts .bo-rarity .rarity-choices button {
+  min-height: 32px;
+  padding: 5px 2px;
+  border: 1px solid transparent !important;
+  border-radius: 5px;
+  background: transparent !important;
+  color: var(--ink-muted) !important;
+  box-shadow: none !important;
+  font-size: var(--fs-xs, 12px);
+  font-weight: 500;
+  opacity: 1;
+}
+html.dvi-insights .route-options .boss-opts .bo-rarity .rarity-choices button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--brass) 15%, var(--panel-raised)) !important;
+  border-color: color-mix(in srgb, var(--brass) 45%, var(--edge)) !important;
+  color: var(--ink) !important;
+}
+html.dvi-insights
+  .route-options
+  .boss-opts
+  .bo-rarity
+  .rarity-choices
+  button[aria-pressed="true"]:is(:last-child, :has(+ button[aria-pressed="false"])) {
+  border-color: var(--brass) !important;
+  box-shadow: inset 0 -2px var(--brass) !important;
+  font-weight: 600;
+}
+html.dvi-insights .route-options .boss-opts .bo-choices {
+  gap: 6px;
+}
+html.dvi-insights .route-options .boss-opts .bo-pickwrap {
+  min-height: 34px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--panel-raised);
+  overflow: hidden;
+}
+html.dvi-insights .route-options .boss-opts .bo-pickwrap[data-pressed="true"] {
+  background: color-mix(in srgb, var(--brass) 15%, var(--panel-raised));
+  border-color: var(--brass);
+}
+html.dvi-insights .route-options .boss-opts .bo-pickwrap[data-pressed="true"] > button {
+  color: var(--ink) !important;
+  font-weight: 600;
+}
+html.dvi-insights .route-options .boss-opts .bo-pickwrap + .bo-pickwrap {
+  margin-left: 0;
+}
+html.dvi-insights .route-options .boss-opts .eat-at .bo-pickwrap > .bo-caret {
+  width: 30px !important;
+  min-width: 30px;
+  border-left: 1px solid var(--edge) !important;
+  border-radius: 0;
+}
+html.dvi-insights .route-options .boss-opts .bo-fire {
+  padding: 8px 9px;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  background: var(--panel-sunken);
+}
+html.dvi-insights .route-options .boss-opts .bo-fire-text {
+  gap: 3px;
+  line-height: 1.35;
+}
+html.dvi-insights .route-options .boss-opts .eat-at button.bo-go {
+  height: 34px;
+  min-height: 34px;
+  margin: 0;
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge-bright, var(--edge));
+  box-shadow: none;
+  color: var(--ink);
+  font-weight: 500;
+}
+html.dvi-insights .route-options .boss-opts .bo-rate {
+  height: auto;
+  min-height: 28px;
+  line-height: 1.4;
+  white-space: normal;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  overflow: visible;
+  padding: 2px;
+}
+html.dvi-insights .route-options .boss-opts .bo-rate > small {
+  flex-basis: 160px;
+  white-space: normal;
+}
+html.dvi-insights .route-options .boss-opts .bo-more button {
+  height: 28px;
+  min-width: 28px;
+  border-radius: 5px;
+  background: var(--panel-raised);
+}
+html.dvi-insights .route-options:has(.boss-opts.bo-shown) > .commit {
+  gap: 8px;
+  margin: 0 !important;
+  bottom: 0;
+  padding: 8px 2px 4px;
+  background: transparent;
+  box-shadow: none;
+}
+html.dvi-insights .route-options:has(.boss-opts.bo-shown) > .commit > .start {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brass) 88%, white),
+    var(--brass)
+  ) !important;
+  color: var(--on-brass) !important;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--brass) !important;
+  border-radius: 7px !important;
+  box-shadow: inset 0 1px color-mix(in srgb, var(--panel-raised) 45%, transparent) !important;
+  text-shadow: none;
+  font-weight: 600;
+}
+html.dvi-insights .route-options:has(.boss-opts.bo-shown) > .commit > .start.queue {
+  background: var(--panel-raised) !important;
+  color: var(--ink) !important;
+  border-color: var(--edge-bright, var(--edge)) !important;
+  box-shadow: none !important;
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu {
+  border: 1px solid var(--edge-bright, var(--edge));
+  border-radius: 10px;
+  box-shadow: 0 8px 28px #0004;
+  padding: 5px;
+  box-sizing: border-box;
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu .bm-head {
+  padding: 9px 10px;
+  border-bottom: 0;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu button.bm-row {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  margin: 2px 0;
+  background: transparent;
+  box-shadow: none;
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu button.bm-row[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--brass) 13%, var(--panel-raised));
+  border-color: color-mix(in srgb, var(--brass) 40%, var(--edge));
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu .bp-tick {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: var(--panel-sunken);
+  font-size: 13px;
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu .bp-row[aria-checked="true"] .bp-tick {
+  background: var(--brass);
+  color: var(--on-brass);
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu .bp-n {
+  background: transparent;
+  color: var(--ink-muted);
+  margin-right: 3px;
+  font-size: 11px;
+}
+html.dvi-insights :is(.bo-sheet, .boss-opts) .bo-menu .bp-note {
+  margin: 5px 5px 0;
+  padding: 9px 5px 6px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+html.dvi-insights :is(.boss-opts, .bo-sheet) button:focus-visible {
+  outline: 2px solid var(--brass) !important;
+  outline-offset: -3px;
+}
+html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
+  cursor: default;
+}
+@media (hover: hover) {
+  html.dvi-insights
+    :is(.boss-opts, .bo-sheet)
+    :is(.bo-go, .bo-pick, .bo-caret, .bm-row):hover:not(:disabled) {
+    background: color-mix(in srgb, var(--brass) 18%, var(--panel-raised)) !important;
+  }
+}
+@media (max-width: 480px) {
+  html.dvi-insights .bo-sheet.bo-sheet-phone .bo-menu {
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--m-tab-full, 0px) + 8px);
+    border: 1px solid var(--edge-bright, var(--edge));
+    max-height: 60dvh;
+  }
+  html.dvi-insights .route-options .boss-opts .bo-row {
+    gap: 6px;
+  }
+  html.dvi-insights .route-options .boss-opts .bo-rarity .rarity-choices {
+    gap: 3px;
   }
 }
 `;
