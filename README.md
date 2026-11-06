@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.132
+# [SIK] DVI Insights 0.4.133
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.133：生活首领原生材料推荐弹窗新增金币/积分列，按当前库存可喂品质的成品买价计算，保留历史估价标记；经验/时、积分/时和金币/积分三列可点击切换升降序，缺值置后。只改变展示排序，保留原生图标、物品选择、最佳算法及操作流程；新增独立设置开关。
 
 0.4.132：轻量美化生活首领交互：品质上限改为柔和分段选项，统一优先材料、前往、高级菜单和阶段勾选的边框、圆角、留白及焦点状态；区分开始和加入队列。保留原生按钮、选择状态与操作流程，不改喂食算法；装备评分保留数字，移除悬浮提示与展开浮层。
 
@@ -85,6 +87,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.133: Native skilling-boss feed popups now show coins/point for the eligible owned quality. Click XP/h, points/h or coins/point to sort in either direction; missing values stay last. Native icons, choices and Best selection remain intact. Includes an independent setting.
 
 0.4.132: Refined skilling boss controls with softer quality segments, consistent material selectors and phase menus, clearer action buttons and keyboard focus. Native controls, selection states and feeding logic are preserved. Equipment scores remain visible without hover tooltips or expandable popovers.
 

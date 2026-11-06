@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.132
+// @version      0.4.133
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5720,6 +5720,18 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      "金币/积分": "Coins/point",
+      "积分/时": "Points/h",
+      "经验/时": "XP/h",
+      待报价: "No quote",
+      点击升序: "Sort ascending",
+      点击降序: "Sort descending",
+      "成品买价 ÷ 原生每件积分；按当前可喂品质计价，不含制作耗时。":
+        "Finished-item purchase price divided by native points per item, for the eligible quality; excludes crafting time.",
+      等待当前可喂物品与品质: "Waiting for eligible item and quality",
+      生活首领喂食性价比: "Skilling boss feed value",
+      "在原生材料推荐弹窗显示金币/积分，并按经验、积分或成本排序。":
+        "Add coins/point to native feed choices and sort by XP, points or cost.",
       价格说明: "About prices",
       "[SIK] 家园": "[SIK] Home",
       "在售 {qty} 件": "Listed: {qty} items",
@@ -17200,7 +17212,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.132";
+  const PLUGIN_VERSION = "0.4.133";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -17361,6 +17373,12 @@ SOFTWARE.
         group: "增益与提醒",
         name: "首领排行与掉落日志",
         description: "记录收到的首领排行与掉落；关闭后停止记录和保存。",
+      },
+      {
+        id: "bossFeed",
+        group: "物品与行情",
+        name: "生活首领喂食性价比",
+        description: "在原生材料推荐弹窗显示金币/积分，并按经验、积分或成本排序。",
       },
       {
         id: "guildDonation",
@@ -29682,6 +29700,547 @@ html[data-theme="light"] .dvi-home-market {
     renderHomeMarket();
   }
 
+  // ---- src/boss-feed.js ----
+  /* Native-menu feed selection and price ratios. No game operations. */
+  (function (root, factory) {
+    if (typeof module === "object" && module.exports) module.exports = factory();
+    else root.DVIBossFeed = factory();
+  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
+    function create(facts, data) {
+      const items = new Map(data.items.map((x) => [x.id, x]));
+      function select(player, cls, maxTier, base = null) {
+        const group = facts.groups.find((g) => g[1] === cls);
+        if (!group || !player || !Number.isInteger(maxTier) || maxTier < 0 || maxTier > 4)
+          return null;
+        const xp = player.skills?.[group[2]];
+        if (!Number.isFinite(xp)) return null;
+        let best = null;
+        for (const [id, points, level] of group[3]) {
+          if ((base !== null && id !== base) || xp < (data.xpTable[level] ?? Infinity)) continue;
+          for (let tier = 0; tier <= maxTier; tier++) {
+            const itemId = id + 1000 * tier,
+              qty =
+                (player.bank?.[itemId] || 0) +
+                (player.pack || [])
+                  .filter((s) => s.itemId === itemId)
+                  .reduce((n, s) => n + s.qty, 0),
+              value = items.get(itemId)?.value;
+            if (!(qty > 0) || !Number.isFinite(value)) continue;
+            const row = {
+              itemId,
+              points: points * 2 ** tier * (player.bossMarks?.includes(group[0]) ? 1.1 : 1),
+              value,
+              tier,
+            };
+            if (
+              !best ||
+              row.points > best.points ||
+              (row.points === best.points &&
+                (value < best.value || (value === best.value && itemId < best.itemId)))
+            )
+              best = row;
+          }
+        }
+        return best;
+      }
+      return { select };
+    }
+    function number(text) {
+      const clean = String(text ?? "")
+        .trim()
+        .replace(/[,\s\u00a0\u202f]/g, "");
+      const m = clean.match(/^([0-9]+(?:\.[0-9]+)?)([KMBTkmbt万亿]?)$/);
+      if (!m) return null;
+      const n =
+        Number(m[1]) *
+        ({ k: 1e3, m: 1e6, b: 1e9, t: 1e12, 万: 1e4, 亿: 1e8 }[m[2].toLowerCase()] || 1);
+      return Number.isFinite(n) ? n : null;
+    }
+    function compare(a, b, key, direction) {
+      if (a.disabled !== b.disabled) return a.disabled ? 1 : -1;
+      const x = a[key],
+        y = b[key],
+        vx = Number.isFinite(x),
+        vy = Number.isFinite(y);
+      if (vx !== vy) return vx ? -1 : 1;
+      return vx && x !== y ? (x - y) * (direction === "asc" ? 1 : -1) : a.index - b.index;
+    }
+    return { create, number, compare };
+  });
+
+  // ---- Boss feed facts ----
+  const BOSS_FEED_FACTS = {
+    groups: [
+      [
+        0,
+        "ore",
+        "mining",
+        [
+          [1, 0.61355, 1],
+          [2, 0.61355, 1],
+          [3, 1.47252, 15],
+          [4, 2.57691, 30],
+          [6, 5.52195, 55],
+          [7, 8.09886, 65],
+          [8, 11.16661, 85],
+        ],
+      ],
+      [
+        0,
+        "bars",
+        "smithing",
+        [
+          [40, 1.10439, 1],
+          [41, 1.71794, 15],
+          [42, 3.6813, 30],
+          [43, 15.82959, 60],
+          [44, 22.762705, 85],
+        ],
+      ],
+      [0, "coal", "mining", [[5, 3.92672, 40]]],
+      [
+        1,
+        "raw",
+        "fishing",
+        [
+          [20, 0.58204, 1],
+          [21, 1.16408, 5],
+          [22, 2.095344, 20],
+          [23, 3.259424, 30],
+          [24, 4.65632, 45],
+          [25, 6.98448, 60],
+          [26, 8.963416, 75],
+          [27, 12.106432, 90],
+        ],
+      ],
+      [
+        1,
+        "cooked",
+        "cooking",
+        [
+          [60, 0.756652, 1],
+          [61, 1.513304, 5],
+          [62, 2.444568, 20],
+          [63, 3.49224, 30],
+          [64, 4.65632, 45],
+          [65, 6.286032, 60],
+          [66, 7.7411319999999995, 75],
+          [67, 9.778272, 90],
+        ],
+      ],
+      [
+        2,
+        "logs",
+        "woodcutting",
+        [
+          [10, 0.7213, 1],
+          [11, 1.73112, 15],
+          [12, 3.02946, 30],
+          [13, 4.61632, 45],
+          [14, 7.213, 60],
+          [15, 10.38672, 75],
+        ],
+      ],
+      [
+        2,
+        "bows",
+        "fletching",
+        [
+          [140, 1.08195, 1],
+          [141, 2.30816, 15],
+          [142, 3.67863, 30],
+          [143, 5.19336, 45],
+          [144, 7.213, 60],
+          [145, 9.52116, 75],
+          [146, 1.4426, 1],
+          [147, 3.17372, 15],
+          [148, 5.19336, 30],
+          [149, 7.50152, 45],
+          [150, 10.8195, 60],
+          [151, 14.71452, 75],
+        ],
+      ],
+      [
+        2,
+        "staves",
+        "fletching",
+        [
+          [152, 1.4426, 1],
+          [153, 3.17372, 15],
+          [154, 5.19336, 30],
+          [155, 7.50152, 45],
+          [156, 10.8195, 60],
+          [157, 14.71452, 75],
+        ],
+      ],
+      [
+        3,
+        "crops",
+        "farming",
+        [
+          [170, 2.992248, 1],
+          [171, 16.6236, 15],
+          [172, 36.793568, 30],
+          [173, 88.43755200000001, 45],
+          [174, 155.1536, 60],
+          [175, 299.2248, 75],
+        ],
+      ],
+      [
+        3,
+        "draughts",
+        "herblore",
+        [
+          [220, 6.427792, 1],
+          [221, 32.69308, 35],
+          [222, 111.267296, 60],
+          [223, 98.07924, 80],
+          [224, 112.59718400000001, 95],
+          [225, 6.427792, 20],
+          [226, 32.69308, 50],
+          [227, 112.59718400000001, 70],
+        ],
+      ],
+      [
+        3,
+        "herbs",
+        "farming",
+        [
+          [193, 8.865920000000001, 10],
+          [194, 55.412000000000006, 35],
+          [195, 206.575936, 65],
+        ],
+      ],
+      [
+        4,
+        "bolts",
+        "thieving",
+        [
+          [300, 0.865676, 1],
+          [301, 2.968032, 25],
+          [302, 5.56506, 50],
+          [303, 8.65676, 75],
+        ],
+      ],
+      [
+        4,
+        "leather",
+        "crafting",
+        [
+          [260, 0.742008, 1],
+          [261, 0.742008, 1],
+          [262, 0.742008, 1],
+          [263, 1.484016, 15],
+          [264, 1.484016, 15],
+          [265, 1.484016, 15],
+          [266, 2.226024, 30],
+          [267, 2.226024, 30],
+          [268, 2.226024, 30],
+          [269, 5.194056, 60],
+          [270, 5.194056, 60],
+          [271, 5.194056, 60],
+          [272, 6.925408, 85],
+          [273, 6.925408, 85],
+          [274, 6.925408, 85],
+          [338, 8.904096, 95],
+          [339, 8.904096, 95],
+          [340, 8.904096, 95],
+        ],
+      ],
+      [
+        4,
+        "cloth",
+        "crafting",
+        [
+          [304, 1.607684, 1],
+          [305, 2.906198, 1],
+          [306, 2.040522, 1],
+          [307, 5.194056, 25],
+          [308, 9.646104, 25],
+          [309, 6.678072, 25],
+          [310, 9.89344, 50],
+          [311, 18.24103, 50],
+          [312, 12.67597, 50],
+          [313, 14.716492, 75],
+          [314, 27.701632, 75],
+          [315, 19.044872, 75],
+          [334, 2.040522, 1],
+          [335, 6.678072, 25],
+          [336, 12.67597, 50],
+          [337, 19.044872, 75],
+          [344, 15.582168, 90],
+          [345, 28.567308, 90],
+          [346, 19.910548, 90],
+          [349, 19.910548, 90],
+        ],
+      ],
+    ],
+  };
+
+  // ---- src/boss-feed-ui.js ----
+  /* Enrich the native popup in place; never synthesize native controls or choices. */
+  const bossFeedModel = globalThis.DVIBossFeed.create(BOSS_FEED_FACTS, GAME_DATA);
+  const bossFeedMenus = new Map();
+  let bossFeedSort = null;
+  const bossFeedStyle = document.createElement("style");
+  bossFeedStyle.textContent = `
+html.dvi-insights .bo-menu[data-dvi-boss-feed] {
+  width: min(520px, calc(100vw - 16px)) !important;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] :is(.bm-head, button.bm-row) {
+  grid-template-columns: minmax(80px, 1fr) 58px 58px 76px;
+  gap: 6px;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-name b {
+  white-space: nowrap;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-cost {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--brass);
+  font-size: 12px;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-cost small {
+  display: block;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-head > span {
+  min-width: 0;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  white-space: normal;
+  line-height: 1.3;
+  text-align: right;
+  cursor: pointer;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort svg {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"] {
+  color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 10%, transparent);
+}
+@media (max-width: 480px) {
+  html.dvi-insights .bo-menu[data-dvi-boss-feed] :is(.bm-head, button.bm-row) {
+    grid-template-columns: minmax(70px, 1fr) 48px 48px 64px;
+    gap: 4px;
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 12px;
+  }
+  html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-head {
+    font-size: 11px;
+  }
+}
+`;
+  function resetBossFeedMenu(menu, record) {
+    for (const b of menu.querySelectorAll(".dvi-feed-sort")) {
+      b.querySelector("[data-dvi-feed-arrow]")?.remove();
+      b.replaceWith(...b.childNodes);
+    }
+    menu.querySelectorAll(".dvi-feed-cost,.dvi-feed-cost-head").forEach((n) => n.remove());
+    for (const row of record.original)
+      if (row.parentNode === menu)
+        menu.insertBefore(row, record.anchor?.parentNode === menu ? record.anchor : null);
+    menu.removeAttribute("data-dvi-boss-feed");
+    if (record.left !== undefined) menu.style.left = record.left;
+    bossFeedMenus.delete(menu);
+  }
+  function syncBossFeedMenus() {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("bossFeed")) {
+      for (const [menu, r] of bossFeedMenus) resetBossFeedMenu(menu, r);
+      bossFeedStyle.remove();
+      return;
+    }
+    for (const [menu] of bossFeedMenus) if (!menu.isConnected) bossFeedMenus.delete(menu);
+    const menus = [...document.querySelectorAll(".bo-menu:not(.bo-phases)")].filter(
+      (m) => !m.closest("[hidden]") && m.querySelector('button[data-bo^="only:"]'),
+    );
+    if (!menus.length) return;
+    if (!bossFeedStyle.isConnected) document.documentElement.append(bossFeedStyle);
+    for (const menu of menus) {
+      const rows = [...menu.querySelectorAll(':scope>button[data-bo^="only:"]')],
+        head = menu.querySelector(":scope>.bm-head");
+      if (!head || !rows.length) continue;
+      let record = bossFeedMenus.get(menu);
+      if (record && record.original.some((r) => r.parentNode !== menu)) {
+        resetBossFeedMenu(menu, record);
+        record = null;
+      }
+      if (!record) {
+        record = { original: rows, anchor: rows.at(-1).nextSibling, left: menu.style.left };
+        bossFeedMenus.set(menu, record);
+        menu.dataset.dviBossFeed = "";
+        const costHead = document.createElement("span");
+        costHead.className = "dvi-feed-cost-head";
+        head.append(costHead);
+        for (const [key, host] of [
+          ["xp", head.children[1]],
+          ["points", head.children[2]],
+          ["coins", costHead],
+        ]) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "dvi-feed-sort";
+          button.dataset.dviFeedSort = key;
+          if (key !== "coins") button.append(...host.childNodes);
+          host.append(button);
+          const arrow = document.createElement("span");
+          arrow.dataset.dviFeedArrow = "";
+          button.append(arrow);
+          button.addEventListener("click", (e) => {
+            e.stopPropagation();
+            bossFeedSort = {
+              key,
+              direction:
+                bossFeedSort?.key === key && bossFeedSort.direction === "asc"
+                  ? "desc"
+                  : bossFeedSort?.key === key
+                    ? "asc"
+                    : key === "coins"
+                      ? "asc"
+                      : "desc",
+            };
+            syncBossFeedMenus();
+          });
+        }
+      }
+      const rect = menu.getBoundingClientRect();
+      if (rect.right > innerWidth - 8 || rect.left < 8) {
+        const left = Math.max(8, Math.min(rect.left, innerWidth - rect.width - 8)) + "px";
+        if (menu.style.left !== left) menu.style.left = left;
+      }
+      const cls = rows[0].dataset.bo.split(":")[1];
+      const opener = [...document.querySelectorAll(".boss-opts [data-bo]")].find(
+        (b) =>
+          b.dataset.bo === "menu:" + cls &&
+          b.getAttribute("aria-expanded") === "true" &&
+          !b.closest("[hidden]"),
+      );
+      const choices = opener
+        ?.closest(".boss-opts")
+        ?.querySelectorAll(".bo-rarity [data-bo][aria-pressed=true]");
+      const maxTier = choices?.length
+        ? Math.max(...[...choices].map((b) => Number(b.dataset.bo.split(":")[1])))
+        : null;
+      const p = store.state.player,
+        now = Date.now(),
+        entries = [];
+      for (const [rowIndex, row] of record.original.entries()) {
+        const base = row.dataset.bo.split(":")[2],
+          selected = bossFeedModel.select(p, cls, maxTier, base === "best" ? null : Number(base));
+        let cell = row.querySelector(":scope>.dvi-feed-cost");
+        if (!cell) {
+          cell = document.createElement("span");
+          cell.className = "dvi-feed-cost";
+          row.append(cell);
+        }
+        const q =
+          selected && !p?.ironman
+            ? globalThis.DVIHomeMaterials.quote(store.state.books[selected.itemId], now)
+            : null;
+        const shop = selected && !p?.ironman ? GAME_DATA.vendorBuys?.[selected.itemId] : null;
+        const price =
+          shop > 0 && (!q || shop < q.price)
+            ? { price: shop, estimated: false, source: "vendor" }
+            : q;
+        const coins = price && selected?.points > 0 ? price.price / selected.points : null;
+        const quality = selected ? t(TIERS[selected.tier]) : "";
+        const value =
+          coins === null
+            ? t("待报价")
+            : (price.estimated ? "≈ " : "") +
+              coins.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 0,
+              });
+        const html = escape(value) + (quality ? "<small>" + escape(quality) + "</small>" : "");
+        if (cell.innerHTML !== html) cell.innerHTML = html;
+        const title = selected
+          ? t("成品买价 ÷ 原生每件积分；按当前可喂品质计价，不含制作耗时。") +
+            " " +
+            itemName(selected.itemId) +
+            (price ? " · " + price.price.toLocaleString() + " " + t("金币/件") : "")
+          : t("等待当前可喂物品与品质");
+        if (cell.dataset.dviFeedHint !== title) {
+          cell.dataset.dviFeedHint = title;
+          cell.title = title;
+        }
+        const numbers = row.querySelectorAll(":scope>.bm-n");
+        entries.push({
+          row,
+          index: rowIndex,
+          disabled: row.disabled,
+          xp: globalThis.DVIBossFeed.number(numbers[0]?.textContent),
+          points: globalThis.DVIBossFeed.number(numbers[1]?.textContent),
+          coins,
+        });
+      }
+      for (const button of head.querySelectorAll(".dvi-feed-sort")) {
+        const key = button.dataset.dviFeedSort,
+          active = bossFeedSort?.key === key,
+          arrow = button.querySelector("[data-dvi-feed-arrow]");
+        if (key === "coins") {
+          const text = t("金币/积分");
+          if (button.firstChild === arrow) button.prepend(document.createTextNode(text));
+          else if (button.firstChild.textContent !== text) button.firstChild.textContent = text;
+        }
+        const direction = active ? (bossFeedSort.direction === "asc" ? "↑" : "↓") : "↕";
+        if (arrow.textContent !== direction) arrow.textContent = direction;
+        const flag = String(!!active);
+        if (button.dataset.active !== flag) button.dataset.active = flag;
+        const title =
+          (key === "coins" ? t("金币/积分") : key === "xp" ? t("经验/时") : t("积分/时")) +
+          " · " +
+          t(
+            active
+              ? bossFeedSort.direction === "asc"
+                ? "点击降序"
+                : "点击升序"
+              : key === "coins"
+                ? "点击升序"
+                : "点击降序",
+          );
+        if (button.getAttribute("aria-label") !== title) button.setAttribute("aria-label", title);
+      }
+      if (bossFeedSort) {
+        const sorted = entries.sort((a, b) =>
+          globalThis.DVIBossFeed.compare(a, b, bossFeedSort.key, bossFeedSort.direction),
+        );
+        let next = record.anchor?.parentNode === menu ? record.anchor : null;
+        for (const e of sorted.reverse()) {
+          if (e.row.nextSibling !== next) menu.insertBefore(e.row, next);
+          next = e.row;
+        }
+      }
+    }
+  }
+
   // ---- src/settings-ui.js ----
   /* A local-only tab beside native account tabs. All attributes are plugin-owned. */
   const insightSettingsHosts = new WeakMap();
@@ -29714,6 +30273,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       if (insightFeatureEnabled("homeMaterialPrices")) syncHomeMaterialPrices();
       else resetHomeMaterialPrices();
     }
+    if (id === "bossFeed") syncBossFeedMenus();
     if (id === "homeMarket") {
       if (on) syncHomeMarket();
       else resetHomeMarket();
@@ -31071,6 +31631,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     syncHomeBoard();
     syncHomeMaterialPrices();
     syncHomeMarket();
+    syncBossFeedMenus();
 
     syncBossRecords();
     syncEquipmentValue();
