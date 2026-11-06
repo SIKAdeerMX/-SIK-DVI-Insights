@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.133
+// @version      0.4.134
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5720,6 +5720,12 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      "金币/积分最佳 · 全可喂目录": "Best coins/point · All eligible items",
+      暂无可比较报价: "No comparable quotes",
+      "已报价 {priced}/{total} 项；覆盖本首领全部类别，不要求持有。":
+        "Quotes: {priced}/{total}; all categories for this boss, including unowned items.",
+      "制作/采购参考；原生“最佳”按每件积分选择，请手选物品和品质。":
+        "Craft/buy reference. Native Best ranks points per item; choose the item and quality manually.",
       "金币/积分": "Coins/point",
       "积分/时": "Points/h",
       "经验/时": "XP/h",
@@ -5730,8 +5736,8 @@ SOFTWARE.
         "Finished-item purchase price divided by native points per item, for the eligible quality; excludes crafting time.",
       等待当前可喂物品与品质: "Waiting for eligible item and quality",
       生活首领喂食性价比: "Skilling boss feed value",
-      "在原生材料推荐弹窗显示金币/积分，并按经验、积分或成本排序。":
-        "Add coins/point to native feed choices and sort by XP, points or cost.",
+      "在原生弹窗比较全可喂目录的金币/积分最佳，含零库存，并保留三列排序。":
+        "Compare all eligible feed items by coins/point, including unowned items, and retain three-column sorting.",
       价格说明: "About prices",
       "[SIK] 家园": "[SIK] Home",
       "在售 {qty} 件": "Listed: {qty} items",
@@ -17212,7 +17218,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.133";
+  const PLUGIN_VERSION = "0.4.134";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -17378,7 +17384,7 @@ SOFTWARE.
         id: "bossFeed",
         group: "物品与行情",
         name: "生活首领喂食性价比",
-        description: "在原生材料推荐弹窗显示金币/积分，并按经验、积分或成本排序。",
+        description: "在原生弹窗比较全可喂目录的金币/积分最佳，含零库存，并保留三列排序。",
       },
       {
         id: "guildDonation",
@@ -29743,7 +29749,38 @@ html[data-theme="light"] .dvi-home-market {
         }
         return best;
       }
-      return { select };
+      function recommend(player, boss, maxTier, quote) {
+        const groups = facts.groups.filter((g) => g[0] === boss);
+        if (
+          !player ||
+          !Number.isInteger(maxTier) ||
+          maxTier < 0 ||
+          maxTier > 4 ||
+          !groups.some((g) => player.skills?.[g[2]] >= data.xpTable[90])
+        )
+          return { best: null, total: 0, priced: 0 };
+        let best = null,
+          total = 0,
+          priced = 0;
+        for (const group of groups)
+          for (const [id, points, level] of group[3]) {
+            if (!(player.skills?.[group[2]] >= data.xpTable[level])) continue;
+            for (let tier = 0; tier <= maxTier; tier++) {
+              const itemId = id + tier * 1000;
+              if (!items.has(itemId)) continue;
+              total++;
+              const q = quote(itemId);
+              if (!(q?.price > 0) || !Number.isFinite(q.price)) continue;
+              priced++;
+              const each = points * 2 ** tier * (player.bossMarks?.includes(boss) ? 1.1 : 1),
+                coins = q.price / each;
+              if (!best || coins < best.coins || (coins === best.coins && itemId < best.itemId))
+                best = { itemId, tier, cls: group[1], points: each, coins, quote: q };
+            }
+          }
+        return { best, total, priced };
+      }
+      return { select, recommend };
     }
     function number(text) {
       const clean = String(text ?? "")
@@ -30045,6 +30082,42 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
   color: var(--brass);
   background: color-mix(in srgb, var(--brass) 10%, transparent);
 }
+html.dvi-insights .dvi-feed-best {
+  margin: 4px 4px 8px;
+  padding: 9px;
+  border: 1px solid var(--brass);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--brass) 10%, var(--panel-raised));
+  line-height: 1.5;
+}
+html.dvi-insights .dvi-feed-best strong {
+  display: block;
+  font-size: 12px;
+  color: var(--brass);
+  font-weight: 600;
+}
+html.dvi-insights .dvi-feed-best .dvi-feed-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 5px 0;
+  color: var(--ink);
+  font-size: 13px;
+}
+html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  image-rendering: pixelated;
+  background-image: var(--dvi-feed-art);
+}
+html.dvi-insights .dvi-feed-best small {
+  display: block;
+  white-space: normal;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
 @media (max-width: 480px) {
   html.dvi-insights .bo-menu[data-dvi-boss-feed] :is(.bm-head, button.bm-row) {
     grid-template-columns: minmax(70px, 1fr) 48px 48px 64px;
@@ -30063,13 +30136,24 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
       b.querySelector("[data-dvi-feed-arrow]")?.remove();
       b.replaceWith(...b.childNodes);
     }
-    menu.querySelectorAll(".dvi-feed-cost,.dvi-feed-cost-head").forEach((n) => n.remove());
+    menu
+      .querySelectorAll(".dvi-feed-cost,.dvi-feed-cost-head,.dvi-feed-best")
+      .forEach((n) => n.remove());
     for (const row of record.original)
       if (row.parentNode === menu)
         menu.insertBefore(row, record.anchor?.parentNode === menu ? record.anchor : null);
     menu.removeAttribute("data-dvi-boss-feed");
     if (record.left !== undefined) menu.style.left = record.left;
+    if (record.top !== undefined) menu.style.top = record.top;
     bossFeedMenus.delete(menu);
+  }
+  function bossFeedPrice(itemId, p, now) {
+    if (p?.ironman) return null;
+    const q = globalThis.DVIHomeMaterials.quote(store.state.books[itemId], now),
+      shop = GAME_DATA.vendorBuys?.[itemId];
+    return shop > 0 && (!q || shop < q.price)
+      ? { price: shop, estimated: false, source: "vendor" }
+      : q;
   }
   function syncBossFeedMenus() {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("bossFeed")) {
@@ -30093,7 +30177,12 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
         record = null;
       }
       if (!record) {
-        record = { original: rows, anchor: rows.at(-1).nextSibling, left: menu.style.left };
+        record = {
+          original: rows,
+          anchor: rows.at(-1).nextSibling,
+          left: menu.style.left,
+          top: menu.style.top,
+        };
         bossFeedMenus.set(menu, record);
         menu.dataset.dviBossFeed = "";
         const costHead = document.createElement("span");
@@ -30151,6 +30240,47 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
       const p = store.state.player,
         now = Date.now(),
         entries = [];
+      const boss = BOSS_FEED_FACTS.groups.find((g) => g[1] === cls)?.[0],
+        result = bossFeedModel.recommend(p, boss, maxTier, (id) => bossFeedPrice(id, p, now));
+      let bestBox = menu.querySelector(":scope>.dvi-feed-best");
+      if (!bestBox) {
+        bestBox = document.createElement("div");
+        bestBox.className = "dvi-feed-best";
+        bestBox.dataset.noI18n = "";
+        bestBox.style.setProperty("--dvi-feed-art", 'url("' + HOME_MARKET_ART.source + '")');
+        head.before(bestBox);
+      }
+      const best = result.best,
+        priceText = best
+          ? (best.quote.estimated ? "≈ " : "") +
+            best.coins.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
+              maximumFractionDigits: 2,
+            })
+          : "";
+      const bestHtml =
+        "<strong>" +
+        escape(t("金币/积分最佳 · 全可喂目录")) +
+        "</strong>" +
+        (best
+          ? '<div class="dvi-feed-choice">' +
+            homeMarketItemIcon(best.itemId) +
+            "<span>" +
+            escape(t(TIERS[best.tier]) + " " + itemName(best.itemId)) +
+            " · " +
+            escape(priceText + " " + t("金币/积分")) +
+            "</span></div>"
+          : '<div class="dvi-feed-choice">' + escape(t("暂无可比较报价")) + "</div>") +
+        "<small>" +
+        escape(
+          t("已报价 {priced}/{total} 项；覆盖本首领全部类别，不要求持有。", {
+            priced: result.priced,
+            total: result.total,
+          }),
+        ) +
+        "</small><small>" +
+        escape(t("制作/采购参考；原生“最佳”按每件积分选择，请手选物品和品质。")) +
+        "</small>";
+      if (bestBox.innerHTML !== bestHtml) bestBox.innerHTML = bestHtml;
       for (const [rowIndex, row] of record.original.entries()) {
         const base = row.dataset.bo.split(":")[2],
           selected = bossFeedModel.select(p, cls, maxTier, base === "best" ? null : Number(base));
@@ -30160,15 +30290,7 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
           cell.className = "dvi-feed-cost";
           row.append(cell);
         }
-        const q =
-          selected && !p?.ironman
-            ? globalThis.DVIHomeMaterials.quote(store.state.books[selected.itemId], now)
-            : null;
-        const shop = selected && !p?.ironman ? GAME_DATA.vendorBuys?.[selected.itemId] : null;
-        const price =
-          shop > 0 && (!q || shop < q.price)
-            ? { price: shop, estimated: false, source: "vendor" }
-            : q;
+        const price = selected ? bossFeedPrice(selected.itemId, p, now) : null;
         const coins = price && selected?.points > 0 ? price.price / selected.points : null;
         const quality = selected ? t(TIERS[selected.tier]) : "";
         const value =
@@ -30227,6 +30349,15 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
                 : "点击降序",
           );
         if (button.getAttribute("aria-label") !== title) button.setAttribute("aria-label", title);
+      }
+      const boxRect = menu.getBoundingClientRect();
+      if (
+        !menu.closest(".bo-sheet-phone") &&
+        getComputedStyle(menu).position === "fixed" &&
+        boxRect.bottom > innerHeight - 8
+      ) {
+        const top = Math.max(8, innerHeight - boxRect.height - 8) + "px";
+        if (menu.style.top !== top) menu.style.top = top;
       }
       if (bossFeedSort) {
         const sorted = entries.sort((a, b) =>

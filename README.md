@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.133
+# [SIK] DVI Insights 0.4.134
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.134：生活首领新增全目录金币/积分最佳：比较当前首领全部类别、等级及品质上限内的可喂物品，零库存也参与，最低有效成品报价/积分胜出；缺报价不当免费，历史估价保留≈。在原生弹窗展示制作/采购参考，保留原生最佳、选择按钮及三列排序，不自动选料或操作游戏。
 
 0.4.133：生活首领原生材料推荐弹窗新增金币/积分列，按当前库存可喂品质的成品买价计算，保留历史估价标记；经验/时、积分/时和金币/积分三列可点击切换升降序，缺值置后。只改变展示排序，保留原生图标、物品选择、最佳算法及操作流程；新增独立设置开关。
 
@@ -87,6 +89,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.134: Best coins/point now compares the full eligible catalogue for the current boss across categories, level gates and the rarity cap, including unowned items. The cheapest quoted finished-item cost per point is shown as a craft/buy reference. Native Best, controls and three-column sorting are preserved.
 
 0.4.133: Native skilling-boss feed popups now show coins/point for the eligible owned quality. Click XP/h, points/h or coins/point to sort in either direction; missing values stay last. Native icons, choices and Best selection remain intact. Includes an independent setting.
 
