@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.135
+// @version      0.4.136
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -17213,7 +17213,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.135";
+  const PLUGIN_VERSION = "0.4.136";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -30016,13 +30016,29 @@ html[data-theme="light"] .dvi-home-market {
   const bossFeedStyle = document.createElement("style");
   bossFeedStyle.textContent = `
 html.dvi-insights .bo-menu[data-dvi-boss-feed] {
-  width: min(520px, calc(100vw - 16px)) !important;
+  width: min(360px, calc(100vw - 16px)) !important;
   max-width: calc(100vw - 16px);
   box-sizing: border-box;
+  font: 400 14px/1.4 var(--sans, system-ui, "Microsoft YaHei", sans-serif);
+  -webkit-font-smoothing: auto;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] * {
+  box-sizing: border-box;
+  text-shadow: none;
 }
 html.dvi-insights .bo-menu[data-dvi-boss-feed] :is(.bm-head, button.bm-row) {
-  grid-template-columns: minmax(80px, 1fr) 58px 58px 76px;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 54px 54px 68px;
+  gap: 4px;
+  padding: 6px 8px;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] button.bm-row {
+  font: inherit;
+  min-height: 44px;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-head {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-name {
   white-space: normal;
@@ -30032,15 +30048,28 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-name {
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-name b {
   white-space: nowrap;
 }
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .bo-one-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  margin: 0;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .bo-one-icon > svg {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-cost {
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: var(--brass);
-  font-size: 12px;
+  color: var(--ink);
+  font-size: inherit;
+  overflow-wrap: anywhere;
 }
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-cost small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--ink-muted);
 }
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-head > span {
@@ -30050,26 +30079,32 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 3px;
+  gap: 2px;
   width: 100%;
   min-width: 0;
   min-height: 32px;
   margin: 0;
-  padding: 2px;
+  padding: 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
   box-shadow: none;
   color: inherit;
   font: inherit;
-  white-space: normal;
+  white-space: nowrap;
   line-height: 1.3;
   text-align: right;
   cursor: pointer;
 }
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort svg {
-  width: 1em;
-  height: 1em;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort .ember-ico {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
   flex: none;
 }
 html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"] {
@@ -30077,21 +30112,28 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
   background: color-mix(in srgb, var(--brass) 10%, transparent);
 }
 html.dvi-insights .dvi-feed-best {
-  margin: 2px 4px 5px;
-  color: var(--ink);
-  font-size: 12px;
-  line-height: 1.3;
+  margin: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
 }
 html.dvi-insights .dvi-feed-choice {
   display: grid;
-  grid-template-columns: 14px 24px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
-  min-height: 27px;
+  min-height: 38px;
+}
+html.dvi-insights .dvi-feed-choice + .dvi-feed-choice {
+  border-top: 1px solid var(--edge);
 }
 html.dvi-insights .dvi-feed-rank {
   color: var(--brass);
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
   text-align: center;
 }
 html.dvi-insights .dvi-feed-name {
@@ -30108,8 +30150,8 @@ html.dvi-insights .dvi-feed-ratio {
 }
 html.dvi-insights .dvi-feed-point-icon {
   display: inline-flex;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   vertical-align: middle;
   flex: none;
 }
@@ -30119,24 +30161,13 @@ html.dvi-insights .dvi-feed-point-icon svg {
 }
 html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
   display: inline-block;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   image-rendering: pixelated;
   background-image: var(--dvi-feed-art);
-  background-size: 384px 360px;
+  background-size: 512px 480px;
+  background-position: var(--dvi-feed-pos) !important;
   background-repeat: no-repeat;
-}
-@media (max-width: 480px) {
-  html.dvi-insights .bo-menu[data-dvi-boss-feed] :is(.bm-head, button.bm-row) {
-    grid-template-columns: minmax(70px, 1fr) 48px 48px 64px;
-    gap: 4px;
-    padding-left: 6px;
-    padding-right: 6px;
-    font-size: 12px;
-  }
-  html.dvi-insights .bo-menu[data-dvi-boss-feed] .bm-head {
-    font-size: 11px;
-  }
 }
 `;
   function resetBossFeedMenu(menu, record) {
@@ -30227,9 +30258,20 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
           });
         }
       }
-      const rect = menu.getBoundingClientRect();
-      if (rect.right > innerWidth - 8 || rect.left < 8) {
-        const left = Math.max(8, Math.min(rect.left, innerWidth - rect.width - 8)) + "px";
+      for (const axis of ["left", "top"])
+        if (/^-?[\d.]+px$/.test(menu.style[axis])) {
+          const value = Math.round(parseFloat(menu.style[axis])) + "px";
+          if (menu.style[axis] !== value) menu.style[axis] = value;
+        }
+      const rect = menu.getBoundingClientRect(),
+        phone = menu.closest(".bo-sheet-phone");
+      if (phone || rect.right > innerWidth - 8 || rect.left < 8) {
+        const left =
+          Math.round(
+            phone
+              ? Math.max(8, (innerWidth - rect.width) / 2)
+              : Math.max(8, Math.min(rect.left, innerWidth - rect.width - 8)),
+          ) + "px";
         if (menu.style.left !== left) menu.style.left = left;
       }
       const cls = rows[0].dataset.bo.split(":")[1];
@@ -30282,9 +30324,17 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
                   (best.quote.estimated ? "≈ " : "") +
                   best.coins.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
                     maximumFractionDigits: 2,
-                  });
+                  }),
+                tile = homeMarketIconIndex.get(best.itemId % 1000),
+                pos =
+                  -((tile % HOME_MARKET_ART.columns) * 32) +
+                  "px -" +
+                  Math.floor(tile / HOME_MARKET_ART.columns) * 32 +
+                  "px";
               return (
-                '<div class="dvi-feed-choice"><span class="dvi-feed-rank">' +
+                '<div class="dvi-feed-choice" style="--dvi-feed-pos:' +
+                pos +
+                '"><span class="dvi-feed-rank">' +
                 (index + 1) +
                 "</span>" +
                 homeMarketItemIcon(best.itemId) +
@@ -30375,11 +30425,11 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
       }
       const boxRect = menu.getBoundingClientRect();
       if (
-        !menu.closest(".bo-sheet-phone") &&
+        !phone &&
         getComputedStyle(menu).position === "fixed" &&
         boxRect.bottom > innerHeight - 8
       ) {
-        const top = Math.max(8, innerHeight - boxRect.height - 8) + "px";
+        const top = Math.max(8, Math.floor(innerHeight - boxRect.height - 8)) + "px";
         if (menu.style.top !== top) menu.style.top = top;
       }
       if (bossFeedSort) {
