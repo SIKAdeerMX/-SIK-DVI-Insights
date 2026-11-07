@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.138
+# [SIK] DVI Insights 0.4.139
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.139：适配正式服1.0.4663。按新版取消精通切页冷却，105工具升级保留强化等级；原生库存最佳计算排除银行锁定堆叠，仍可使用背包材料。经济推荐和原有设置保持。
 
 0.4.138：升级预估提前读取目标工作绑定的精通页，选择行动和赶路时即可更新，普通工作模拟保留切页冷却。生活首领新增经验与成本计算：初始采用原生最佳或手选物品，固定物品品质供备料，角色分别保存；三推荐仅供计算。显示精通页、单件经验、净经验/时、逐级材料、净喂食时间与材料/药水成本；净喂食不含切页冷却、往返、阶段停喂和奖励。补齐最佳数量；再点首领收起，切普通工作消除占位。
 
@@ -89,6 +91,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.139: Updated for live 1.0.4663. Forecasts follow immediate mastery switching, preserve enhancement on level-105 tool upgrades, and respect locked bank stacks in native feed selection.
 
 0.4.138: Work forecasts use the target skill's assigned mastery page while choosing or walking, with the page cooldown retained in ordinary work simulations. Skilling boss calculations pin the initial native/manual item and quality for preparation; the three recommendations are calculation-only options. They show the projected page, per-item XP, level-aware materials, net feeding time and material/potion costs. Net feeding excludes page cooldown, travel, phase waits and rewards. Best quantities and folding are fixed.
 

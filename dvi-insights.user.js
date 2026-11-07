@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.138
+// @version      0.4.139
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -209,7 +209,7 @@ SOFTWARE.
             target,
             waitTicks:
               target !== current && p.masterySwitchTick !== undefined
-                ? Math.max(0, p.masterySwitchTick + 500 - p.lastTick)
+                ? Math.max(0, p.masterySwitchTick + (c.masterySwitchCooldown ?? 500) - p.lastTick)
                 : 0,
           };
         }
@@ -9580,6 +9580,8 @@ SOFTWARE.
       ],
       foodKeepFree: true,
       lockedFarmSeeds: true,
+      masterySwitchCooldown: 0,
+      upgradePreservesEnhancement: true,
     },
     food: {
       damage: 0.25,
@@ -9841,7 +9843,6 @@ SOFTWARE.
         from: [84],
         to: [698],
         extra: [{ itemId: 697, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 282,
@@ -9852,7 +9853,6 @@ SOFTWARE.
         from: [369],
         to: [699],
         extra: [{ itemId: 697, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 283,
@@ -9863,7 +9863,6 @@ SOFTWARE.
         from: [89],
         to: [572],
         extra: [{ itemId: 688, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 284,
@@ -9874,7 +9873,6 @@ SOFTWARE.
         from: [364],
         to: [573],
         extra: [{ itemId: 688, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 285,
@@ -9885,7 +9883,6 @@ SOFTWARE.
         from: [94],
         to: [575],
         extra: [{ itemId: 689, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 286,
@@ -9896,7 +9893,6 @@ SOFTWARE.
         from: [374],
         to: [576],
         extra: [{ itemId: 689, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 287,
@@ -9907,7 +9903,6 @@ SOFTWARE.
         from: [389],
         to: [711],
         extra: [{ itemId: 707, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 288,
@@ -9918,7 +9913,6 @@ SOFTWARE.
         from: [384],
         to: [712],
         extra: [{ itemId: 707, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 289,
@@ -9929,7 +9923,6 @@ SOFTWARE.
         from: [327],
         to: [718],
         extra: [{ itemId: 714, qty: 1 }],
-        startsAtZero: true,
       },
       {
         id: 290,
@@ -9940,7 +9933,6 @@ SOFTWARE.
         from: [379],
         to: [719],
         extra: [{ itemId: 714, qty: 1 }],
-        startsAtZero: true,
       },
     ],
     labels: {
@@ -10391,18 +10383,18 @@ SOFTWARE.
       "House essence": "家园精华",
     },
     version: {
-      version: "1.0.4631",
+      version: "1.0.4663",
       env: "live",
-      commit: "78d672a01",
+      commit: "cf4f48c18",
       branch: "HEAD",
       subject:
-        "Changelog 1.0.1212: the house line says plainly what a bar and finished gear are worth now, EN+ZH (Phocked, 6 Nov)",
-      committedAt: "2026-11-06T13:08:00+01:00",
+        "A skilling boss feed leaves a locked stack alone, as crafting and alchemy do (live, 7 Nov)",
+      committedAt: "2026-11-07T05:54:22+01:00",
       dirty: false,
-      builtAt: "2026-11-06T12:23:54.810Z",
+      builtAt: "2026-11-07T05:06:28.101Z",
     },
-    clientAsset: "index-BqokRC4i.js",
-    sourceSha256: "13f144ed0a9a34f3f844e4f1c5b490a34590d37a57775522cceecf2c9716d932",
+    clientAsset: "index-B_r662-8.js",
+    sourceSha256: "af65c9192a206e496749bde21a1693b4f97bc7da451ca33abdee4a158c7aa273",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [60, 80, 85, 90, 160, 161, 162, 190, 328, 700],
     commonOnlyJobs: [421],
@@ -16604,7 +16596,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.138";
+  const PLUGIN_VERSION = "0.4.139";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -29116,6 +29108,12 @@ html[data-theme="light"] .dvi-home-market {
           (player?.pack || []).filter((s) => s.itemId === itemId).reduce((n, s) => n + s.qty, 0)
         );
       }
+      function available(player, itemId) {
+        return (
+          (player.bankLocked?.includes(itemId) ? 0 : player.bank?.[itemId] || 0) +
+          (player.pack || []).filter((s) => s.itemId === itemId).reduce((n, s) => n + s.qty, 0)
+        );
+      }
       function select(player, cls, maxTier, base = null) {
         const group = facts.groups.find((g) => g[1] === cls);
         if (!group || !player || !Number.isInteger(maxTier) || maxTier < 0 || maxTier > 4)
@@ -29127,7 +29125,7 @@ html[data-theme="light"] .dvi-home-market {
           if ((base !== null && id !== base) || xp < (data.xpTable[level] ?? Infinity)) continue;
           for (let tier = 0; tier <= maxTier; tier++) {
             const itemId = id + 1000 * tier,
-              qty = quantity(player, itemId),
+              qty = available(player, itemId),
               value = items.get(itemId)?.value;
             if (!(qty > 0) || !Number.isFinite(value)) continue;
             const row = {
@@ -29179,7 +29177,7 @@ html[data-theme="light"] .dvi-home-market {
         ranked.sort((a, b) => a.coins - b.coins || a.itemId - b.itemId);
         return { best: ranked[0] ?? null, ranked: ranked.slice(0, 3), total, priced };
       }
-      return { select, recommend, quantity };
+      return { select, recommend, quantity, available };
     }
     function number(text) {
       const clean = String(text ?? "")
@@ -29939,8 +29937,8 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
 
   // ---- Boss XP facts ----
   const BOSS_XP_FACTS = {
-    version: "1.0.4631",
-    sourceSha256: "13f144ed0a9a34f3f844e4f1c5b490a34590d37a57775522cceecf2c9716d932",
+    version: "1.0.4663",
+    sourceSha256: "af65c9192a206e496749bde21a1693b4f97bc7da451ca33abdee4a158c7aa273",
     profiles: [
       [1, 1, 2, 5, false, 0],
       [2, 2, 3, 5, false, 0],
@@ -30227,7 +30225,7 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
           return null;
         const needed = Math.max(0, data.xpTable[target] - (p.skills?.[s.skill] || 0)),
           copy = { ...p, skills: { ...p.skills } },
-          owned = foods.quantity(p, itemId),
+          owned = foods.available(p, itemId),
           price = quote?.price > 0 && Number.isFinite(quote.price) ? quote.price : null;
         let quantity = 0,
           seconds = 0;
