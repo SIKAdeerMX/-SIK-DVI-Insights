@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.139
+# [SIK] DVI Insights 0.4.140
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.140：适配正式服1.0.4739，同步神龛对战斗额外稀有掉落的加成与收益估值；支持新版精通页存储和自动指定页；战斗补给跳过银行锁定食物，背包同款仍可使用。
 
 0.4.139：适配正式服1.0.4663。按新版取消精通切页冷却，105工具升级保留强化等级；原生库存最佳计算排除银行锁定堆叠，仍可使用背包材料。经济推荐和原有设置保持。
 
@@ -91,6 +93,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.140: Updated for live 1.0.4739. Combat bonus-drop valuation includes the shrine rare-find bonus; forecasts support the new mastery page storage and skip locked bank food while retaining backpack food.
 
 0.4.139: Updated for live 1.0.4663. Forecasts follow immediate mastery switching, preserve enhancement on level-105 tool upgrades, and respect locked bank stacks in native feed selection.
 

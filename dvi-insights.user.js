@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.139
+// @version      0.4.140
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -197,12 +197,17 @@ SOFTWARE.
             (p.masteries?.[k] || 0) * (mastery.get(k) || 0),
           );
         function masteryPageFor(p, skills) {
-          const current = p.masteryPage === 2 ? 2 : 1,
-            assigned = skills.map((s) => p.masterySkills?.[s]).find((n) => n === 1 || n === 2),
+          const current = p.masteryPage === 2 ? 2 : p.masteryPage === 3 ? 3 : 1,
+            assigned = skills
+              .map((s) => p.masterySkills?.[s])
+              .find((n) => n === 1 || n === 2 || n === 3),
             owned =
-              p.masteryOther !== null &&
-              typeof p.masteryOther === "object" &&
-              !Array.isArray(p.masteryOther),
+              assigned !== undefined &&
+              (p.masteryAway
+                ? Object.hasOwn(p.masteryAway, assigned)
+                : p.masteryOther !== null &&
+                  typeof p.masteryOther === "object" &&
+                  !Array.isArray(p.masteryOther)),
             target = assigned !== undefined && (assigned === current || owned) ? assigned : current;
           return {
             current,
@@ -215,18 +220,32 @@ SOFTWARE.
         }
         function projectedMastery(p, skills) {
           const m = masteryPageFor(p, skills);
-          return m.target === m.current
-            ? p
-            : { ...p, masteries: p.masteryOther, masteryOther: p.masteries, masteryPage: m.target };
+          if (m.target === m.current) return p;
+          if (p.masteryAway) {
+            const { [m.target]: next, ...away } = p.masteryAway;
+            return {
+              ...p,
+              masteries: next,
+              masteryAway: { ...away, [m.current]: p.masteries },
+              masteryPage: m.target,
+            };
+          }
+          return {
+            ...p,
+            masteries: p.masteryOther,
+            masteryOther: p.masteries,
+            masteryPage: m.target,
+          };
         }
         function masteryClock(p, skills) {
           const m = masteryPageFor(p, skills);
           let at = m.target !== m.current ? p.lastTick + m.waitTicks : Infinity;
           const apply = () => {
             if (p.lastTick < at) return false;
-            const old = p.masteries;
-            p.masteries = p.masteryOther;
-            p.masteryOther = old;
+            const next = projectedMastery(p, skills);
+            p.masteries = next.masteries;
+            if (p.masteryAway) p.masteryAway = next.masteryAway;
+            else p.masteryOther = next.masteryOther;
             p.masteryPage = m.target;
             p.masterySwitchTick = at;
             delete p.masteryPending;
@@ -2014,11 +2033,14 @@ SOFTWARE.
           return p.foodItemId;
         const held = pack.find((x) => x.qty > 0 && foodEligible(model, p, x.itemId));
         if (held) return held.itemId;
-        if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0) return p.foodItemId;
+        if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0 && !p.bankLocked?.includes(p.foodItemId))
+          return p.foodItemId;
         return (
           Object.keys(p.bank || {})
             .map(Number)
-            .filter((id) => p.bank[id] > 0 && foodEligible(model, p, id))
+            .filter(
+              (id) => p.bank[id] > 0 && !p.bankLocked?.includes(id) && foodEligible(model, p, id),
+            )
             .sort(
               (a, b) =>
                 (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
@@ -2071,7 +2093,8 @@ SOFTWARE.
           ((p.brews?.blessing || 0) > tick ? 0.1 : 0) +
           (rotation.skill === "combat" && rotation.kind === "rarity" ? 0.25 : 0) +
           model.master(p, "rare") -
-          1;
+          1 +
+          model.home(p, "rareChance");
         const amulet = p.equipment?.amulet || 0,
           gear = model.data.gear.find((x) => x.itemId === amulet % 10000);
         const luck =
@@ -2129,6 +2152,7 @@ SOFTWARE.
           }
           // A change of loadout, food policy or zone starts a new measurement window.
           const signature = JSON.stringify([
+            "loot-4739",
             p.id,
             zone,
             p.equipment,
@@ -2581,13 +2605,17 @@ SOFTWARE.
         const bankFoods = () => {
           const ids = Object.keys(p.bank)
             .map(Number)
-            .filter((id) => p.bank[id] > 0 && eligible(id))
+            .filter((id) => p.bank[id] > 0 && !p.bankLocked?.includes(id) && eligible(id))
             .sort(
               (a, b) =>
                 (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
                 a - b,
             );
-          if (p.foodItemId > 0 && p.bank[p.foodItemId] > 0) {
+          if (
+            p.foodItemId > 0 &&
+            p.bank[p.foodItemId] > 0 &&
+            !p.bankLocked?.includes(p.foodItemId)
+          ) {
             const i = ids.indexOf(p.foodItemId);
             if (i >= 0) ids.splice(i, 1);
             ids.unshift(p.foodItemId);
@@ -4310,11 +4338,14 @@ SOFTWARE.
         return p.foodItemId;
       const held = pack.find((x) => x.qty > 0 && foodEligible(model, p, x.itemId));
       if (held) return held.itemId;
-      if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0) return p.foodItemId;
+      if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0 && !p.bankLocked?.includes(p.foodItemId))
+        return p.foodItemId;
       return (
         Object.keys(p.bank || {})
           .map(Number)
-          .filter((id) => p.bank[id] > 0 && foodEligible(model, p, id))
+          .filter(
+            (id) => p.bank[id] > 0 && !p.bankLocked?.includes(id) && foodEligible(model, p, id),
+          )
           .sort(
             (a, b) =>
               (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) || a - b,
@@ -4366,7 +4397,8 @@ SOFTWARE.
         ((p.brews?.blessing || 0) > tick ? 0.1 : 0) +
         (rotation.skill === "combat" && rotation.kind === "rarity" ? 0.25 : 0) +
         model.master(p, "rare") -
-        1;
+        1 +
+        model.home(p, "rareChance");
       const amulet = p.equipment?.amulet || 0,
         gear = model.data.gear.find((x) => x.itemId === amulet % 10000);
       const luck =
@@ -4423,6 +4455,7 @@ SOFTWARE.
         }
         // A change of loadout, food policy or zone starts a new measurement window.
         const signature = JSON.stringify([
+          "loot-4739",
           p.id,
           zone,
           p.equipment,
@@ -7015,8 +7048,7 @@ SOFTWARE.
       {
         id: "gather",
         name: "Gather speed",
-        blurb:
-          "Faster Mining, Fishing, Woodcutting, Thieving and Farming work. Crops still take as long to grow.",
+        blurb: "Faster Mining, Fishing, Woodcutting and Thieving. Farming is not sped up.",
         lane: "efficiency",
         perRank: 0.005,
         unit: "percent",
@@ -10383,18 +10415,18 @@ SOFTWARE.
       "House essence": "家园精华",
     },
     version: {
-      version: "1.0.4663",
+      version: "1.0.4739",
       env: "live",
-      commit: "cf4f48c18",
+      commit: "41f7abccd",
       branch: "HEAD",
       subject:
-        "A skilling boss feed leaves a locked stack alone, as crafting and alchemy do (live, 7 Nov)",
-      committedAt: "2026-11-07T05:54:22+01:00",
+        "Light theme: the chosen chat tab keeps its brass, so you can see which room you are in (bug report, 8 Nov)",
+      committedAt: "2026-11-08T18:11:47+01:00",
       dirty: false,
-      builtAt: "2026-11-07T05:06:28.101Z",
+      builtAt: "2026-11-08T17:23:12.730Z",
     },
-    clientAsset: "index-B_r662-8.js",
-    sourceSha256: "af65c9192a206e496749bde21a1693b4f97bc7da451ca33abdee4a158c7aa273",
+    clientAsset: "index-B2g2JEXj.js",
+    sourceSha256: "cb67b9c88201f9768b3ec90ffdbeb0ccf7d33b897649c019f13b95c6f0785dc5",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [60, 80, 85, 90, 160, 161, 162, 190, 328, 700],
     commonOnlyJobs: [421],
@@ -16596,7 +16628,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.139";
+  const PLUGIN_VERSION = "0.4.140";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -18260,6 +18292,7 @@ SOFTWARE.
       "masteries",
       "masteryPage",
       "masteryOther",
+      "masteryAway",
       "masterySkills",
       "masterySwitchTick",
       "masteryPending",
@@ -29937,8 +29970,8 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
 
   // ---- Boss XP facts ----
   const BOSS_XP_FACTS = {
-    version: "1.0.4663",
-    sourceSha256: "af65c9192a206e496749bde21a1693b4f97bc7da451ca33abdee4a158c7aa273",
+    version: "1.0.4739",
+    sourceSha256: "cb67b9c88201f9768b3ec90ffdbeb0ccf7d33b897649c019f13b95c6f0785dc5",
     profiles: [
       [1, 1, 2, 5, false, 0],
       [2, 2, 3, 5, false, 0],
@@ -31507,13 +31540,17 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   }
   function nativeMasteryKey(p) {
     return !p ||
-      (p.masteryPage === undefined && p.masteryOther === undefined && p.masterySkills === undefined)
+      (p.masteryPage === undefined &&
+        p.masteryOther === undefined &&
+        p.masteryAway === undefined &&
+        p.masterySkills === undefined)
       ? ""
       : ":mx:" +
           JSON.stringify([
             p.masteryPage,
             p.masteries,
             p.masteryOther,
+            p.masteryAway,
             p.masterySkills,
             p.masterySwitchTick,
             p.masteryPending,
@@ -31575,6 +31612,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         p.masteries,
         p.masteryPage,
         p.masteryOther,
+        p.masteryAway,
         p.masterySkills,
         p.masterySwitchTick,
         p.masteryPending,
@@ -31592,6 +31630,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         old.masteries,
         old.masteryPage,
         old.masteryOther,
+        old.masteryAway,
         old.masterySkills,
         old.masterySwitchTick,
         old.masteryPending,
