@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.140
+// @version      0.4.141
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -6413,6 +6413,17 @@ SOFTWARE.
       世界首领出场特效: "World boss announcement effects",
       "替换原生出场提示；关闭后保留原生提示。":
         "Replace the native spawn toast; turn off to retain the native toast.",
+      升至50级: "All to level 50",
+      缺价: "Missing prices",
+      数据不足: "Insufficient data",
+      摆件: "Decorations",
+      未解锁: "Locked",
+      未拥有: "Not owned",
+      玩家手册: "Player manual",
+      "玩家手册 · 中文社区": "Player manual · Chinese community",
+      玩家手册入口: "Player manual shortcut",
+      "导航栏中的中文社区玩家手册链接。":
+        "Chinese community player manual link in the navigation bar.",
       战斗模拟器入口: "Combat simulator shortcut",
       "导航栏中Alice战斗模拟器的链接。": "Link to Alice's combat simulator in the navigation bar.",
       "更改立即生效，并保存在当前浏览器。":
@@ -16628,7 +16639,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.140";
+  const PLUGIN_VERSION = "0.4.141";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -16801,6 +16812,12 @@ SOFTWARE.
         group: "物品与行情",
         name: "公会捐献性价比",
         description: "显示当前报价中每点成本较低的捐献物品。",
+      },
+      {
+        id: "playerManual",
+        group: "其他",
+        name: "玩家手册入口",
+        description: "导航栏中的中文社区玩家手册链接。",
       },
       {
         id: "simulator",
@@ -20212,6 +20229,33 @@ html.dvi-insights.m-on .m-top .health [data-health]{display:block!important;posi
       }
       const label = t("Alice战斗模拟器");
       if (link.title !== label) link.title = label;
+      if (link.getAttribute("aria-label") !== label) link.setAttribute("aria-label", label);
+    }
+  }
+
+  /* Chinese community player manual; opened only by a direct user click. */
+  const PLAYER_MANUAL_URL = "https://hcnz1vtv1ot4.feishu.cn/wiki/AeabwWEf7i1su2kZ5yEcnYfnndd";
+  function mountPlayerManualLinks() {
+    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("playerManual"))
+      return;
+    for (const nav of document.querySelectorAll(".nav-strip")) {
+      let link = nav.querySelector("[data-dvi-player-manual]");
+      if (!link) {
+        link = document.createElement("a");
+        link.className = "nav-icon dvi-native-simulator";
+        link.dataset.dviPlayerManual = "";
+        link.dataset.noI18n = "";
+        link.href = PLAYER_MANUAL_URL;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.referrerPolicy = "no-referrer";
+        link.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v15M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Z"/></svg>';
+        nav.insertBefore(link, nav.querySelector(".nav-more-menu"));
+      }
+      const label = t("玩家手册"),
+        hint = t("玩家手册 · 中文社区");
+      if (link.title !== hint) link.title = hint;
       if (link.getAttribute("aria-label") !== label) link.setAttribute("aria-label", label);
     }
   }
@@ -27130,6 +27174,83 @@ html.v4 [data-home-veil] .home-actions button:hover {
   overflow-wrap: anywhere;
   max-width: 100px;
 }
+
+/* Boss trophies and shop decorations retain their native controls and icon nodes. */
+[data-home-veil] .home-trophies {
+  margin-top: 8px;
+}
+[data-home-veil] .home-piece-row {
+  opacity: 1;
+  min-height: 96px;
+}
+[data-home-veil] .home-piece-row .home-piece-acts {
+  grid-column: 1/-1;
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: end;
+  padding-top: 7px;
+  border-top: 1px solid var(--edge);
+}
+[data-home-veil] .home-piece-acts > button {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 30px;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--ink);
+  font: 500 12px/1.4 var(--sans, system-ui, sans-serif);
+  box-shadow: none;
+  white-space: normal;
+}
+[data-home-veil] .home-piece-row .home-goto-btn {
+  margin-left: 0;
+}
+[data-home-veil] .home-piece-row .home-board-text {
+  display: block;
+  height: auto;
+  overflow: visible;
+}
+[data-home-veil] .home-piece-row .home-board-text > small {
+  display: block;
+  margin-top: 3px;
+}
+[data-home-veil] .home-piece-row .hp-full {
+  display: inline;
+}
+[data-home-veil] .home-piece-row .hp-short {
+  display: none;
+}
+[data-home-veil] .home-trophy-icon {
+  display: grid;
+  place-items: center;
+}
+[data-home-veil] .home-trophy-icon :is(svg, img) {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+}
+@media (max-width: 700px) {
+  [data-home-veil] .home-piece-acts > button {
+    min-height: 36px;
+  }
+}
+
+[data-home-veil] .home-piece-row .home-board-text > * {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+[data-home-veil] .home-piece-row.two-acts .home-board-text small {
+  display: block;
+}
 `;
 
   // ---- src/home-appearance-ui.js ----
@@ -27179,7 +27300,10 @@ html.v4 [data-home-veil] .home-actions button:hover {
         return;
       }
       const target = [...body.querySelectorAll(".home-board-row")].find(
-        (r) => r.querySelector("[data-home-goto]")?.getAttribute("data-home-goto") === id,
+        (r) =>
+          (r.matches?.("[data-home-goto]") ? r : r.querySelector("[data-home-goto]"))?.getAttribute(
+            "data-home-goto",
+          ) === id,
       );
       body.scrollTop =
         target && Number.isFinite(top)
@@ -27246,11 +27370,35 @@ html.v4 [data-home-veil] .home-actions button:hover {
       upgrading: "升级中",
       capped: "已满级",
       unplaced: "未放置",
+      pieces: "摆件",
+      locked: "未解锁",
+      unowned: "未拥有",
     };
     for (const body of bodies) {
       const view = bindHomeNavigation(body);
       const list = body.querySelector(".home-board-list");
       if (!list) continue;
+      const records = [...body.querySelectorAll(".home-board-list .home-board-row")].map((row) => {
+        const id = (
+          row.matches("[data-home-goto]") ? row : row.querySelector("[data-home-goto]")
+        )?.getAttribute("data-home-goto");
+        const station = summary.rows.find((r) => r.id === id),
+          piece = row.classList.contains("home-piece-row");
+        const status =
+          station?.status ||
+          (piece
+            ? row.classList.contains("unbuilt")
+              ? row.classList.contains("home-deco-row")
+                ? "unowned"
+                : "locked"
+              : row.querySelector(
+                    "[data-home-deco-remove],[data-home-trophy-remove],[data-home-relic-remove]",
+                  )
+                ? "placed"
+                : "unplaced"
+            : "other");
+        return { row, record: station, piece, status };
+      });
       let tools = body.querySelector(".dvi-home-tools");
       if (!tools) {
         tools = document.createElement("div");
@@ -27283,14 +27431,18 @@ html.v4 [data-home-veil] .home-actions button:hover {
           label =
             t(labels[key]) +
             " " +
-            summary.rows.filter((r) => key === "all" || r.status === key).length;
+            records.filter(
+              (r) => key === "all" || (key === "pieces" && r.piece) || r.status === key,
+            ).length;
         if (button.textContent !== label) button.textContent = label;
         if (button.getAttribute("aria-pressed") !== pressed)
           button.setAttribute("aria-pressed", pressed);
       }
-      const search = tools.querySelector("input");
-      search.placeholder = t("搜索设施");
-      search.setAttribute("aria-label", t("搜索设施"));
+      const search = tools.querySelector("input"),
+        searchLabel = t("搜索设施");
+      if (search.placeholder !== searchLabel) search.placeholder = searchLabel;
+      if (search.getAttribute("aria-label") !== searchLabel)
+        search.setAttribute("aria-label", searchLabel);
       let meta = body.querySelector(".dvi-home-meta");
       if (!meta) {
         meta = document.createElement("div");
@@ -27311,13 +27463,12 @@ html.v4 [data-home-veil] .home-actions button:hover {
         "</span>";
       if (meta.innerHTML !== info) meta.innerHTML = info;
       let visible = 0;
-      for (const row of list.querySelectorAll(".home-board-row")) {
-        const id = row.querySelector("[data-home-goto]")?.getAttribute("data-home-goto"),
-          record = summary.rows.find((r) => r.id === id);
-        if (!record) continue;
+      for (const { row, record, piece, status } of records) {
         const name = row.querySelector(".home-board-name")?.textContent ?? "";
         const show =
-          (view.filter === "all" || record.status === view.filter) &&
+          (view.filter === "all" ||
+            (view.filter === "pieces" && piece) ||
+            status === view.filter) &&
           (!view.search || name.toLowerCase().includes(view.search.trim().toLowerCase()));
         if (show) {
           visible++;
@@ -27327,7 +27478,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
           row.setAttribute("data-dvi-home-filtered", "");
         let gap = row.querySelector(".dvi-home-gap");
         const text =
-          record.placed && !record.upgrading && record.gap > 0
+          record?.placed && !record.upgrading && record.gap > 0
             ? t("还差 {points} 点", {
                 points: record.gap.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN"),
               })
@@ -27342,15 +27493,25 @@ html.v4 [data-home-veil] .home-actions button:hover {
           if (gap.textContent !== text) gap.textContent = text;
         } else gap?.remove();
       }
+      for (const group of body.querySelectorAll(".home-board-list")) {
+        const hidden = ![...group.querySelectorAll(".home-board-row")].some(
+          (row) => !row.hasAttribute("data-dvi-home-filtered"),
+        );
+        if (hidden && !group.hasAttribute("data-dvi-home-filtered"))
+          group.setAttribute("data-dvi-home-filtered", "");
+        else if (!hidden && group.hasAttribute("data-dvi-home-filtered"))
+          group.removeAttribute("data-dvi-home-filtered");
+      }
       let empty = body.querySelector(".dvi-home-empty");
       if (!visible) {
         if (!empty) {
           empty = document.createElement("p");
           empty.className = "dvi-home-empty";
           empty.dataset.noI18n = "";
-          list.after(empty);
+          body.append(empty);
         }
-        empty.textContent = t("没有符合条件的设施");
+        if (empty.textContent !== t("没有符合条件的设施"))
+          empty.textContent = t("没有符合条件的设施");
       } else empty?.remove();
     }
   }
@@ -27546,7 +27707,59 @@ html.v4 [data-home-veil] .home-actions button:hover {
       }
       return { best, quotes, candidates: () => candidates.map((r) => ({ ...r })) };
     }
-    return { create, quote, families };
+    function upgradeCost(player, rooms, facts, prices) {
+      if (!player?.house || !player.housePoints || !player.houseUpgrades) return null;
+      const need = Object.fromEntries(families.map((f) => [f, 0])),
+        flex = [];
+      for (const room of rooms.filter((r) => !r.retired)) {
+        const level = player.house[room.id] ?? 0,
+          target = Math.min(50, room.maxLevel ?? facts.maxLevel);
+        if (!Number.isSafeInteger(level) || level < 0) return null;
+        let points = 0;
+        for (
+          let n = level + (Number.isFinite(player.houseUpgrades[room.id]) ? 1 : 0);
+          n < target;
+          n++
+        )
+          points += Math.round(facts.firstCost * facts.costFactor ** n);
+        if (room.alsoFeeds?.includes("crop")) flex.push({ family: room.feeds, points });
+        else need[room.feeds] += points;
+      }
+      const cost = (f) => {
+        const p = prices.find((r) => r.family === f)?.best?.perPoint;
+        return Number.isFinite(p) && p > 0 ? p : Infinity;
+      };
+      const balance = Object.fromEntries(
+        families.map((f) => [f, Math.max(0, player.housePoints[f] ?? 0)]),
+      );
+      let total = 0,
+        missing = 0;
+      const buy = (n, price) => {
+        if (n > 0) {
+          if (Number.isFinite(price)) total += n * price;
+          else missing++;
+        }
+      };
+      for (const f of families) {
+        const used = Math.min(balance[f], need[f]);
+        balance[f] -= used;
+        buy(need[f] - used, cost(f));
+      }
+      const groups = flex
+        .map((r) => {
+          const used = Math.min(balance[r.family], r.points);
+          balance[r.family] -= used;
+          return { ...r, points: r.points - used, price: Math.min(cost(r.family), cost("crop")) };
+        })
+        .sort((a, b) => b.price - a.price);
+      for (const r of groups) {
+        const used = Math.min(balance.crop, r.points);
+        balance.crop -= used;
+        buy(r.points - used, r.price);
+      }
+      return { total, missing };
+    }
+    return { create, quote, families, upgradeCost };
   });
 
   // ---- Home material conversion facts ----
@@ -27829,7 +28042,7 @@ html.v4 [data-home-veil] .home-actions button:hover {
   background: transparent;
   color: var(--ink);
 }
-[data-home-veil] .dvi-home-materials > h3 {
+[data-home-veil] .dvi-home-material-content > h3 {
   margin: 0 0 6px;
   font: 600 13px/1.4 var(--sans, system-ui, sans-serif);
   color: var(--ink);
@@ -27922,7 +28135,77 @@ html.v4 [data-home-veil] .home-actions button:hover {
     font-size: 12px;
   }
 }
+.dvi-home-upgrade-cost {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--brass);
+}
+[data-home-veil] .dvi-home-upgrade-cost > button {
+  width: auto;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 9px;
+  font: 500 12px/1.4 var(--sans, system-ui, sans-serif);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--panel-raised);
+  color: var(--ink);
+  box-shadow: none;
+}
 `;
+  function homeUpgradeSignature() {
+    const p = store.state.player;
+    return JSON.stringify([
+      p?.id,
+      p?.house,
+      p?.housePoints,
+      p?.houseUpgrades,
+      store.state.quoteRevision,
+      store.state.publicQuoteSnapshot?.generatedAt,
+    ]);
+  }
+  function mountHomeUpgradeCalculator(panel) {
+    const line = document.createElement("div");
+    line.className = "dvi-home-upgrade-cost";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = t("升至50级");
+    const output = document.createElement("span");
+    output.setAttribute("role", "status");
+    button.addEventListener("click", () => {
+      const p = store.state.player,
+        prices = p?.ironman
+          ? []
+          : homeMaterialModel.best(
+              store.state.books,
+              Date.now(),
+              insightFeatureEnabled("publicPrices") ? store.state.publicQuoteSnapshot : null,
+              store.state.orders,
+            );
+      panel.dataset.upgradeCostSignature = homeUpgradeSignature();
+      const result = globalThis.DVIHomeMaterials.upgradeCost(
+        p,
+        GAME_DATA.rooms,
+        HOME_MATERIAL_FACTS,
+        prices,
+      );
+      output.textContent = result
+        ? (result.missing ? "≥ " : "≈ ") +
+          result.total.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
+            maximumFractionDigits: 0,
+          }) +
+          " " +
+          t("金币") +
+          (result.missing ? " · " + t("缺价") : "")
+        : t("数据不足");
+    });
+    line.append(button, output);
+    panel.append(line);
+  }
   function resetHomeMaterialPrices() {
     document.querySelectorAll(".dvi-home-materials").forEach((n) => n.remove());
     homeMaterialStyle.remove();
@@ -28023,7 +28306,23 @@ html.v4 [data-home-veil] .home-actions button:hover {
         if (anchor) anchor.insertAdjacentElement("afterend", panel);
         else body.prepend(panel);
       }
-      if (panel.innerHTML !== html) panel.innerHTML = html;
+      let content = panel.querySelector(".dvi-home-material-content");
+      if (!content) {
+        content = document.createElement("div");
+        content.className = "dvi-home-material-content";
+        panel.append(content);
+        mountHomeUpgradeCalculator(panel);
+      }
+      if (content.innerHTML !== html) content.innerHTML = html;
+      if (
+        panel.dataset.upgradeCostSignature &&
+        panel.dataset.upgradeCostSignature !== homeUpgradeSignature()
+      ) {
+        panel.querySelector(".dvi-home-upgrade-cost span").textContent = "";
+        delete panel.dataset.upgradeCostSignature;
+      }
+      const button = panel.querySelector(".dvi-home-upgrade-cost button");
+      if (button.textContent !== t("升至50级")) button.textContent = t("升至50级");
     }
   }
 
@@ -30842,6 +31141,8 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       saveHomeTracker();
     }
     if (id === "bossAlerts" && !on) bossAnnouncement.dispose();
+    if (id === "playerManual" && !on)
+      document.querySelectorAll("[data-dvi-player-manual]").forEach((n) => n.remove());
     if (id === "simulator" && !on)
       document.querySelectorAll("[data-dvi-simulator]").forEach((n) => n.remove());
     if (id === "publicPrices") {
@@ -32127,6 +32428,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     mountAppearance();
     syncBossAnnouncement();
     mountSimulatorLinks();
+    mountPlayerManualLinks();
     syncBuffs();
     syncHomeTimers();
     syncHomeBoard();
