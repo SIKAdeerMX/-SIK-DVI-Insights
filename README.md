@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.141
+# [SIK] DVI Insights 0.4.142
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.142：家园每栋建筑卡片支持填写目标等级、手动估算点数补购金币，移除全家园总额按钮；不扣仓库材料，保留已有点数及已付款升级扣除。修复点击“购买点数”后卡片跳动，展开收起保留位置及本次填写的目标。
 
 0.4.141：家园新增手动“升至50级”材料补购金币估算，扣除已有点数、共用点数及已付款升级，支持作物替代，不含等待加速费。补齐家园战利品与首领商店摆件的卡片、按钮和手机布局，修复设施筛选与空提示，摆件支持搜索及状态筛选；右侧导航新增书本图标，可打开中文社区玩家手册，并可独立关闭。
 
@@ -95,6 +97,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.142: Set a target level on each home station card and calculate its point purchase estimate individually. Warehouse materials are excluded; converted point balances and paid upgrades are deducted. Opening or closing Buy points preserves the selected card position and calculator input.
 
 0.4.141: Add a manual estimate of material purchase value for all home stations to level 50, deducting shared balances and paid upgrades, with crop substitution and no speed-up fees. Adapt home trophies and boss-shop decorations, repair home filtering and empty states, and add a compact book shortcut to the Chinese community player manual.
 

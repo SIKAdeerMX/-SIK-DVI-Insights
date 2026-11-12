@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.141
+// @version      0.4.142
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -6413,7 +6413,8 @@ SOFTWARE.
       世界首领出场特效: "World boss announcement effects",
       "替换原生出场提示；关闭后保留原生提示。":
         "Replace the native spawn toast; turn off to retain the native toast.",
-      升至50级: "All to level 50",
+      目标等级: "Target level",
+      "升至{level}级": "To level {level}",
       缺价: "Missing prices",
       数据不足: "Insufficient data",
       摆件: "Decorations",
@@ -16639,7 +16640,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.141";
+  const PLUGIN_VERSION = "0.4.142";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -27320,7 +27321,9 @@ html.v4 [data-home-veil] .home-actions button:hover {
         if (!button) return;
         const list = body.querySelector(".home-board-list"),
           row = button.closest(".home-board-row"),
-          id = row?.querySelector("[data-home-goto]")?.getAttribute("data-home-goto"),
+          id = (
+            row?.matches?.("[data-home-goto]") ? row : row?.querySelector("[data-home-goto]")
+          )?.getAttribute("data-home-goto"),
           top = row?.getBoundingClientRect().top,
           scroll = body.scrollTop;
         if (list) view.boardScroll = scroll;
@@ -27707,57 +27710,41 @@ html.v4 [data-home-veil] .home-actions button:hover {
       }
       return { best, quotes, candidates: () => candidates.map((r) => ({ ...r })) };
     }
-    function upgradeCost(player, rooms, facts, prices) {
-      if (!player?.house || !player.housePoints || !player.houseUpgrades) return null;
-      const need = Object.fromEntries(families.map((f) => [f, 0])),
-        flex = [];
-      for (const room of rooms.filter((r) => !r.retired)) {
-        const level = player.house[room.id] ?? 0,
-          target = Math.min(50, room.maxLevel ?? facts.maxLevel);
-        if (!Number.isSafeInteger(level) || level < 0) return null;
-        let points = 0;
-        for (
-          let n = level + (Number.isFinite(player.houseUpgrades[room.id]) ? 1 : 0);
-          n < target;
-          n++
-        )
-          points += Math.round(facts.firstCost * facts.costFactor ** n);
-        if (room.alsoFeeds?.includes("crop")) flex.push({ family: room.feeds, points });
-        else need[room.feeds] += points;
-      }
-      const cost = (f) => {
-        const p = prices.find((r) => r.family === f)?.best?.perPoint;
-        return Number.isFinite(p) && p > 0 ? p : Infinity;
-      };
-      const balance = Object.fromEntries(
-        families.map((f) => [f, Math.max(0, player.housePoints[f] ?? 0)]),
+    function upgradeCost(player, room, facts, prices, target) {
+      if (!player?.house || !player.housePoints || !player.houseUpgrades || !room || room.retired)
+        return null;
+      const level = player.house[room.id] ?? 0,
+        max = Math.min(50, room.maxLevel ?? facts.maxLevel);
+      if (
+        !Number.isSafeInteger(level) ||
+        level < 0 ||
+        !Number.isSafeInteger(target) ||
+        target < 1 ||
+        target > max
+      )
+        return null;
+      let points = 0;
+      for (
+        let n = level + (Number.isFinite(player.houseUpgrades[room.id]) ? 1 : 0);
+        n < target;
+        n++
+      )
+        points += Math.round(facts.firstCost * facts.costFactor ** n);
+      const feeds = [room.feeds, ...(room.alsoFeeds ?? [])];
+      points = Math.max(
+        0,
+        points - feeds.reduce((sum, f) => sum + Math.max(0, player.housePoints[f] ?? 0), 0),
       );
-      let total = 0,
-        missing = 0;
-      const buy = (n, price) => {
-        if (n > 0) {
-          if (Number.isFinite(price)) total += n * price;
-          else missing++;
-        }
+      const price = Math.min(
+        ...feeds
+          .map((f) => prices.find((r) => r.family === f)?.best?.perPoint)
+          .filter((p) => Number.isFinite(p) && p > 0),
+      );
+      return {
+        total: points && Number.isFinite(price) ? points * price : 0,
+        missing: points > 0 && !Number.isFinite(price),
+        points,
       };
-      for (const f of families) {
-        const used = Math.min(balance[f], need[f]);
-        balance[f] -= used;
-        buy(need[f] - used, cost(f));
-      }
-      const groups = flex
-        .map((r) => {
-          const used = Math.min(balance[r.family], r.points);
-          balance[r.family] -= used;
-          return { ...r, points: r.points - used, price: Math.min(cost(r.family), cost("crop")) };
-        })
-        .sort((a, b) => b.price - a.price);
-      for (const r of groups) {
-        const used = Math.min(balance.crop, r.points);
-        balance.crop -= used;
-        buy(r.points - used, r.price);
-      }
-      return { total, missing };
     }
     return { create, quote, families, upgradeCost };
   });
@@ -28131,11 +28118,13 @@ html.v4 [data-home-veil] .home-actions button:hover {
     font-size: 8px;
     margin: 2px 0 0;
   }
-  [data-home-veil] .dvi-home-materials > h3 {
+  [data-home-veil] .dvi-home-material-content > h3 {
     font-size: 12px;
   }
 }
 .dvi-home-upgrade-cost {
+  grid-column: 1/-1;
+  grid-row: 3;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -28143,6 +28132,25 @@ html.v4 [data-home-veil] .home-actions button:hover {
   margin-top: 8px;
   font-size: 12px;
   color: var(--brass);
+}
+[data-home-veil] .dvi-home-upgrade-cost > input {
+  width: 58px;
+  min-width: 0;
+  min-height: 30px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--panel-sunken);
+  color: var(--ink);
+  font: 400 16px/1.4 var(--sans);
+  box-shadow: none;
+}
+[data-home-veil] .dvi-home-upgrade-cost > span {
+  overflow-wrap: anywhere;
+}
+[data-home-veil] .home-board-buy {
+  grid-row: 4;
 }
 [data-home-veil] .dvi-home-upgrade-cost > button {
   width: auto;
@@ -28168,46 +28176,87 @@ html.v4 [data-home-veil] .home-actions button:hover {
       store.state.publicQuoteSnapshot?.generatedAt,
     ]);
   }
-  function mountHomeUpgradeCalculator(panel) {
-    const line = document.createElement("div");
-    line.className = "dvi-home-upgrade-cost";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = t("升至50级");
-    const output = document.createElement("span");
-    output.setAttribute("role", "status");
-    button.addEventListener("click", () => {
-      const p = store.state.player,
-        prices = p?.ironman
-          ? []
-          : homeMaterialModel.best(
-              store.state.books,
-              Date.now(),
-              insightFeatureEnabled("publicPrices") ? store.state.publicQuoteSnapshot : null,
-              store.state.orders,
-            );
-      panel.dataset.upgradeCostSignature = homeUpgradeSignature();
-      const result = globalThis.DVIHomeMaterials.upgradeCost(
-        p,
-        GAME_DATA.rooms,
-        HOME_MATERIAL_FACTS,
-        prices,
-      );
-      output.textContent = result
-        ? (result.missing ? "≥ " : "≈ ") +
-          result.total.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
-            maximumFractionDigits: 0,
-          }) +
-          " " +
-          t("金币") +
-          (result.missing ? " · " + t("缺价") : "")
-        : t("数据不足");
-    });
-    line.append(button, output);
-    panel.append(line);
+  let homeUpgradePlans = { id: null, rooms: new Map() };
+  function syncHomeUpgradeCalculators(body) {
+    const p = store.state.player;
+    if (homeUpgradePlans.id !== p.id) homeUpgradePlans = { id: p.id, rooms: new Map() };
+    const signature = homeUpgradeSignature();
+    for (const card of body.querySelectorAll(".home-board-row[data-home-goto]")) {
+      const room = GAME_DATA.rooms.find((r) => r.id === card.dataset.homeGoto && !r.retired);
+      if (!room) continue;
+      let plan = homeUpgradePlans.rooms.get(room.id);
+      if (!plan) {
+        plan = { target: "50", text: "" };
+        homeUpgradePlans.rooms.set(room.id, plan);
+      }
+      let line = card.querySelector(".dvi-home-upgrade-cost");
+      if (!line) {
+        line = document.createElement("div");
+        line.className = "dvi-home-upgrade-cost";
+        line.dataset.noI18n = "";
+        line.innerHTML =
+          '<input type="number" inputmode="numeric" min="1" step="1"><button type="button"></button><span role="status"></span>';
+        const input = line.querySelector("input"),
+          button = line.querySelector("button");
+        input.max = String(Math.min(50, room.maxLevel ?? HOME_MATERIAL_FACTS.maxLevel));
+        input.value = plan.target;
+        line.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("input", () => {
+          const plan = homeUpgradePlans.rooms.get(room.id);
+          plan.target = input.value;
+          plan.text = "";
+          syncHomeUpgradeCalculators(body);
+        });
+        button.addEventListener("click", () => {
+          if (!input.reportValidity()) return;
+          const p = store.state.player,
+            prices = p?.ironman
+              ? []
+              : homeMaterialModel.best(
+                  store.state.books,
+                  Date.now(),
+                  insightFeatureEnabled("publicPrices") ? store.state.publicQuoteSnapshot : null,
+                  store.state.orders,
+                );
+          const result = globalThis.DVIHomeMaterials.upgradeCost(
+            p,
+            room,
+            HOME_MATERIAL_FACTS,
+            prices,
+            Number(input.value),
+          );
+          const plan = homeUpgradePlans.rooms.get(room.id);
+          plan.signature = homeUpgradeSignature();
+          plan.text = result
+            ? (result.missing ? "≥ " : "≈ ") +
+              result.total.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
+                maximumFractionDigits: 0,
+              }) +
+              " " +
+              t("金币") +
+              (result.missing ? " · " + t("缺价") : "")
+            : t("数据不足");
+          syncHomeUpgradeCalculators(body);
+        });
+        card.append(line);
+      }
+      if (plan.signature && plan.signature !== signature) plan.text = "";
+      const input = line.querySelector("input"),
+        button = line.querySelector("button"),
+        output = line.querySelector("span"),
+        label = t("目标等级"),
+        text = t("升至{level}级", { level: plan.target || "—" });
+      if (document.activeElement !== input && input.value !== plan.target)
+        input.value = plan.target;
+      if (input.getAttribute("aria-label") !== label) input.setAttribute("aria-label", label);
+      if (button.textContent !== text) button.textContent = text;
+      if (output.textContent !== plan.text) output.textContent = plan.text;
+    }
   }
   function resetHomeMaterialPrices() {
-    document.querySelectorAll(".dvi-home-materials").forEach((n) => n.remove());
+    document
+      .querySelectorAll(".dvi-home-materials,.dvi-home-upgrade-cost")
+      .forEach((n) => n.remove());
     homeMaterialStyle.remove();
     homeMaterialCache = null;
   }
@@ -28311,18 +28360,9 @@ html.v4 [data-home-veil] .home-actions button:hover {
         content = document.createElement("div");
         content.className = "dvi-home-material-content";
         panel.append(content);
-        mountHomeUpgradeCalculator(panel);
       }
       if (content.innerHTML !== html) content.innerHTML = html;
-      if (
-        panel.dataset.upgradeCostSignature &&
-        panel.dataset.upgradeCostSignature !== homeUpgradeSignature()
-      ) {
-        panel.querySelector(".dvi-home-upgrade-cost span").textContent = "";
-        delete panel.dataset.upgradeCostSignature;
-      }
-      const button = panel.querySelector(".dvi-home-upgrade-cost button");
-      if (button.textContent !== t("升至50级")) button.textContent = t("升至50级");
+      syncHomeUpgradeCalculators(body);
     }
   }
 
