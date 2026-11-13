@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.142
+# [SIK] DVI Insights 0.4.143
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.143：适配正式服1.0.4810，工作和战斗预估计入按技能指定的装备套装及银行换装绕行；同步105级农田收获档位。只在模拟副本中换装，保留玩家原生操作、设置与记录。
 
 0.4.142：家园每栋建筑卡片支持填写目标等级、手动估算点数补购金币，移除全家园总额按钮；不扣仓库材料，保留已有点数及已付款升级扣除。修复点击“购买点数”后卡片跳动，展开收起保留位置及本次填写的目标。
 
@@ -97,6 +99,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.143: Updated for live 1.0.4810. Work and combat forecasts include assigned gear sets and bank dressing detours, and farming includes the level 105 harvest step. Outfit changes remain local to simulation copies; native controls, settings and records are preserved.
 
 0.4.142: Set a target level on each home station card and calculate its point purchase estimate individually. Warehouse materials are excluded; converted point balances and paid upgrades are deducted. Opening or closing Buy points preserves the selected card position and calculator input.
 
