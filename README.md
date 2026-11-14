@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.145
+# [SIK] DVI Insights 0.4.146
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.146：移除插件重复的玩家手册入口及对应设置，使用官方侧边栏链接。
 
 0.4.145：收紧喝药面板，缩小宽度、行高、按钮与内边距，保留对齐修复。
 
@@ -12,7 +14,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 0.4.142：家园每栋建筑卡片支持填写目标等级、手动估算点数补购金币，移除全家园总额按钮；不扣仓库材料，保留已有点数及已付款升级扣除。修复点击“购买点数”后卡片跳动，展开收起保留位置及本次填写的目标。
 
-0.4.141：家园新增手动“升至50级”材料补购金币估算，扣除已有点数、共用点数及已付款升级，支持作物替代，不含等待加速费。补齐家园战利品与首领商店摆件的卡片、按钮和手机布局，修复设施筛选与空提示，摆件支持搜索及状态筛选；右侧导航新增书本图标，可打开中文社区玩家手册，并可独立关闭。
+0.4.141：家园新增手动“升至50级”材料补购金币估算，扣除已有点数、共用点数及已付款升级，支持作物替代，不含等待加速费。补齐家园战利品与首领商店摆件的卡片、按钮和手机布局，修复设施筛选与空提示，摆件支持搜索及状态筛选。
 
 0.4.140：适配正式服1.0.4739，同步神龛对战斗额外稀有掉落的加成与收益估值；支持新版精通页存储和自动指定页；战斗补给跳过银行锁定食物，背包同款仍可使用。
 
@@ -104,6 +106,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 ## English description
 
+0.4.146: Removed the duplicate player manual shortcut and its setting; use the official sidebar link.
+
 0.4.145: Reduced buff sheet width, row height, control sizes and spacing while retaining the alignment fixes.
 
 0.4.144: Aligned buff timelines, drink buttons, quantity controls and duration columns, with stacked rows on small screens. Adapted gear set controls and per-skill outfit choices. Fixed the missing grid area without a flask and aligned rename, save and skill selectors across themes and screen sizes.
@@ -112,7 +116,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 0.4.142: Set a target level on each home station card and calculate its point purchase estimate individually. Warehouse materials are excluded; converted point balances and paid upgrades are deducted. Opening or closing Buy points preserves the selected card position and calculator input.
 
-0.4.141: Add a manual estimate of material purchase value for all home stations to level 50, deducting shared balances and paid upgrades, with crop substitution and no speed-up fees. Adapt home trophies and boss-shop decorations, repair home filtering and empty states, and add a compact book shortcut to the Chinese community player manual.
+0.4.141: Add a manual estimate of material purchase value for all home stations to level 50, deducting shared balances and paid upgrades, with crop substitution and no speed-up fees. Adapt home trophies and boss-shop decorations, repair home filtering and empty states.
 
 0.4.140: Updated for live 1.0.4739. Combat bonus-drop valuation includes the shrine rare-find bonus; forecasts support the new mastery page storage and skip locked bank food while retaining backpack food.
 

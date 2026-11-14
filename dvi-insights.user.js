@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.145
+// @version      0.4.146
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -6574,11 +6574,6 @@ SOFTWARE.
       摆件: "Decorations",
       未解锁: "Locked",
       未拥有: "Not owned",
-      玩家手册: "Player manual",
-      "玩家手册 · 中文社区": "Player manual · Chinese community",
-      玩家手册入口: "Player manual shortcut",
-      "导航栏中的中文社区玩家手册链接。":
-        "Chinese community player manual link in the navigation bar.",
       战斗模拟器入口: "Combat simulator shortcut",
       "导航栏中Alice战斗模拟器的链接。": "Link to Alice's combat simulator in the navigation bar.",
       "更改立即生效，并保存在当前浏览器。":
@@ -16714,7 +16709,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.145";
+  const PLUGIN_VERSION = "0.4.146";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -16887,12 +16882,6 @@ SOFTWARE.
         group: "物品与行情",
         name: "公会捐献性价比",
         description: "显示当前报价中每点成本较低的捐献物品。",
-      },
-      {
-        id: "playerManual",
-        group: "其他",
-        name: "玩家手册入口",
-        description: "导航栏中的中文社区玩家手册链接。",
       },
       {
         id: "simulator",
@@ -20308,33 +20297,6 @@ html.dvi-insights.m-on .m-top .health [data-health]{display:block!important;posi
       }
       const label = t("Alice战斗模拟器");
       if (link.title !== label) link.title = label;
-      if (link.getAttribute("aria-label") !== label) link.setAttribute("aria-label", label);
-    }
-  }
-
-  /* Chinese community player manual; opened only by a direct user click. */
-  const PLAYER_MANUAL_URL = "https://hcnz1vtv1ot4.feishu.cn/wiki/AeabwWEf7i1su2kZ5yEcnYfnndd";
-  function mountPlayerManualLinks() {
-    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("playerManual"))
-      return;
-    for (const nav of document.querySelectorAll(".nav-strip")) {
-      let link = nav.querySelector("[data-dvi-player-manual]");
-      if (!link) {
-        link = document.createElement("a");
-        link.className = "nav-icon dvi-native-simulator";
-        link.dataset.dviPlayerManual = "";
-        link.dataset.noI18n = "";
-        link.href = PLAYER_MANUAL_URL;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.referrerPolicy = "no-referrer";
-        link.innerHTML =
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v15M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Z"/></svg>';
-        nav.insertBefore(link, nav.querySelector(".nav-more-menu"));
-      }
-      const label = t("玩家手册"),
-        hint = t("玩家手册 · 中文社区");
-      if (link.title !== hint) link.title = hint;
       if (link.getAttribute("aria-label") !== label) link.setAttribute("aria-label", label);
     }
   }
@@ -31368,8 +31330,6 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       saveHomeTracker();
     }
     if (id === "bossAlerts" && !on) bossAnnouncement.dispose();
-    if (id === "playerManual" && !on)
-      document.querySelectorAll("[data-dvi-player-manual]").forEach((n) => n.remove());
     if (id === "simulator" && !on)
       document.querySelectorAll("[data-dvi-simulator]").forEach((n) => n.remove());
     if (id === "publicPrices") {
@@ -32661,7 +32621,6 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     mountAppearance();
     syncBossAnnouncement();
     mountSimulatorLinks();
-    mountPlayerManualLinks();
     syncBuffs();
     syncHomeTimers();
     syncHomeBoard();
