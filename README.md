@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.143
+# [SIK] DVI Insights 0.4.144
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.144：喝药面板统一列对齐和数量控件，窄屏分行。补齐装备套装及按技能换装界面，修复未装备烧瓶时映射区域错位，统一重命名、保存、技能下拉框及触控尺寸。
 
 0.4.143：适配正式服1.0.4810，工作和战斗预估计入按技能指定的装备套装及银行换装绕行；同步105级农田收获档位。只在模拟副本中换装，保留玩家原生操作、设置与记录。
 
@@ -99,6 +101,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.144: Aligned buff timelines, drink buttons, quantity controls and duration columns, with stacked rows on small screens. Adapted gear set controls and per-skill outfit choices. Fixed the missing grid area without a flask and aligned rename, save and skill selectors across themes and screen sizes.
 
 0.4.143: Updated for live 1.0.4810. Work and combat forecasts include assigned gear sets and bank dressing detours, and farming includes the level 105 harvest step. Outfit changes remain local to simulation copies; native controls, settings and records are preserved.
 
