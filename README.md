@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.144
+# [SIK] DVI Insights 0.4.145
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.145：收紧喝药面板，缩小宽度、行高、按钮与内边距，保留对齐修复。
 
 0.4.144：喝药面板统一列对齐和数量控件，窄屏分行。补齐装备套装及按技能换装界面，修复未装备烧瓶时映射区域错位，统一重命名、保存、技能下拉框及触控尺寸。
 
@@ -101,6 +103,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.145: Reduced buff sheet width, row height, control sizes and spacing while retaining the alignment fixes.
 
 0.4.144: Aligned buff timelines, drink buttons, quantity controls and duration columns, with stacked rows on small screens. Adapted gear set controls and per-skill outfit choices. Fixed the missing grid area without a flask and aligned rename, save and skill selectors across themes and screen sizes.
 

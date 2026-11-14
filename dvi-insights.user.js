@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.144
+// @version      0.4.145
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -16714,7 +16714,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.144";
+  const PLUGIN_VERSION = "0.4.145";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -24601,37 +24601,36 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
 @media(max-width:550px){.dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,44%) minmax(0,1fr) 96px;gap:6px}.dvi-insights .buff-sheet .dvi-buff-idle{grid-template-columns:minmax(0,1fr)}.dvi-insights .buff-sheet .dvi-buff-price{font-size:10px}}
 @media(max-width:550px){.dvi-insights .buff-sheet .bt-scale>span:not(:last-child){display:none}.dvi-insights .buff-sheet .bt-scale>span:last-child{left:50%!important;transform:translateX(-50%);font-size:10px}}
 
-.dvi-insights .buff-sheet:has(.bt){width:min(760px,calc(100vw - 16px));box-sizing:border-box;}
-.dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) 108px;gap:12px;min-height:54px;padding:7px 0;border-bottom:1px solid color-mix(in srgb,var(--edge) 28%,transparent);}
-.dvi-insights .buff-sheet .bt-track:not(.bt-pick){margin-right:58px;min-height:26px;align-self:center;}
-.dvi-insights .buff-sheet .bt-scale{margin-right:58px;}
-.dvi-insights .buff-sheet .bt-track .bt-more-drink{right:-58px;min-width:50px;min-height:30px;border-radius:4px;}
-.dvi-insights .buff-sheet .bt-pick{display:flex;flex-wrap:wrap;gap:6px;min-width:0;height:auto;min-height:36px;overflow:visible;}
-.dvi-insights .buff-sheet .bt-pick .bt-pick-qty{gap:4px;}
-.dvi-insights .buff-sheet .bt-pick :is(.bt-pick-qty button,.bt-drink,.bt-pick-name){min-height:30px;height:auto;padding:4px 7px;border:1px solid var(--edge);border-radius:4px;line-height:20px;}
-.dvi-insights .buff-sheet .bt-pick .bt-pick-n{box-sizing:border-box;height:30px;width:3em;font-size:14px;border-radius:3px;}
-.dvi-insights .buff-sheet .bt-name{min-width:0;}
-.dvi-insights .buff-sheet .bt-bless{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:9px;}
+
+.dvi-insights .buff-sheet:has(.bt){width:min(560px,calc(100vw - 16px));box-sizing:border-box;padding:7px 9px;}
+.dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,36%) minmax(0,1fr) 90px;gap:8px;min-height:36px;padding:3px 0;border-bottom:1px solid color-mix(in srgb,var(--edge) 20%,transparent);}
+.dvi-insights .buff-sheet .bt-who{gap:5px;}
+.dvi-insights .buff-sheet .bt-name{min-width:0;gap:1px;}
+.dvi-insights .buff-sheet .bt-track:not(.bt-pick){margin-right:44px;min-height:18px;align-self:center;}
+.dvi-insights .buff-sheet .bt-scale{margin-right:44px;}
+.dvi-insights .buff-sheet .bt-axis{min-height:18px;padding:1px 0 4px;}
+.dvi-insights .buff-sheet .bt-track .bt-more-drink{right:-44px;min-width:38px;min-height:24px;border-radius:3px;}
+.dvi-insights .buff-sheet .bt-pick{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;height:auto;min-height:26px;padding:0;overflow:visible;box-sizing:border-box;}
+.dvi-insights .buff-sheet .bt-pick .bt-pick-qty{gap:2px;margin-left:auto;}
+.dvi-insights .buff-sheet .bt-pick :is(.bt-pick-qty button,.bt-drink,.bt-pick-name){min-height:24px;height:24px;padding:2px 5px;border:1px solid var(--edge);border-radius:3px;font-size:12px;line-height:18px;}
+.dvi-insights .buff-sheet .bt-pick .bt-pick-n{box-sizing:border-box;height:24px;width:2.5em;font-size:12px;border-radius:3px;}
+.dvi-insights .buff-sheet .bt-pick .bt-drink{flex:0 0 auto;min-width:38px;margin:0;}
+.dvi-insights .buff-sheet .bt-bless{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:6px;padding:6px 7px;margin-bottom:6px;}
+.dvi-insights .buff-sheet .bt-sec{padding:6px 0 3px;margin-top:4px;}
+.dvi-insights .buff-sheet .bt-remind{margin-bottom:4px;}
 @media(max-width:550px){
- .dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,1fr) 100px;gap:5px 8px;padding:9px 0;}
+ .dvi-insights .buff-sheet .bt-row{grid-template-columns:minmax(0,1fr) 90px;gap:3px 6px;padding:4px 0;}
  .dvi-insights .buff-sheet .bt-row>.bt-track{grid-column:1/-1;grid-row:2;}
  .dvi-insights .buff-sheet .bt-row>.bt-left{grid-column:2;grid-row:1;}
- .dvi-insights .buff-sheet .bt-axis{min-height:22px;padding:2px 0;}
+ .dvi-insights .buff-sheet .bt-axis{min-height:18px;padding:0;}
  .dvi-insights .buff-sheet .bt-axis>:not(.bt-scale){display:none;}
  .dvi-insights .buff-sheet .bt-scale{grid-column:1/-1;}
  .dvi-insights .buff-sheet .bt-scale>span{display:block!important;}
  .dvi-insights .buff-sheet .bt-scale>span:last-child{left:100%!important;transform:translateX(-100%);}
- .dvi-insights .buff-sheet .bt-pick{justify-content:flex-start;}
  .dvi-insights .buff-sheet .bt-pick .bt-pick-qty{margin-left:0;}
- .dvi-insights .buff-sheet .bt-pick .bt-drink{margin-left:auto;flex:0 0 auto;}
+ .dvi-insights .buff-sheet .bt-pick .bt-drink{margin-left:auto;}
  .dvi-insights .buff-sheet .bt-bless-left{font-size:12px;}
 }
-
-.dvi-insights .buff-sheet .bt-pick{display:grid;grid-template-columns:minmax(0,1fr) 50px;padding-right:120px;box-sizing:border-box;}
-.dvi-insights .buff-sheet .bt-pick-name{justify-self:start;}
-.dvi-insights .buff-sheet .bt-pick .bt-pick-qty{grid-column:1;flex-wrap:wrap;margin:0;}
-.dvi-insights .buff-sheet .bt-pick .bt-drink{grid-column:2;grid-row:1/3;align-self:center;margin:0;}
-@media(max-width:550px){.dvi-insights .buff-sheet .bt-pick{padding-right:0;}}
 `;
   let insightWorker = null,
     insightSequence = 0,
