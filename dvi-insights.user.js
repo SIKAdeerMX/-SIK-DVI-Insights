@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.146
+// @version      0.4.148
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -871,7 +871,10 @@ SOFTWARE.
           }
         }
         const locked = (p, j, id) =>
-          c.lockedCraftInputs && j.grow === undefined && p.bankLocked?.includes(id);
+          c.lockedCraftInputs &&
+          j.grow === undefined &&
+          !p.lockedUsable &&
+          p.bankLocked?.includes(id);
         function canWork(p, j, rarity) {
           const ins = inputs(j, rarity);
           if (ins.some((x) => locked(p, j, x.itemId) || held(p, x.itemId) < x.qty)) return false;
@@ -1349,7 +1352,11 @@ SOFTWARE.
             start = p.lastTick,
             target = data.xpTable[options.targetLevel];
           const masteryState = masteryClock(p, ["farming"]);
-          if (c.lockedFarmSeeds && p.bankLocked?.includes(identity(j.inputs[0].itemId, rarity)))
+          if (
+            c.lockedFarmSeeds &&
+            !p.lockedUsable &&
+            p.bankLocked?.includes(identity(j.inputs[0].itemId, rarity))
+          )
             throw new Error("材料已锁定，不能用于这项制作");
           if (level(p.skills.farming) < j.levelReq) throw new Error("当前等级尚未解锁这项种植");
           const end =
@@ -1706,7 +1713,7 @@ SOFTWARE.
           if (!working) advance(p.route.phase === "working" ? 1 : 2, "bankTicks");
           while (p.lastTick < end) {
             const next = upgradeInfo(p);
-            if (next.materials.some((x) => p.bankLocked?.includes(x.itemId)))
+            if (next.materials.some((x) => !p.lockedUsable && p.bankLocked?.includes(x.itemId)))
               throw new Error("材料已锁定，不能用于这项制作");
             const wait = Math.max(1, next.ticks - progress),
               edge = masteryState.edge();
@@ -2175,13 +2182,20 @@ SOFTWARE.
           return p.foodItemId;
         const held = pack.find((x) => x.qty > 0 && foodEligible(model, p, x.itemId));
         if (held) return held.itemId;
-        if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0 && !p.bankLocked?.includes(p.foodItemId))
+        if (
+          p.foodItemId > 0 &&
+          p.bank?.[p.foodItemId] > 0 &&
+          (p.lockedUsable || !p.bankLocked?.includes(p.foodItemId))
+        )
           return p.foodItemId;
         return (
           Object.keys(p.bank || {})
             .map(Number)
             .filter(
-              (id) => p.bank[id] > 0 && !p.bankLocked?.includes(id) && foodEligible(model, p, id),
+              (id) =>
+                p.bank[id] > 0 &&
+                (p.lockedUsable || !p.bankLocked?.includes(id)) &&
+                foodEligible(model, p, id),
             )
             .sort(
               (a, b) =>
@@ -2747,7 +2761,10 @@ SOFTWARE.
         const bankFoods = () => {
           const ids = Object.keys(p.bank)
             .map(Number)
-            .filter((id) => p.bank[id] > 0 && !p.bankLocked?.includes(id) && eligible(id))
+            .filter(
+              (id) =>
+                p.bank[id] > 0 && (p.lockedUsable || !p.bankLocked?.includes(id)) && eligible(id),
+            )
             .sort(
               (a, b) =>
                 (model.item(b).heals - model.item(a).heals) * (p.foodItemId === -2 ? -1 : 1) ||
@@ -2756,7 +2773,7 @@ SOFTWARE.
           if (
             p.foodItemId > 0 &&
             p.bank[p.foodItemId] > 0 &&
-            !p.bankLocked?.includes(p.foodItemId)
+            (p.lockedUsable || !p.bankLocked?.includes(p.foodItemId))
           ) {
             const i = ids.indexOf(p.foodItemId);
             if (i >= 0) ids.splice(i, 1);
@@ -4337,6 +4354,36 @@ SOFTWARE.
         state,
         receive,
         observationPlayer,
+        bootstrap(session) {
+          state.sessionRevision++;
+          state.books = {};
+          restoreHistory();
+          state.inspect = null;
+          state.boss = null;
+          state.offline = null;
+          state.seen = null;
+          state.taxBp = null;
+          state.packTaxRampMs = null;
+          state.marketAway = [];
+          state.settlements = [];
+          combatEvent({ kind: "reset", tick: session?.state?.lastTick });
+          this.refreshSession(session);
+        },
+        refreshSession(session) {
+          const p = session?.state;
+          if (!validPlayer(p)) return;
+          state.player = p;
+          state.orders = Array.isArray(session.orders) ? session.orders : [];
+          state.windows = Array.isArray(session.context?.windows) ? session.context.windows : [];
+          if (session.guildInfo !== undefined) state.guild = guildView(session.guildInfo);
+          state.receivedAt = now();
+          state.revision++;
+          for (const fn of listeners) {
+            try {
+              fn(state);
+            } catch {}
+          }
+        },
         useLivePlayer(reader) {
           readLivePlayer = reader;
           syncLivePlayer();
@@ -4391,70 +4438,79 @@ SOFTWARE.
         },
       };
     }
+    // Read exposed session objects; attach only to the existing connection.
     function install(page, store) {
-      const nativeParse = page.JSON.parse;
       let active = true,
-        socketObserved = false,
-        socketGeneration = 0;
+        session = null,
+        socket = null,
+        listener = null,
+        generation = 0,
+        identity = null,
+        seenText = null;
+      const parse = page.JSON.parse;
       store.useLivePlayer(() => page.deepvein?.session?.state);
-      const parsedThisTurn = new Set();
-      function observedParse(...args) {
-        const result = Reflect.apply(nativeParse, this, args);
+      function scan() {
+        if (!active) return;
+        const next = page.deepvein?.session,
+          target = next?.connection?.socket;
+        if (next !== session || target !== socket) {
+          if (socket && listener) socket.removeEventListener("message", listener);
+          session = next;
+          socket = target;
+          listener = null;
+          identity = null;
+          seenText = null;
+          const ticket = ++generation;
+          if (socket && typeof socket.addEventListener === "function") {
+            listener = (event) => {
+              const text = event.data;
+              if (typeof text !== "string") return;
+              queueMicrotask(() => {
+                if (
+                  !active ||
+                  ticket !== generation ||
+                  session !== page.deepvein?.session ||
+                  socket !== session?.connection?.socket
+                )
+                  return;
+                try {
+                  const frame = parse(text);
+                  if (Number.isSafeInteger(frame?.tick) && Array.isArray(frame.m))
+                    store.receive(frame);
+                  if (frame.m.some((m) => m?.t === "welcome")) {
+                    const live = session?.state;
+                    if (live) identity = String(live.id) + ":" + String(live.name || "");
+                  }
+                } catch {}
+              });
+            };
+            socket.addEventListener("message", listener);
+          }
+        }
+        const live = next?.state;
+        if (!live?.skills || !Number.isSafeInteger(live.lastTick)) return;
+        const key = String(live.id) + ":" + String(live.name || "");
+        if (key !== identity) {
+          identity = key;
+          store.bootstrap(next);
+        } else store.refreshSession(next);
         try {
-          if (active && typeof args[0] === "string") {
-            const frame = Array.isArray(result?.m) && Number.isSafeInteger(result.tick);
-            // Once the real socket is observed, unrelated listeners parsing the
-            // same text are not another receipt. Keep the parser only as fallback
-            // and for the game's local last-seen record used in away accounting.
-            if (!frame) store.receive(result);
-            else if (!socketObserved && !parsedThisTurn.has(args[0])) {
-              parsedThisTurn.add(args[0]);
-              queueMicrotask(() => parsedThisTurn.clear());
-              store.receive(result);
-            }
+          const text = page.localStorage?.getItem("deepvein-seen");
+          if (text && text !== seenText && text.length < 3000000) {
+            seenText = text;
+            const seen = parse(text);
+            if (seen?.id === live.id && seen.tick < live.lastTick) store.receive(seen);
           }
         } catch {}
-        return result;
       }
-      page.JSON.parse = observedParse;
-      // One receipt per native socket event, after all synchronous listeners.
-      // Never reuse another script's JSON copy as the live character. The game
-      // exposes session.state for read-only observation; no session method runs.
-      const NativeSocket = page.WebSocket;
-      const Socket =
-        typeof NativeSocket === "function"
-          ? new Proxy(NativeSocket, {
-              construct(target, args, newTarget) {
-                const socket = Reflect.construct(target, args, newTarget);
-                if (page.location) {
-                  try {
-                    const url = new URL(String(args[0]), page.location.href);
-                    if (url.host !== page.location.host || url.pathname !== "/ws") return socket;
-                  } catch {
-                    return socket;
-                  }
-                }
-                socketObserved = true;
-                const generation = ++socketGeneration;
-                socket.addEventListener("message", (event) => {
-                  const raw = event.data;
-                  if (typeof raw !== "string") return;
-                  queueMicrotask(() => {
-                    if (!active || generation !== socketGeneration) return;
-                    try {
-                      store.receive(Reflect.apply(nativeParse, page.JSON, [raw]));
-                    } catch {}
-                  });
-                });
-                return socket;
-              },
-            })
-          : null;
-      if (Socket) page.WebSocket = Socket;
+      scan();
+      const timer = page.setInterval ? page.setInterval(scan, 250) : setInterval(scan, 250);
+      timer?.unref?.();
       return () => {
         active = false;
-        if (page.JSON.parse === observedParse) page.JSON.parse = nativeParse;
-        if (page.WebSocket === Socket) page.WebSocket = NativeSocket;
+        generation++;
+        (page.clearInterval || clearInterval)(timer);
+        if (socket && listener) socket.removeEventListener("message", listener);
       };
     }
     return { createStore, install, historicalPrice };
@@ -4491,13 +4547,20 @@ SOFTWARE.
         return p.foodItemId;
       const held = pack.find((x) => x.qty > 0 && foodEligible(model, p, x.itemId));
       if (held) return held.itemId;
-      if (p.foodItemId > 0 && p.bank?.[p.foodItemId] > 0 && !p.bankLocked?.includes(p.foodItemId))
+      if (
+        p.foodItemId > 0 &&
+        p.bank?.[p.foodItemId] > 0 &&
+        (p.lockedUsable || !p.bankLocked?.includes(p.foodItemId))
+      )
         return p.foodItemId;
       return (
         Object.keys(p.bank || {})
           .map(Number)
           .filter(
-            (id) => p.bank[id] > 0 && !p.bankLocked?.includes(id) && foodEligible(model, p, id),
+            (id) =>
+              p.bank[id] > 0 &&
+              (p.lockedUsable || !p.bankLocked?.includes(id)) &&
+              foodEligible(model, p, id),
           )
           .sort(
             (a, b) =>
@@ -9572,18 +9635,9 @@ SOFTWARE.
       },
     ],
     labels: {},
-    version: {
-      version: "1.0.4810",
-      env: "live",
-      commit: "29ace8700",
-      branch: "HEAD",
-      subject: "Changelog 1.0.1215 dated the day it ships",
-      committedAt: "2026-11-13T11:59:57+01:00",
-      dirty: false,
-      builtAt: "2026-11-13T11:05:38.234Z",
-    },
-    clientAsset: "index-DZ3MmKp3.js",
-    sourceSha256: "56f43340aef74ef474d63a2630f2d8d76456ca328807d0ed32618495aef95721",
+    version: { version: "1.0.4850", env: "live", commit: "2dcf090f1", contentVersion: "1.0.1216" },
+    clientAsset: "index-nQ0Wt3DS.js",
+    sourceSha256: "90381d79ea34ce2d4bf4b148dde5fad10262dedfef748f08e23cdd2d66229e23",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [60, 80, 85, 90, 160, 161, 162, 190, 328, 700],
     commonOnlyJobs: [421],
@@ -9610,7 +9664,7 @@ SOFTWARE.
       288, 289, 290, 291, 292, 294, 295, 296, 297, 700, 761, 762, 1720, 2720, 3720, 4720, 1721,
       2721, 3721, 4721, 1722, 2722, 3722, 4722, 1723, 2723, 3723, 4723, 1724, 2724, 3724, 4724,
       1725, 2725, 3725, 4725, 1726, 2726, 3726, 4726, 1727, 2727, 3727, 4727, 1728, 2728, 3728,
-      4728, 1729, 2729, 3729, 4729,
+      4728, 1729, 2729, 3729, 4729, 780, 781, 782, 783, 784,
     ],
     homePoints: {},
   };
@@ -9976,6 +10030,11 @@ SOFTWARE.
         [15, 753, "Sapper's hood", false, 0],
         [15, 754, "Sapper's coat", false, 0],
         [15, 755, "Sapper's breeches", false, 0],
+        [15, 780, "Furnace Heart chest", true, 0],
+        [15, 781, "Kraken chest", true, 0],
+        [15, 782, "Colony chest", true, 0],
+        [15, 783, "Blight chest", true, 0],
+        [15, 784, "Siege chest", true, 0],
         [15, 280, "Gnawer pup", false, 0],
         [15, 281, "Bogling tadpole", false, 0],
         [15, 282, "Husk grub", false, 0],
@@ -15696,6 +15755,13 @@ SOFTWARE.
       ["Philosopher's Stone", "贤者之石"],
       ["Boss essence", "首领精华"],
       ["House essence", "家园精华"],
+      [727, "枯萎玻璃蒸馏器"],
+      [730, "突袭石磨刀石"],
+      [780, "熔炉之心宝箱"],
+      [781, "海妖宝箱"],
+      [782, "菌群宝箱"],
+      [783, "枯萎之花宝箱"],
+      [784, "围城宝箱"],
     ].map(([k, v]) => [
       typeof k === "number" ? GAME_DATA.items.find((i) => i.id === k).name : k,
       v,
@@ -16709,7 +16775,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.146";
+  const PLUGIN_VERSION = "0.4.148";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -16936,111 +17002,13 @@ SOFTWARE.
       }
       return true;
     }
-    function create(doc, now = Date.now) {
-      const page = doc.defaultView,
-        descriptors = {
-          hidden: Object.getOwnPropertyDescriptor(page.HTMLElement.prototype, "hidden"),
-          textContent: Object.getOwnPropertyDescriptor(page.Node.prototype, "textContent"),
-        };
-      const records = new Map(),
-        stats = { hidden: 0, text: 0 },
-        selector = hiddenSelector + "," + textSelector;
-      let dirty = true,
-        nextScan = 0;
-      function restore(node, record) {
-        for (const [key, installed] of Object.entries(record)) {
-          const current = Object.getOwnPropertyDescriptor(node, key);
-          if (current?.get === installed.get && current?.set === installed.set) delete node[key];
-        }
-        records.delete(node);
-      }
-      function attach(node, key) {
-        if (key === "hidden" && !(node instanceof page.HTMLElement)) return;
-        if (
-          !node.isConnected ||
-          node.matches("button,input,select,textarea,[contenteditable]") ||
-          node.isContentEditable ||
-          node.closest('[contenteditable]:not([contenteditable="false"])')
-        )
-          return;
-        let record = records.get(node);
-        if (
-          record?.[key] ||
-          Object.hasOwn(node, key) ||
-          !descriptors[key]?.get ||
-          !descriptors[key]?.set
-        )
-          return;
-        if (!record) {
-          if (records.size >= 192) return;
-          record = {};
-          records.set(node, record);
-        }
-        const native = descriptors[key],
-          installed = {
-            configurable: true,
-            enumerable: false,
-            get() {
-              return native.get.call(this);
-            },
-            set(value) {
-              // Preserve coercion and hidden="until-found" behavior. A text update
-              // containing an element must still remove it exactly as the native setter does.
-              const comparable =
-                key === "hidden"
-                  ? typeof value === "boolean" &&
-                    (value ? this.getAttribute("hidden") === "" : !this.hasAttribute("hidden"))
-                  : typeof value === "string" &&
-                    !this.firstElementChild &&
-                    (!this.firstChild ||
-                      (this.childNodes.length === 1 && this.firstChild.nodeType === 3));
-              if (comparable && native.get.call(this) === value) {
-                stats[key === "hidden" ? "hidden" : "text"]++;
-                return;
-              }
-              native.set.call(this, value);
-            },
-          };
-        try {
-          Object.defineProperty(node, key, installed);
-          record[key] = installed;
-        } catch {
-          if (!Object.keys(record).length) records.delete(node);
-        }
-      }
+    function create() {
       return {
-        invalidate(changes) {
-          if (dirty) return;
-          for (const change of changes)
-            if (change.type === "childList")
-              for (const node of change.addedNodes)
-                if (
-                  node.nodeType === 1 &&
-                  (node.matches?.(selector) || node.querySelector?.(selector))
-                ) {
-                  dirty = true;
-                  return;
-                }
-        },
-        sync(force = true) {
-          for (const [node, record] of records)
-            if (!node.isConnected || !node.matches(selector)) restore(node, record);
-          const at = now();
-          if (!force && !dirty && at < nextScan) return;
-          dirty = false;
-          nextScan = at + 2000;
-          for (const node of doc.querySelectorAll(selector)) {
-            if (node.matches(hiddenSelector)) attach(node, "hidden");
-            if (node.matches(textSelector)) attach(node, "textContent");
-          }
-        },
-        dispose() {
-          for (const [node, record] of records) restore(node, record);
-          dirty = true;
-          nextScan = 0;
-        },
+        invalidate() {},
+        sync() {},
+        dispose() {},
         report() {
-          return { ...stats, nodes: records.size };
+          return { hidden: 0, text: 0, nodes: 0 };
         },
       };
     }
@@ -18411,7 +18379,7 @@ SOFTWARE.
       "foodKeepFree",
       "foodPerTrip",
     ];
-    keys.push("plotChoice", "bankLocked");
+    keys.push("plotChoice", "bankLocked", "lockedUsable", "spoilsHeld");
     const out = {};
     for (const k of keys) if (p[k] !== undefined) out[k] = p[k];
     return JSON.parse(JSON.stringify(out));
@@ -18727,7 +18695,7 @@ SOFTWARE.
     if (summary.title !== next.title) summary.title = next.title;
     const line = panel.querySelector("[data-combat-brews]"),
       html = combatPotionHtml(potions);
-    if (line.innerHTML !== html) line.innerHTML = html;
+    updateNativeResult(line, html);
   }
 
   function renderCombat(actual) {
@@ -18804,7 +18772,7 @@ SOFTWARE.
         report.ready ? expectedIncomeText(profit) : t("观测中"),
         t("未扣消耗"),
       );
-    if (gross.innerHTML !== grossHtml) gross.innerHTML = grossHtml;
+    updateNativeResult(gross, grossHtml);
     const rows = [
       ["收入", profit.immediate.pricedSubtotal, false],
       ["食物成本", -food.pricedSubtotal, food.total === null || report.unknownFood > 0],
@@ -18823,10 +18791,10 @@ SOFTWARE.
     ${report.unknownFood ? `<p class="dvi-warning">${t("部分食物成本待确认")}</p>` : ""}
     <p class="dvi-note" title="${t("挂售需等待买家")}">${t("商人")} ${report.ready ? profitText(profit, "vendor") : t("观测中")}<br>${t("挂售")} ${report.ready ? profitText(profit, "listing") : t("观测中")}</p>`;
     const details = combatBox.querySelector("[data-combat-details]");
-    if (details.innerHTML !== html) details.innerHTML = html;
+    updateNativeResult(details, html);
     const real = combatBox.querySelector("[data-combat-real]"),
       realHtml = actualIncomeHtml(actual, report.ready ? profit.immediate.total : null);
-    if (real.innerHTML !== realHtml) real.innerHTML = realHtml;
+    updateNativeResult(real, realHtml);
     const foodTime =
       report.foodQty === 0
         ? t("无食物")
@@ -18838,12 +18806,12 @@ SOFTWARE.
       actionXpHtml(report.ready ? fmt(totalXp) + " XP/h" : t("经验观测中")) +
       `<span class="dvi-plan-meta" title="${t("近五分钟遭遇数/小时，含死亡")}"><small>EPH</small> ${report.ready ? fmt(report.encountersPerHour) : "—"}</span>`;
     const line = combatBox.querySelector("[data-combat-sustain]");
-    if (line.innerHTML !== sustain) line.innerHTML = sustain;
+    updateNativeResult(line, sustain);
     const foodLabel = combatBox.querySelector("[data-combat-food]"),
       foodHtml =
         actionItemIcon(report.foodId) +
         `<span>${escape(t("食物 {qty} · {time}", { qty: fmt(report.foodQty), time: foodTime }))}</span>`;
-    if (foodLabel.innerHTML !== foodHtml) foodLabel.innerHTML = foodHtml;
+    updateNativeResult(foodLabel, foodHtml);
     foodLabel.title = report.foodId !== null ? itemName(report.foodId) : t("无可用食物");
     renderActionPotions(combatBox, report.potions);
   }
@@ -18929,9 +18897,9 @@ SOFTWARE.
   function actualIncomeHtml(actual, expectedIncome = null) {
     if (!actual) return "";
     if (actual.order) return activityMetricHtml("每天收入", t("暂不计"), t("代工订单收益暂不估算"));
-    if (!actual.ready) return activityMetricHtml("每天收入", t("观测中"));
     if (store.state.player?.route?.onFull === "drop" && actual.jobId != null)
       return activityMetricHtml("每天收入", t("暂不计"), t("当前设置：丢弃产物"));
+    if (!actual.ready) return activityMetricHtml("每天收入", t("观测中"));
     const ironman = store.state.player?.ironman;
     const v = globalThis.DVIActivity.income(
       globalThis.DVIPlannerCore,
@@ -19094,9 +19062,11 @@ SOFTWARE.
       !discarding && Number.isFinite(profit?.immediateProfit)
         ? String(Math.sign(profit.immediateProfit))
         : "unknown";
-    summary.title = profit
-      ? (entry.result.farming ? t("单田预估") + " · " : "") + profitHint(profit)
-      : errorText(entry.error) || "";
+    summary.title = discarding
+      ? t("当前设置：丢弃产物")
+      : profit
+        ? (entry.result.farming ? t("单田预估") + " · " : "") + profitHint(profit)
+        : errorText(entry.error) || "";
     const gross = currentWorkBox.querySelector("[data-current-gross]"),
       grossHtml = activityMetricHtml(
         "期望日入",
@@ -19107,24 +19077,27 @@ SOFTWARE.
             : entry.error
               ? "—"
               : t("计算中…"),
-        (entry.result?.farming ? t("单田预估") + " · " : "") +
-          t("未扣消耗") +
-          " · " +
-          t("按当前状态模拟未来一小时，再折算24小时；稀有优先会计入高品质材料耗尽后的变化。"),
+        discarding
+          ? t("当前设置：丢弃产物")
+          : (entry.result?.farming ? t("单田预估") + " · " : "") +
+              t("未扣消耗") +
+              " · " +
+              t("按当前状态模拟未来一小时，再折算24小时；稀有优先会计入高品质材料耗尽后的变化。"),
       );
-    if (gross.innerHTML !== grossHtml) gross.innerHTML = grossHtml;
+    updateNativeResult(gross, grossHtml);
     const detail = currentWorkBox.querySelector("[data-current-details]"),
-      html = profit ? nativeProfitHtml(profit, entry.result.hour, entry.options) : "";
-    if (detail.innerHTML !== html) detail.innerHTML = html;
+      html =
+        !discarding && profit ? nativeProfitHtml(profit, entry.result.hour, entry.options) : "";
+    updateNativeResult(detail, html);
     const real = currentWorkBox.querySelector("[data-current-real]"),
       realHtml = actualIncomeHtml(actual, discarding ? null : profit?.immediate.total);
-    if (real.innerHTML !== realHtml) real.innerHTML = realHtml;
+    updateNativeResult(real, realHtml);
     const xp = currentWorkBox.querySelector("[data-current-xp]"),
       xpHtml = actionXpHtml(
         actual.ready ? fmt(actual.xpPerHour) + " XP/h" : t("经验观测中"),
         t("本次观测实际经验除以总时长"),
       );
-    if (xp.innerHTML !== xpHtml) xp.innerHTML = xpHtml;
+    updateNativeResult(xp, xpHtml);
     renderActionPotions(
       currentWorkBox,
       globalThis.DVICombat.activePotions(model, store.state.player),
@@ -19303,7 +19276,7 @@ SOFTWARE.
     );
     const details = box.querySelector("[data-offline-details]"),
       html = rows.map(([name, value]) => `<span>${t(name)}</span><span>${value}</span>`).join("");
-    if (details.innerHTML !== html) details.innerHTML = html;
+    updateNativeResult(details, html);
   }
   function syncParallelEnhancement() {
     const p = store.state.player,
@@ -19637,7 +19610,11 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     sampleHome();
     const p = store.state.player,
       host = document.querySelector(".away-timers");
-    if (p && host) {
+    if (p && host && document.documentElement.classList.contains("m-on")) {
+      host.classList.remove("dvi-home-timers-owned");
+      homeTimerViews.get(host)?.remove();
+    }
+    if (p && host && !document.documentElement.classList.contains("m-on")) {
       // 1.0.3235 retains the outer box, editor frame and inner list by reference.
       const nativeList = host.querySelector(".away-timers-list");
       let list = host;
@@ -23489,7 +23466,7 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
       tip.style.top = y + "px";
     }
     function paint() {
-      if (!active?.element.isConnected && !retargetBuff()) {
+      if (!active?.element.isConnected && !retarget()) {
         hide();
         return;
       }
@@ -23529,17 +23506,24 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
       tip.hidden = true;
       release();
     }
-    function retargetBuff() {
-      if (!active?.buffGlyph || keyboard || !doc.elementFromPoint) return false;
+    function retarget() {
+      if ((!active?.buffGlyph && !active?.metric) || keyboard || !doc.elementFromPoint)
+        return false;
       const hit = doc.elementFromPoint(point.x, point.y),
         el = candidate(hit),
         row = el?.closest("[data-buff-sheet] .bt-row");
-      if (!row || row.querySelector(".buff-glyph")?.innerHTML !== active.buffGlyph) return false;
+      const sameBuff =
+        active.buffGlyph && row?.querySelector(".buff-glyph")?.innerHTML === active.buffGlyph;
+      const sameMetric =
+        active.metric?.isConnected &&
+        el?.matches(".dvi-plan-value") &&
+        el.closest(".dvi-plan-metric") === active.metric;
+      if (!sameBuff && !sameMetric) return false;
       const text = el.getAttribute("title");
       if (!text?.trim()) return false;
-      const buffGlyph = active.buffGlyph;
+      const { buffGlyph, metric } = active;
       release();
-      active = { element: el, text, addedLabel: false, buffGlyph };
+      active = { element: el, text, addedLabel: false, buffGlyph, metric };
       el.setAttribute("title", "");
       const described = el.getAttribute("aria-describedby");
       el.setAttribute("aria-describedby", (described ? described + " " : "") + tip.id);
@@ -23573,7 +23557,10 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
       const buffGlyph = el
         .closest("[data-buff-sheet] .bt-row")
         ?.querySelector(".buff-glyph")?.innerHTML;
-      active = { element: el, text, addedLabel, buffGlyph };
+      const metric = el.matches(".dvi-plan-value")
+        ? el.closest(".dvi-native-work .dvi-plan-metric")
+        : null;
+      active = { element: el, text, addedLabel, buffGlyph, metric };
       keyboard = focused;
       if (addedLabel) el.setAttribute("aria-label", text);
       el.setAttribute("title", "");
@@ -23618,7 +23605,10 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
         (el === dismissed.element ||
           (!!dismissed.buffGlyph &&
             el?.closest("[data-buff-sheet] .bt-row")?.querySelector(".buff-glyph")?.innerHTML ===
-              dismissed.buffGlyph))
+              dismissed.buffGlyph) ||
+          (!!dismissed.metric &&
+            el?.matches(".dvi-plan-value") &&
+            el.closest(".dvi-plan-metric") === dismissed.metric))
       );
     }
     const focus = (e) => {
@@ -23639,6 +23629,7 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
               buffGlyph:
                 active?.buffGlyph ||
                 el.closest("[data-buff-sheet] .bt-row")?.querySelector(".buff-glyph")?.innerHTML,
+              metric: active?.metric || el.closest(".dvi-native-work .dvi-plan-metric"),
               x: point.x,
               y: point.y,
             }
@@ -23659,7 +23650,7 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
     const observer = new win.MutationObserver((changes) => {
       if (!active) return;
       if (!active.element.isConnected) {
-        if (retargetBuff()) {
+        if (retarget()) {
           if (!tip.hidden) paint();
         } else hide();
         return;
@@ -24502,6 +24493,7 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
   const buffGlyphs = new Map();
   const buffStyle = document.createElement("style");
   buffStyle.textContent = `
+.buff[data-buff="all"]:has(>[data-dvi-buff-count])>[data-buff-count] {display:none!important;}
 .dvi-buff-idle {
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;padding:6px;
   border-top:1px solid var(--edge);color:var(--ink-faint);font-size:12px;
@@ -25070,6 +25062,26 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
     const root = document.querySelector("[data-buffs]"),
       sheet = document.querySelector("[data-buff-sheet]"),
       hud = document.querySelector("[data-combat-hud]");
+    if (root) {
+      const badge = root.querySelector("[data-buff-count]");
+      if (badge) {
+        // The game writes its own count every frame. Keep that node and its
+        // writes intact; render the corrected information in our own sibling.
+        let count = badge.parentElement.querySelector("[data-dvi-buff-count]");
+        if (!count) {
+          count = document.createElement("b");
+          count.dataset.dviBuffCount = "";
+          badge.after(count);
+        }
+        const tiles = [...root.querySelectorAll(".buff[data-buff]")].filter(
+          (el) =>
+            el.dataset.buff !== "all" &&
+            !el.dataset.buff.startsWith("goal:") &&
+            !el.classList.contains("buff-pending"),
+        );
+        setNativeText(count, tiles.length ? String(tiles.length) : "");
+      }
+    }
     if ((!sheet || sheet.hidden) && (!hud || hud.hidden)) return;
     const foodQuotes = currentFoodQuotes();
     syncCombatFood(foodQuotes);
@@ -26264,7 +26276,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
       .map((s) => s.getAttribute("src").split("?")[0].split("/").pop())
       .find((s) => /^index-.+\.js$/.test(s));
     const fields =
-      "id,x,y,skills,equipment,hp,eatAt,foodItemId,foodMaxTier,foodKeepFree,foodPerTrip,foeIndex,foeHp,foeTicks,pack,bank,overflow,bankOrder,coins,route,enhance,lastStop,plots,plotChoice,plantPlainest,house,housePoints,houseCells,houseFurniture,houseBuild,houseUpgrades,houseUpgradePaid,queue,quests,questPoints,queueSlots,perks,streak,brews,brewTier,homeBank,stunUntil,tally,collection,collections,masteries,masteryResets,ironman,bankSlotsBought,strideSpeed,stride,unlimitedBank,achievements,activity,path,pathIndex,workSiteId,workJobId,attemptTicks,actionIndex,workRarity,offlineCapTicks,lastTick,rollIndex,guildBonus,lastFoe,held,raidHeld,eventBox,bankLocked,brewBuckets,forgeLog,fallback".split(
+      "id,x,y,skills,equipment,hp,eatAt,foodItemId,foodMaxTier,foodKeepFree,foodPerTrip,foeIndex,foeHp,foeTicks,pack,bank,overflow,bankOrder,coins,route,enhance,lastStop,plots,plotChoice,plantPlainest,house,housePoints,houseCells,houseFurniture,houseBuild,houseUpgrades,houseUpgradePaid,queue,quests,questPoints,queueSlots,perks,streak,brews,brewTier,homeBank,stunUntil,tally,collection,collections,masteries,masteryResets,ironman,bankSlotsBought,strideSpeed,stride,unlimitedBank,achievements,activity,path,pathIndex,workSiteId,workJobId,attemptTicks,actionIndex,workRarity,offlineCapTicks,lastTick,rollIndex,guildBonus,lastFoe,held,raidHeld,eventBox,bankLocked,lockedUsable,spoilsHeld,brewBuckets,forgeLog,fallback".split(
         ",",
       );
     const character = Object.fromEntries(
@@ -29631,7 +29643,9 @@ html[data-theme="light"] .dvi-home-market {
       }
       function available(player, itemId) {
         return (
-          (player.bankLocked?.includes(itemId) ? 0 : player.bank?.[itemId] || 0) +
+          (!player.lockedUsable && player.bankLocked?.includes(itemId)
+            ? 0
+            : player.bank?.[itemId] || 0) +
           (player.pack || []).filter((s) => s.itemId === itemId).reduce((n, s) => n + s.qty, 0)
         );
       }
@@ -30459,7 +30473,7 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
   // ---- Boss XP facts ----
   const BOSS_XP_FACTS = {
     version: "1.0.4739",
-    sourceSha256: "56f43340aef74ef474d63a2630f2d8d76456ca328807d0ed32618495aef95721",
+    sourceSha256: "90381d79ea34ce2d4bf4b148dde5fad10262dedfef748f08e23cdd2d66229e23",
     profiles: [
       [1, 1, 2, 5, false, 0],
       [2, 2, 3, 5, false, 0],
@@ -30596,6 +30610,7 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
     feedXp: 1.05,
     fireBonus: 0.1,
     hypotheticalTick: 1000000,
+    previousSourceSha256: "56f43340aef74ef474d63a2630f2d8d76456ca328807d0ed32618495aef95721",
   };
 
   // ---- src/boss-work.js ----
@@ -31401,7 +31416,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         host.page.append(intro);
         const groups = new Map();
         for (const feature of [
-          ...globalThis.DVIInsightsSettings.features,
+          ...globalThis.DVIInsightsSettings.features.filter((f) => f.id !== "nativeUiEfficiency"),
           {
             id: "potionCost",
             group: "行动与计算",
@@ -32053,7 +32068,12 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         nativeRarity(record.job),
         nativeOnFull(record.job),
         nativeBest(record.job),
-      ) + nativeMasteryKey(store.state.player)
+      ) +
+      nativeMasteryKey(store.state.player) +
+      (store.state.player?.lockedUsable !== undefined
+        ? ":locks:" +
+          JSON.stringify([store.state.player.lockedUsable, store.state.player.bankLocked])
+        : "")
     );
   }
   function visible(element) {

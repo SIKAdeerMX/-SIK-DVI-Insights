@@ -1,8 +1,12 @@
-# [SIK] DVI Insights 0.4.146
+# [SIK] DVI Insights 0.4.148
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.148：修复增益数量来回跳动、收入“暂不计”与收益说明浮窗闪烁。增益数量使用独立信息节点，保留原生控件；工作、战斗和离线信息避免重复重建，动态收入更新延续同一浮窗。包含0.4.147的读取重构和4850适配。
+
+0.4.147：适配1.0.4850及锁定物品使用开关。移除WebSocket、JSON.parse和信息节点访问器覆盖，改读现有状态与连接消息，保留界面增强。修复手机原生回家按钮被隐藏、增益数量包含未激活周目标。接入前缺失的历史事件不补造。
 
 0.4.146：移除插件重复的玩家手册入口及对应设置，使用官方侧边栏链接。
 
@@ -105,6 +109,10 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.148: Fixed the buff count being overwritten each frame and flickering income tooltips, including discarded-output tasks. A separate information node displays the active buff count while native controls remain intact. Work, combat and offline panels retain stable content; changing income continues in the same tooltip. Includes the 0.4.147 reader refactor and 4850 compatibility changes.
+
+0.4.147: Adapted to 1.0.4850 and the locked-item usage setting. Removed WebSocket, JSON.parse and information-node accessor overrides; read existing state and listen to the existing connection instead. Preserved UI enhancements, restored the native mobile home button and excluded inactive weekly goals from the buff count. Unobserved historical events are not reconstructed.
 
 0.4.146: Removed the duplicate player manual shortcut and its setting; use the official sidebar link.
 
