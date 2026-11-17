@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.148
+// @version      0.4.149
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -9236,8 +9236,8 @@ SOFTWARE.
       bankSlotExcludedIds: [
         316, 317, 318, 319, 320, 321, 322, 398, 399, 574, 400, 401, 402, 403, 404, 405, 406, 407,
         408, 409, 410, 710, 717, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292,
-        700, 701, 702, 703, 704, 705, 761, 1701, 2701, 3701, 4701, 1702, 2702, 3702, 4702, 1703,
-        2703, 3703, 4703, 1704, 2704, 3704, 4704, 1705, 2705, 3705, 4705,
+        293, 700, 701, 702, 703, 704, 705, 761, 1701, 2701, 3701, 4701, 1702, 2702, 3702, 4702,
+        1703, 2703, 3703, 4703, 1704, 2704, 3704, 4704, 1705, 2705, 3705, 4705,
       ],
       siteExitGaps: [
         [9135, 9424],
@@ -9635,9 +9635,19 @@ SOFTWARE.
       },
     ],
     labels: {},
-    version: { version: "1.0.4850", env: "live", commit: "2dcf090f1", contentVersion: "1.0.1216" },
-    clientAsset: "index-nQ0Wt3DS.js",
-    sourceSha256: "90381d79ea34ce2d4bf4b148dde5fad10262dedfef748f08e23cdd2d66229e23",
+    version: {
+      version: "1.0.4875",
+      env: "live",
+      commit: "b456fd8ce",
+      branch: "HEAD",
+      subject: "Changelog 1.0.1218 dated 17 Nov (push)",
+      committedAt: "2026-11-17T11:50:27+01:00",
+      dirty: false,
+      builtAt: "2026-11-17T11:16:34.340Z",
+      contentVersion: "1.0.1218",
+    },
+    clientAsset: "index-MHSTgy_9.js",
+    sourceSha256: "1cf86b4edc4449033396fa3bd12cc57864ab94191d60dafbaa033ed10e60a95b",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [60, 80, 85, 90, 160, 161, 162, 190, 328, 700],
     commonOnlyJobs: [421],
@@ -16775,7 +16785,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.148";
+  const PLUGIN_VERSION = "0.4.149";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -30472,8 +30482,8 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
 
   // ---- Boss XP facts ----
   const BOSS_XP_FACTS = {
-    version: "1.0.4739",
-    sourceSha256: "90381d79ea34ce2d4bf4b148dde5fad10262dedfef748f08e23cdd2d66229e23",
+    version: "1.0.4875",
+    sourceSha256: "1cf86b4edc4449033396fa3bd12cc57864ab94191d60dafbaa033ed10e60a95b",
     profiles: [
       [1, 1, 2, 5, false, 0],
       [2, 2, 3, 5, false, 0],
@@ -30610,7 +30620,7 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
     feedXp: 1.05,
     fireBonus: 0.1,
     hypotheticalTick: 1000000,
-    previousSourceSha256: "56f43340aef74ef474d63a2630f2d8d76456ca328807d0ed32618495aef95721",
+    previousSourceSha256: "90381d79ea34ce2d4bf4b148dde5fad10262dedfef748f08e23cdd2d66229e23",
   };
 
   // ---- src/boss-work.js ----
@@ -32215,13 +32225,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       return;
     }
     task.options = nativeOptions(task.record, task.full);
-    task.key =
-      nativeCalculationKey(
-        task.options.jobId,
-        task.options.rarity,
-        task.options.onFull,
-        task.options.best,
-      ) + nativeMasteryKey(task.options.player);
+    task.key = nativeKey(task.record);
     nativeActive = task;
     try {
       clearTimeout(nativeIdleTimer);
