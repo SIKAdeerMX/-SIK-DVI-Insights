@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.149
+// @version      0.4.151
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -9636,18 +9636,18 @@ SOFTWARE.
     ],
     labels: {},
     version: {
-      version: "1.0.4875",
+      version: "1.0.4896",
       env: "live",
-      commit: "b456fd8ce",
+      commit: "b7923b2b7",
       branch: "HEAD",
-      subject: "Changelog 1.0.1218 dated 17 Nov (push)",
-      committedAt: "2026-11-17T11:50:27+01:00",
+      subject: "Changelog 1.0.1219: Quick buy keeps the keyboard away on phones, EN and ZH",
+      committedAt: "2026-11-19T08:16:23+01:00",
       dirty: false,
-      builtAt: "2026-11-17T11:16:34.340Z",
-      contentVersion: "1.0.1218",
+      builtAt: "2026-11-19T07:35:29.824Z",
+      contentVersion: "1.0.1219",
     },
-    clientAsset: "index-MHSTgy_9.js",
-    sourceSha256: "1cf86b4edc4449033396fa3bd12cc57864ab94191d60dafbaa033ed10e60a95b",
+    clientAsset: "index-Contkx99.js",
+    sourceSha256: "f085ea8fb63f5ad6de5c7bde6a4f6e6270cdfff45f5987c5ffe3eb63aa2634c9",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [60, 80, 85, 90, 160, 161, 162, 190, 328, 700],
     commonOnlyJobs: [421],
@@ -16785,7 +16785,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.149";
+  const PLUGIN_VERSION = "0.4.151";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -28619,7 +28619,38 @@ html.v4 [data-home-veil] .home-actions button:hover {
           };
         });
       }
-      return { rows };
+      const byId = new Map(candidates.map((item) => [item.id, item]));
+      const stations = data.rooms
+        .filter((room) => !room.retired)
+        .map((room) => [room.feeds, ...(room.alsoFeeds ?? [])]);
+      function listingPrice(id, books, now, snapshot, orders) {
+        const item = byId.get(id);
+        if (!item) return undefined;
+        const offers = pointModel
+          .best(books, now, snapshot, orders)
+          .map((row) => row.best)
+          .filter((offer) => offer && ["client", "public"].includes(offer.source));
+        const limits = stations
+          .filter((feeds) => feeds.includes(item.family))
+          .map((feeds) =>
+            Math.min(
+              ...offers
+                .filter((offer) => feeds.includes(offer.family))
+                .map((offer) => Math.floor((offer.price * item.each) / offer.each)),
+            ),
+          )
+          .filter(Number.isFinite);
+        if (!limits.length) return null;
+        const limit = Math.min(1e10, Math.max(...limits));
+        if (!Number.isSafeInteger(limit) || limit < 1) return null;
+        const magnitude = 10 ** (String(limit).length - 1),
+          step =
+            limit < 100
+              ? 1
+              : (magnitude / 100) * (limit < 2 * magnitude ? 2 : limit < 5 * magnitude ? 5 : 10);
+        return Math.floor(limit / step) * step;
+      }
+      return { rows, listingPrice };
     }
     return { create };
   });
@@ -28896,6 +28927,51 @@ html.v4 [data-home-veil] .home-actions button:hover {
   const homeMarketIconIndex = new Map(HOME_MARKET_ART.ids.map((id, index) => [id, index]));
   const homeMarketStyle = document.createElement("style");
   homeMarketStyle.textContent = `
+.dvi-home-unit-price {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 3px 7px;
+  border: 1px solid #856a38;
+  border-inline-start: 3px solid #e0b04a;
+  border-radius: 3px;
+  background: #322a1c;
+  color: #f1dca9;
+  font: 600 12px/1.25 var(--sans, system-ui, sans-serif);
+  text-align: start;
+  text-shadow: none;
+  pointer-events: none;
+}
+html[data-theme="light"] .dvi-home-unit-price {
+  border-color: #b59859;
+  border-inline-start-color: #916515;
+  background: #fff2cc;
+  color: #523c16;
+}
+.dvi-home-unit-price strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font: 700 14px/1.15 var(--sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+.dvi-home-unit-price img {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+}
+.dvi-home-unit-price img[hidden] {
+  display: none;
+}
+.dvi-home-unit-price em {
+  font: 400 11px/1.2 var(--sans, system-ui, sans-serif);
+}
 .dvi-home-market {
   --panel: #27231f;
   --panel-raised: #322d26;
@@ -29376,6 +29452,7 @@ html[data-theme="light"] .dvi-home-market {
     homeMarketView = null;
     homeMarketStyle.remove();
     homeMarketCache = null;
+    document.querySelectorAll(".dvi-home-unit-price").forEach((node) => node.remove());
   }
   function mountHomeMarket() {
     if (homeMarketView) return;
@@ -29613,6 +29690,60 @@ html[data-theme="light"] .dvi-home-market {
       view.html = html;
     }
   }
+  function syncHomeListingPrice() {
+    const market = document.querySelector("[data-market-veil]:not([hidden]) [data-market-window]"),
+      sheet = market?.querySelector("[data-market-sheet]:not([hidden])");
+    if (!sheet) return;
+    const item = Number(sheet.querySelector("[data-sheet-icon]")?.dataset.item),
+      state = store.state;
+    const price = homeMarketModel.listingPrice(
+      item,
+      state.books,
+      Date.now(),
+      insightFeatureEnabled("publicPrices") ? state.publicQuoteSnapshot : null,
+      state.orders,
+    );
+    for (const anchor of [
+      sheet.querySelector(".sheet-head") || sheet.querySelector("[data-sheet-sub]"),
+      market.querySelector("[data-market-trade]:not([hidden]) .trade-item"),
+    ]) {
+      if (!anchor) continue;
+      let label = anchor.nextElementSibling?.matches(".dvi-home-unit-price")
+        ? anchor.nextElementSibling
+        : null;
+      if (price === undefined || state.player?.ironman) {
+        label?.remove();
+        continue;
+      }
+      if (!label) {
+        label = document.createElement("small");
+        label.className = "dvi-home-unit-price";
+        label.dataset.noI18n = "";
+        label.setAttribute("role", "group");
+        label.innerHTML =
+          '<span></span><strong><img alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAnElEQVR42mNgGGjAiEtCW0X2PzL/6p3HjEQZANO4f2k6irhj9EysBjGia0bW+O35MQwbvUsuoxjChM1Z354fY/j2/BiDd8llBu+SyyhyW3t0UbzHRCiQrt55zIhuCDJgwmY7PrD39Cv8BmAL1K09ujjlWfBpRtaIbjPeaCwKF2dwNhXDqrFv5UuUWGDEl4iKwsVRNBJMB+SkxGEAAKdsRUtAsWU8AAAAAElFTkSuQmCC"><b></b></strong><em></em>';
+        anchor.after(label);
+      }
+      const english = i18n.language === "en",
+        title = english ? "Home-point estimate" : "家园点数参考价",
+        value = price?.toLocaleString(english ? "en-US" : "zh-CN") ?? "—";
+      const description =
+        title +
+        ": " +
+        (price == null
+          ? english
+            ? "Unavailable"
+            : "暂无参考价"
+          : value + (english ? " gold per item" : " 金币/件"));
+      if (label.getAttribute("aria-label") !== description) {
+        label.setAttribute("aria-label", description);
+        label.firstElementChild.textContent = title;
+        label.querySelector("img").hidden = price == null;
+        label.querySelector("b").textContent = value;
+        label.lastElementChild.textContent = price == null ? "" : english ? "/ea" : "/件";
+      }
+    }
+  }
   function syncHomeMarket() {
     if (!insightFeatureEnabled("homeMarket")) return;
     if (!store.state.player) return;
@@ -29634,6 +29765,7 @@ html[data-theme="light"] .dvi-home-market {
       view.dock.refresh();
     }
     view.dock.refresh();
+    syncHomeListingPrice();
     renderHomeMarket();
   }
 
@@ -30482,8 +30614,8 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
 
   // ---- Boss XP facts ----
   const BOSS_XP_FACTS = {
-    version: "1.0.4875",
-    sourceSha256: "1cf86b4edc4449033396fa3bd12cc57864ab94191d60dafbaa033ed10e60a95b",
+    version: "1.0.4896",
+    sourceSha256: "f085ea8fb63f5ad6de5c7bde6a4f6e6270cdfff45f5987c5ffe3eb63aa2634c9",
     profiles: [
       [1, 1, 2, 5, false, 0],
       [2, 2, 3, 5, false, 0],
@@ -30620,7 +30752,7 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
     feedXp: 1.05,
     fireBonus: 0.1,
     hypotheticalTick: 1000000,
-    previousSourceSha256: "90381d79ea34ce2d4bf4b148dde5fad10262dedfef748f08e23cdd2d66229e23",
+    previousSourceSha256: "1cf86b4edc4449033396fa3bd12cc57864ab94191d60dafbaa033ed10e60a95b",
   };
 
   // ---- src/boss-work.js ----

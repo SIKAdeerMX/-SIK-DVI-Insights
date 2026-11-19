@@ -1,8 +1,12 @@
-# [SIK] DVI Insights 0.4.149
+# [SIK] DVI Insights 0.4.151
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.151：市场物品与买卖弹窗改用独立的家园点数价签，原版金币图表示每件单价。计算方式不变。
+
+0.4.150：适配正式服 1.0.4896。市场买卖页显示家园点数挂牌参考价，按当前品质和设施可接受材料的最低已知点价换算；没有有效卖价时显示「—」。不代填订单，也不是保底收购价。
 
 0.4.149：修复生活经验和收益一直显示“正在估算”的问题，统一工作计算与显示使用的缓存标识，支持锁定物品开关切换。适配1.0.4875/内容1218，宝石包不再占用模拟仓库格；保留148的增益计数和收入浮窗修复。
 
@@ -111,6 +115,10 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.151: A separate home-point estimate badge uses the game's coin artwork for the per-item price on market sheets and trade dialogs. Pricing is unchanged.
+
+0.4.150: Updated for game build 1.0.4896. Eligible market items show a per-unit home-point listing estimate based on fresh known asks, item quality and the materials a station accepts. This is not a bid; no order is filled in or submitted.
 
 0.4.149: Fixed work XP and income remaining on “Estimating” after calculations finished. Calculation and display now share the same cache key, including lock permission. Updated for 1.0.4875/content 1218; gem packs no longer consume simulated bank slots. Includes the 148 buff count and income tooltip fixes.
 
