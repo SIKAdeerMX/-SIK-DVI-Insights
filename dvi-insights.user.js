@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.151
+// @version      0.4.152
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -447,7 +447,10 @@ SOFTWARE.
             toolLuck =
               seedReturn && !(j.skill === "farming" && data.farming?.uncappedWater)
                 ? 0
-                : c.toolLuck[tier(toolId || 0)] || 0;
+                : (c.toolLuck[tier(toolId || 0)] || 0) +
+                  ([698, 572, 575, 711, 718].includes(base(toolId || 0))
+                    ? 1 + c.toolEnhance * Math.floor(toolId / 10000)
+                    : 0);
           const multiplier =
             world(windows, t, "rarityMult") +
             0.25 * brew(p, "hunter", t) +
@@ -9636,18 +9639,18 @@ SOFTWARE.
     ],
     labels: {},
     version: {
-      version: "1.0.4896",
+      version: "1.0.4915",
       env: "live",
-      commit: "b7923b2b7",
+      commit: "9e1aa914c",
       branch: "HEAD",
-      subject: "Changelog 1.0.1219: Quick buy keeps the keyboard away on phones, EN and ZH",
-      committedAt: "2026-11-19T08:16:23+01:00",
+      subject: "Chinese for the farm-over-feed line once, not twice",
+      committedAt: "2026-11-20T09:56:17+01:00",
       dirty: false,
-      builtAt: "2026-11-19T07:35:29.824Z",
-      contentVersion: "1.0.1219",
+      builtAt: "2026-11-20T09:13:11.438Z",
+      contentVersion: "1.0.1221",
     },
-    clientAsset: "index-Contkx99.js",
-    sourceSha256: "f085ea8fb63f5ad6de5c7bde6a4f6e6270cdfff45f5987c5ffe3eb63aa2634c9",
+    clientAsset: "index-szBaIgSm.js",
+    sourceSha256: "7fdb0dbe3a5aa0bda15768e45c55a5f064508b5259e1b6f44c0cb5e271b3272c",
     rocketIds: [701, 702, 703, 704, 705],
     vendorPointExclusions: [60, 80, 85, 90, 160, 161, 162, 190, 328, 700],
     commonOnlyJobs: [421],
@@ -16785,7 +16788,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.151";
+  const PLUGIN_VERSION = "0.4.152";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -18383,6 +18386,7 @@ SOFTWARE.
       "stunUntil",
       "plots",
       "plantPlainest",
+      "plantRarity",
       "foodItemId",
       "foodMaxTier",
       "eatAt",
@@ -18964,7 +18968,10 @@ SOFTWARE.
       currentWorkWorker = null;
       currentWorkEstimate = currentWorkEstimates.get(actual.key) || null;
     }
-    const masterySignature = nativeMasteryKey(store.state.player);
+    const farm = GAME_DATA.jobs.find((job) => job.id === actual.jobId)?.grow !== undefined;
+    const rarity =
+      (farm ? store.state.player.plantRarity : null) ?? store.state.player.workRarity ?? 0;
+    const masterySignature = nativeMasteryKey(store.state.player) + (farm ? ":seed:" + rarity : "");
     if (
       currentWorkEstimate?.key === actual.key &&
       currentWorkEstimate.masterySignature === masterySignature &&
@@ -18977,7 +18984,7 @@ SOFTWARE.
       player: playerCopy(store.state.player),
       windows: JSON.parse(JSON.stringify(store.state.windows)),
       jobId: actual.jobId,
-      rarity: store.state.player.workRarity || 0,
+      rarity,
       best: !!store.state.player.route?.best,
       samples: 8,
       hourOnly: true,
@@ -26286,7 +26293,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
       .map((s) => s.getAttribute("src").split("?")[0].split("/").pop())
       .find((s) => /^index-.+\.js$/.test(s));
     const fields =
-      "id,x,y,skills,equipment,hp,eatAt,foodItemId,foodMaxTier,foodKeepFree,foodPerTrip,foeIndex,foeHp,foeTicks,pack,bank,overflow,bankOrder,coins,route,enhance,lastStop,plots,plotChoice,plantPlainest,house,housePoints,houseCells,houseFurniture,houseBuild,houseUpgrades,houseUpgradePaid,queue,quests,questPoints,queueSlots,perks,streak,brews,brewTier,homeBank,stunUntil,tally,collection,collections,masteries,masteryResets,ironman,bankSlotsBought,strideSpeed,stride,unlimitedBank,achievements,activity,path,pathIndex,workSiteId,workJobId,attemptTicks,actionIndex,workRarity,offlineCapTicks,lastTick,rollIndex,guildBonus,lastFoe,held,raidHeld,eventBox,bankLocked,lockedUsable,spoilsHeld,brewBuckets,forgeLog,fallback".split(
+      "id,x,y,skills,equipment,hp,eatAt,foodItemId,foodMaxTier,foodKeepFree,foodPerTrip,foeIndex,foeHp,foeTicks,pack,bank,overflow,bankOrder,coins,route,enhance,lastStop,plots,plotChoice,plantPlainest,plantRarity,house,housePoints,houseCells,houseFurniture,houseBuild,houseUpgrades,houseUpgradePaid,queue,quests,questPoints,queueSlots,perks,streak,brews,brewTier,homeBank,stunUntil,tally,collection,collections,masteries,masteryResets,ironman,bankSlotsBought,strideSpeed,stride,unlimitedBank,achievements,activity,path,pathIndex,workSiteId,workJobId,attemptTicks,actionIndex,workRarity,offlineCapTicks,lastTick,rollIndex,guildBonus,lastFoe,held,raidHeld,eventBox,bankLocked,lockedUsable,spoilsHeld,brewBuckets,forgeLog,fallback".split(
         ",",
       );
     const character = Object.fromEntries(
@@ -30614,8 +30621,8 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
 
   // ---- Boss XP facts ----
   const BOSS_XP_FACTS = {
-    version: "1.0.4896",
-    sourceSha256: "f085ea8fb63f5ad6de5c7bde6a4f6e6270cdfff45f5987c5ffe3eb63aa2634c9",
+    version: "1.0.4915",
+    sourceSha256: "7fdb0dbe3a5aa0bda15768e45c55a5f064508b5259e1b6f44c0cb5e271b3272c",
     profiles: [
       [1, 1, 2, 5, false, 0],
       [2, 2, 3, 5, false, 0],
@@ -30752,7 +30759,7 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
     feedXp: 1.05,
     fireBonus: 0.1,
     hypotheticalTick: 1000000,
-    previousSourceSha256: "1cf86b4edc4449033396fa3bd12cc57864ab94191d60dafbaa033ed10e60a95b",
+    previousSourceSha256: "f085ea8fb63f5ad6de5c7bde6a4f6e6270cdfff45f5987c5ffe3eb63aa2634c9",
   };
 
   // ---- src/boss-work.js ----
@@ -32155,6 +32162,8 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
 `;
   function nativeRarity(job) {
     if (!job.inputs.length) return 0;
+    if (job.grow !== undefined && Number.isInteger(store.state.player?.plantRarity))
+      return store.state.player.plantRarity;
     if (nativeBest(job)) return 0;
     const selected = document.querySelector(
       '[data-rarity-choices] [data-rarity][aria-pressed="true"]',
