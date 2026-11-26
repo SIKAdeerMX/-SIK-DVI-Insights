@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.157
+# [SIK] DVI Insights 0.4.158
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.158 移除插件旧装备估值分，整理穿戴页的原生地牢装备评分。优化市场「我的物品」价值排序，减少大列表重复估价和重绘。
 
 0.4.157 在支持文件分享的 iPhone 和 iPad 浏览器上直接分享 JSON 快照。分享不可用时提供下载和复制。
 
@@ -85,7 +87,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 游戏「设置」内的 **[SIK] Insights** 专属页管理25个功能开关、药水成本和更新提醒。列表预估与目标升级计算、当前工作与战斗统计、离线收支和行动药水、仓库与市场排序分别控制；关闭后停止对应计算或记录。原生信息面板重复写入优化可单独关闭对照。更改即时生效、保存在当前浏览器，沿用既有配置。
 
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
-- 装备标题栏显示穿戴装备参考估值 / 1,000,000 的评分，展开查看战斗装备、工具和坐骑；查看其他玩家时只显示总分。为排除代强化挂单，强化装备不采用 +N 挂单或历史成交，使用同品质底装价加统一强化100级、已放置书台50级（+50%）、强化精通200阶（+50%）的重做期望成本，从已有+4开始保护，计失败回退、碎片或核心及失败消耗的保护卷轴，不含代强化利润与税费。参考标≈；缺保护报价或旧超限装备仅显示已知下限（≥）。未强化底装仍沿用有效报价、历史、缓存或商人兜底。分数不是原生P50、实际投入、成交价值或战斗力，不含家园；市场和仓库报价保持真实来源。
+- 穿戴页整理原生地牢装备评分的排版，评分数值和详细说明由游戏提供。
 - 保存最近 30 场本人的已收到 Boss 排名和掉落，聊天区独立“掉落日志”按实际品质显示名称、数量和颜色；原生结算缺少个人名次时补充，未收到的排行明确标注。记录仅存本机，不补发查询。手机家园计时只在地图页显示。
 - 公会日志保持原生日志，不再附加统计。成员、日志和公会列表不再铺浅色白底。公会首页在「捐献积分」按钮右侧显示当前挂售价下每分金币最少的捐献物品名称。
 
@@ -125,6 +127,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.158 removes the old equipment value score and aligns the native dungeon gear score in the Worn panel. Value sorting in My items reuses estimates and reduces large-list rendering work.
 
 0.4.157 shares the JSON snapshot as a file in iPhone and iPad browsers that support file sharing. Download and copy are available when file sharing is unavailable.
 
@@ -204,7 +208,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - Open game **Settings → [SIK] Insights** for 25 feature switches, potion costs and update reminders. Separately control list forecasts and target-level calculations, current work/combat statistics, offline accounting, action potion details, and bank/market value sorting. Disabled functions stop their calculations or recording. Native information-panel write deduplication can be switched off for comparison. Changes apply immediately and persist in this browser; existing preferences are retained.
 
 - Active tasks show observed duration and resume matching samples from the last twelve hours across task switches, stops and reloads. Combat expectations separate zone, equipment and food configurations. Unobserved gaps are excluded; offline settlements remain separate and show a daily profit estimate over effective duration, or income only when costs are incomplete.
-- Equipment score is reference worn-gear value divided by 1,000,000, with a folded breakdown of combat gear, tools and mount. Enhanced listings and trades may be service escrow, so the score uses the same-quality base price plus expected rebuilding cost at a shared Enhancing 100 baseline, placed Rune lectern 50 (+50%) and enhance mastery rank 200 (+50%). Protection starts at existing +4; protected failure loses one level and spends one scroll. Includes shards or alternative cores; excludes service profit and tax. References show ≈; missing scroll quotes or legacy levels show only known lower bounds (≥). Base prices retain quote/history/cache/vendor fallbacks. This is not native P50, actual spending, resale value or combat power, and excludes home. Market and bank quotes remain unchanged. Inspecting another player shows only the total.
+- The Worn panel aligns the native dungeon gear score with the other stats. The game provides the score and its tooltip.
 - A separate chat Loot log preserves the latest thirty received personal boss rewards, with exact rarities, quantities and colors. Empty native personal results can be supplemented with received ranks; missing ranks remain unknown. No recovery queries are sent. Mobile Home timers stay on the map tab and hide under dialogs.
 - The guild log stays native and no longer adds statistics. Member, log and guild-list pages no longer use the light paper background. The guild home page shows the best-value donation item immediately to the right of Donate points.
 

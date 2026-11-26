@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.157
+// @version      0.4.158
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5823,356 +5823,6 @@ SOFTWARE.
     return { create, AGE };
   });
 
-  // ---- src/equipment-value.js ----
-  /* Replacement-value score, independent of the native combat level. */
-  (function (root, factory) {
-    if (typeof module === "object" && module.exports) module.exports = factory();
-    else root.DVIEquipmentValue = factory();
-  })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-    // Identical items use one benchmark, independent of the wearer's build.
-    const REFERENCE = Object.freeze({
-      level: 100,
-      mastery: 200,
-      masteryBonus: 0.5,
-      house: 50,
-      houseBonus: 0.5,
-      protectFrom: 4,
-      statistic: "expected-cost",
-    });
-    function expectedFromZero(steps, cost) {
-      const differences = [];
-      let total = 0;
-      for (let k = 0; k < steps.length; k++) {
-        const s = steps[k],
-          rebuild =
-            s.failTo === k
-              ? 0
-              : s.failTo != null
-                ? differences.slice(s.failTo, k).reduce((a, b) => a + b, 0)
-                : s.protected
-                  ? differences[k - 1] || 0
-                  : total;
-        const difference = (cost(s) + (1 - s.chance) * rebuild) / s.chance;
-        if (!Number.isFinite(difference) || difference < 0) return null;
-        differences.push(difference);
-        total += difference;
-      }
-      return total;
-    }
-    function create(data, core) {
-      const base = (id) => (id % 10000) % 1000,
-        families = new Map(),
-        levels = new Map(),
-        ranks = new Map(),
-        recipes = new Map(),
-        cache = new Map();
-      for (const j of data.jobs) {
-        const family = { woodcutting: "wood", mining: "stone", fishing: "fish", farming: "crop" }[
-          j.skill
-        ];
-        if (family && (!j.inputs.length || j.grow !== undefined)) {
-          families.set(j.output.itemId, family);
-          levels.set(j.output.itemId, j.levelReq);
-        }
-        if (j.inputs.length && !recipes.has(j.output.itemId)) recipes.set(j.output.itemId, j);
-      }
-      for (const m of data.combat.monsters) {
-        families.set(m.drop, "hide");
-        if (!levels.has(m.drop)) levels.set(m.drop, m.level);
-      }
-      for (const family of ["wood", "stone", "fish", "crop", "hide"]) {
-        const ids = [...families].filter(([, f]) => f === family).map(([id]) => id),
-          order = [...new Set(ids.map((id) => levels.get(id) || 0))].sort((a, b) => a - b);
-        for (const id of ids) ranks.set(id, order.indexOf(levels.get(id) || 0) + 1);
-      }
-      const craftLevel = new Map();
-      for (const u of data.upgrades || [])
-        u.to.forEach((id, i) => {
-          if (!recipes.has(id))
-            recipes.set(id, {
-              inputs: [{ itemId: u.from[i] ?? u.from[0], qty: 1 }, ...u.extra],
-              output: { qty: 1 },
-            });
-          if (!craftLevel.has(id % 1000)) craftLevel.set(id % 1000, u.levelReq);
-        });
-      for (const j of data.jobs)
-        if (j.output?.itemId != null) craftLevel.set(j.output.itemId % 1000, j.levelReq);
-      function definition(id) {
-        id = base(id);
-        if (data.homePoints) return data.homePoints[id] || null;
-        if (cache.has(id)) return cache.get(id);
-        const counts = new Map();
-        let depth = 0;
-        const visit = (item, n, d) => {
-          item = base(item);
-          if (families.has(item)) {
-            const f = families.get(item);
-            counts.set(f, (counts.get(f) || 0) + n * (ranks.get(item) || 1));
-            return;
-          }
-          if (d > 8) return;
-          const recipe = recipes.get(item);
-          if (recipe) {
-            depth = Math.max(depth, d + 1);
-            for (const x of recipe.inputs) visit(x.itemId, (n * x.qty) / recipe.output.qty, d + 1);
-          }
-        };
-        visit(id, 1, 0);
-        let family = null,
-          largest = 0,
-          total = 0;
-        for (const [f, n] of counts) {
-          total += n;
-          if (n > largest) {
-            family = f;
-            largest = n;
-          }
-        }
-        const result = family ? { family, each: total * Math.min(2, 1 + 0.5 * depth) } : null;
-        cache.set(id, result);
-        return result;
-      }
-      function points(id) {
-        const override = data.homePointOverrides?.[id];
-        if (override) return { family: override.family, qty: override.each };
-        if (data.vendorPointExclusions?.includes(id) || data.rocketIds?.includes(base(id)))
-          return null;
-        const def = definition(id);
-        return def
-          ? { family: def.family, qty: Math.floor(def.each * 3 ** Math.floor((id % 10000) / 1000)) }
-          : null;
-      }
-      // Historical pinned facts remain useful for old-engine regression fixtures.
-      const rules = data.enhancement?.goldByTier
-          ? data.enhancement
-          : {
-              goldByTier: [100, 300, 1000, 3000, 8000, 20000],
-              rarityGold: [1, 3, 8, 20, 50],
-              tierGates: [15, 30, 50, 75, 90],
-              shardsByTier: [3, 3, 3, 3, 3, 3],
-              coreFrom: 5,
-              linearStep: 0.06,
-              baseFloor: 0.2,
-              levelBonus: 0.002,
-            },
-        enhanceBands = rules.goldByTier,
-        rarityMul = rules.rarityGold,
-        enhanceGates = rules.tierGates;
-      function enhanceTier(plain) {
-        const level = craftLevel.get(plain % 1000);
-        let tier = level == null ? 4 : 1;
-        if (level != null) for (const gate of enhanceGates) if (level >= gate) tier++;
-        return tier;
-      }
-      function enhanceRate(plain) {
-        return (
-          (rules.baseGold?.[plain % 1000] ?? enhanceBands[enhanceTier(plain) - 1]) *
-            rarityMul[Math.floor(plain / 1000)] || 0
-        );
-      }
-      const enhancementCache = new Map(),
-        enhanceable = new Set([...data.gear, ...data.tools].map((x) => x.itemId));
-      function enhancement(plain, plus, prices) {
-        if (
-          !enhanceable.has(plain) ||
-          !Number.isInteger(plus) ||
-          plus < 0 ||
-          plus > (data.constants.enhanceMaxPlus || 20)
-        )
-          return null;
-        const tier = enhanceTier(plain),
-          rate = enhanceRate(plain),
-          shard = prices.shard,
-          corePrice = prices.core,
-          scroll = prices.scroll,
-          essence = prices.essence,
-          key = JSON.stringify([tier, rate, plus, shard, corePrice, scroll, essence]);
-        if (enhancementCache.has(key)) return enhancementCache.get(key);
-        const protectFrom = REFERENCE.protectFrom,
-          redesign = rules.redesign;
-        const boost =
-          (1 + rules.levelBonus * (REFERENCE.level - 1)) *
-          (1 + REFERENCE.houseBonus) *
-          (1 + Math.min(rules.masteryBonusCap ?? 0.5, REFERENCE.masteryBonus));
-        const steps = Array.from({ length: plus }, (_, k) => {
-          const shards = rules.shardsByTier[tier - 1] * (k + 1),
-            protectedStep = k >= protectFrom;
-          const baseChance =
-            rules.baseFloor != null
-              ? Math.max(rules.baseFloor, 1 - rules.linearStep * k)
-              : k <= rules.tailAfter
-                ? 1 - rules.linearStep * k
-                : rules.tailBase * rules.tailDecay ** (k - rules.tailAfter);
-          if (!redesign) {
-            const useCore = k >= rules.coreFrom && corePrice != null && corePrice < shards * shard;
-            return {
-              chance: Math.min(1, baseChance * boost),
-              gold: rate * (k + 1),
-              shards: useCore ? 0 : shards,
-              cores: useCore ? 1 : 0,
-              protected: protectedStep,
-            };
-          }
-          const high = k >= redesign.fallFrom,
-            offset = k - redesign.fallFrom;
-          const odds = high
-            ? k >= redesign.fallFlatFrom
-              ? redesign.fallOddsEnd
-              : redesign.fallOddsStart *
-                (redesign.fallOddsEnd / redesign.fallOddsStart) **
-                  (offset / (redesign.fallFlatFrom - redesign.fallFrom))
-            : baseChance;
-          return {
-            chance: Math.min(1, odds * (high ? 1 + (boost - 1) * redesign.boostShareFall : boost)),
-            gold: high
-              ? Math.round(
-                  rate * redesign.fallGoldUnit * (k + 1) * redesign.fallGoldGrowth ** offset,
-                )
-              : rate * (k + 1),
-            shards: high
-              ? Math.max(
-                  shards,
-                  Math.round(
-                    ((redesign.fallShardsRef * rate) / 1e6) * redesign.fallShardsGrowth ** offset,
-                  ),
-                )
-              : shards,
-            essence: high
-              ? Math.round(
-                  ((rate * redesign.goldMultHigh * redesign.essenceShareHigh) / rules.essenceGold) *
-                    redesign.fallEssenceGrowth ** offset,
-                )
-              : 0,
-            cores: 0,
-            protected: protectedStep,
-            failTo: !protectedStep
-              ? 0
-              : high
-                ? Math.max(redesign.fallFrom, k - 1)
-                : k <= redesign.protectKeepUpTo
-                  ? k
-                  : k - 1,
-          };
-        });
-        if (essence == null && steps.some((s) => s.essence > 0)) return null;
-        if (scroll == null && steps.some((s) => s.protected && s.chance < 1)) return null;
-        const bill = (s) =>
-            s.gold +
-            s.shards * shard +
-            s.cores * (corePrice || 0) +
-            (s.essence || 0) * (essence || 0) +
-            (s.protected ? (1 - s.chance) * (scroll || 0) : 0),
-          cost = expectedFromZero(steps, bill);
-        if (cost == null) return null;
-        const totals = {};
-        for (const [kind, fn] of Object.entries({
-          gold: (s) => s.gold,
-          shards: (s) => s.shards,
-          cores: (s) => s.cores,
-          essence: (s) => s.essence || 0,
-          scrolls: (s) => (s.protected ? 1 - s.chance : 0),
-          attempts: () => 1,
-        }))
-          totals[kind] = expectedFromZero(steps, fn);
-        const result = { cost, protectFrom, totals, steps, reference: REFERENCE };
-        if (enhancementCache.size >= 128) enhancementCache.clear();
-        enhancementCache.set(key, result);
-        return result;
-      }
-      function value(player, books, now = Date.now()) {
-        const buy = (id) => {
-          const flow = core.valueFlows({ [id]: 1 }, books, "buy", 0, now, data);
-          return flow.total === null ? null : flow.total;
-        };
-        const quote = (id) => core.valueFlows({ [id]: 1 }, books, "buy", 0, now, data);
-        const material = (id) => {
-          const market = buy(id);
-          if (market !== null) return market;
-          const vendor = data.vendorPrices?.[id % 10000];
-          return vendor > 0 ? vendor : 0;
-        };
-        const prices = {
-          shard: material(208),
-          core: buy(212),
-          scroll: buy(359),
-          essence: rules.essenceItemId ? buy(rules.essenceItemId) : null,
-        };
-        const worn = (id) => {
-          const plus = Math.floor(id / 10000),
-            plain = id % 10000;
-          // Enhanced quotes/history may be service escrow, not an item sale.
-          // This score ignores them; ordinary market displays keep actual quotes.
-          const flow = quote(plain),
-            basePrice = flow.total ?? material(plain),
-            baseSource = flow.total !== null ? flow.details[0]?.source || "quote" : "vendor";
-          if (!plus)
-            return {
-              price: basePrice > 0 ? basePrice : null,
-              estimated: flow.total === null || !!flow.estimated.length,
-              source: baseSource,
-            };
-          const ref = enhancement(plain, plus, prices),
-            missingMaterials = !(prices.shard > 0);
-          if (!ref || missingMaterials) {
-            const minimum =
-              plus <= (rules.redesign?.fallFrom ?? data.constants.enhanceMaxPlus ?? 20)
-                ? (enhanceRate(plain) * plus * (plus + 1)) / 2
-                : 0;
-            return {
-              price: (basePrice || 0) + minimum || null,
-              estimated: true,
-              incomplete: true,
-              source: "enhancement-incomplete",
-              baseSource,
-            };
-          }
-          return {
-            price: (basePrice || 0) + ref.cost,
-            estimated: true,
-            incomplete: !(basePrice > 0),
-            source: "enhancement-reference",
-            baseSource,
-            enhancement: ref,
-          };
-        };
-        const missing = [],
-          equipment = [];
-        let gear = 0;
-        for (const [slot, id] of Object.entries(player.equipment || {})) {
-          if (!Number.isSafeInteger(id) || id <= 0) continue;
-          const item = worn(id),
-            price = item.price;
-          equipment.push({ slot, id, ...item });
-          if (price === null || item.incomplete) missing.push(id);
-          if (price !== null) gear += price;
-        }
-        const parts = [0, 0, 0];
-        for (const e of equipment)
-          parts[
-            e.slot === "mount"
-              ? 2
-              : "weapon shield helmet body legs ring amulet earring".split(" ").includes(e.slot)
-                ? 0
-                : 1
-          ] += e.price || 0;
-        return {
-          score: gear / 1e6,
-          gear,
-          parts,
-          missing: [...new Set(missing)],
-          equipment,
-          estimated: equipment.some((x) => x.estimated),
-          complete: !missing.length,
-        };
-      }
-      return { points, value, enhancement };
-    }
-    function formatScore(n) {
-      return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
-    }
-    return { create, formatScore, REFERENCE, expectedFromZero };
-  });
-
   // ---- src/guild-donate.js ----
   /* Which donation gives the most guild points per coin at prices already on hand. */
   (function (root, factory) {
@@ -6524,7 +6174,6 @@ SOFTWARE.
       最终排行: "Final ranking",
       最后收到的排行: "Last received ranking",
       未收到本场排行: "Ranking not received",
-      装备评分: "Equipment score",
       停用: "Off",
       "穿戴装备、工具和坐骑估值 ÷ 1,000,000；不含家园。":
         "Value of worn gear, tools and mount divided by 1,000,000; excludes home.",
@@ -6898,9 +6547,8 @@ SOFTWARE.
       "悬浮说明和物品菜单中的买卖报价。": "Buy and sell quotes in tooltips and item menus.",
       仓库与市场价值排序: "Bank & market value sorting",
       "按整堆价值排序，显示物品估值。": "Sort by stack value and display estimated prices.",
-      装备估值评分: "Equipment value score",
-      "已穿戴装备、工具、坐骑和查看他人时的评分。":
-        "Value scores for worn gear, tools, mounts and inspected players.",
+      装备评分样式: "Gear score styling",
+      "整理穿戴页上的原生地牢装备评分。": "Aligns the native dungeon gear score in the Worn panel.",
       公开行情补充: "Public price snapshots",
       "每5分钟读取官方快照；关闭后暂停补充，已有报价按原有效期使用。":
         "Read official snapshots every 5 minutes; turning off pauses updates. Existing quotes retain their expiry times.",
@@ -9094,7 +8742,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.157";
+  const PLUGIN_VERSION = "0.4.158";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -9191,8 +8839,8 @@ SOFTWARE.
       {
         id: "equipment",
         group: "物品与行情",
-        name: "装备估值评分",
-        description: "已穿戴装备、工具、坐骑和查看他人时的评分。",
+        name: "装备评分样式",
+        description: "整理穿戴页上的原生地牢装备评分。",
       },
       {
         id: "publicPrices",
@@ -12459,98 +12107,6 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     ".dvi-loot-log{display:none;flex:0 1 auto;height:260px;max-height:70dvh;min-height:0;overflow:auto;padding:4px 12px}.dvi-loot-open .dvi-loot-log{display:block}.dvi-loot-open :is([data-log],[data-compose],[data-dm-people],[data-chat-guest]){display:none!important}.dvi-loot-tab{margin-left:auto;flex-shrink:0}.dvi-loot-log article{padding:7px 0;border-bottom:1px solid var(--edge)}.dvi-loot-log header{font-size:12px;background:none;border:0;padding:0}.dvi-loot-log time{display:block;font-size:10px;color:var(--ink-faint)}.dvi-log-item{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:12px;overflow-wrap:anywhere;color:var(--rarity,var(--ink))}.dvi-log-item>i{display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;width:20px;height:20px}.dvi-log-item :is(svg,img){width:18px;height:18px;image-rendering:pixelated}.dvi-log-item>b{margin-left:auto;font-weight:400;white-space:nowrap}.dvi-boss-final-info{margin:6px 0;color:var(--brass);font-size:12px}";
   (document.head || document.documentElement).append(bossRecordsStyle);
 
-  // ---- src/equipment-value-ui.js ----
-  const equipmentValuer = globalThis.DVIEquipmentValue.create(GAME_DATA, globalThis.DVIPlannerCore);
-  let equipmentValueCache = null;
-  function equipmentScorePrefix(v) {
-    return v.complete ? (v.estimated ? "≈ " : "") : "≥ ";
-  }
-  function syncInspectScores() {
-    const live = store.state.inspect,
-      fmt = globalThis.DVIEquipmentValue.formatScore;
-    for (const gear of document.querySelectorAll(".inspect-gear")) {
-      const who = gear.closest(".ranks-sheet")?.querySelector("b")?.textContent.trim() || "";
-      let note = gear.querySelector("[data-dvi-inspect-score]");
-      if (
-        gear.closest("[hidden]") ||
-        !live?.name ||
-        live.hidden ||
-        (who !== live.name && !who.startsWith(live.name + " ("))
-      ) {
-        note?.remove();
-        continue;
-      }
-      if (!note) {
-        note = document.createElement("p");
-        note.dataset.dviInspectScore = "";
-        note.dataset.noI18n = "";
-        note.style.cssText = "flex:1 0 100%";
-        gear.prepend(note);
-      }
-      const v = equipmentValuer.value(
-        { equipment: live.gear, houseCells: [], house: {} },
-        store.state.books,
-      );
-      const text = t("装备评分") + "\u00a0" + equipmentScorePrefix(v) + fmt(v.score);
-      setNativeText(note, text);
-      note.removeAttribute("title");
-    }
-  }
-  function syncEquipmentValue() {
-    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("equipment")) return;
-    syncInspectScores();
-    const p = store.state.player;
-    if (!p) return;
-    // Enhancement slots also have data-worn; only the native equipment grid is a host.
-    for (const stray of document.querySelectorAll(".dvi-equipment-value"))
-      if (!stray.hasAttribute("data-dvi-score-head")) stray.remove();
-    const active = new Set();
-    for (const worn of document.querySelectorAll(".worn[data-worn]:not([hidden])")) {
-      const mobile = worn.closest("[data-m-worn-home]"),
-        head = mobile?.previousElementSibling || worn.closest(".panel")?.querySelector("h2");
-      if (!head) continue;
-      let box = head.querySelector("[data-dvi-score-head]");
-      if (box?.tagName === "DETAILS") {
-        box.remove();
-        box = null;
-      }
-      if (!box) {
-        box = document.createElement("span");
-        box.className = "dvi-equipment-value";
-        box.dataset.dviScoreHead = "";
-        box.dataset.noI18n = "";
-        const meta = head.querySelector("[data-panel-meta]");
-        if (meta) meta.before(box);
-        else head.append(box);
-      }
-      active.add(box);
-      if (box.hidden) box.hidden = false;
-      const key = JSON.stringify([
-        p.id,
-        p.equipment,
-        p.house,
-        p.houseCells,
-        store.state.quoteRevision,
-        Math.floor(Date.now() / 60000),
-      ]);
-      if (equipmentValueCache?.key !== key)
-        equipmentValueCache = { key, value: equipmentValuer.value(p, store.state.books) };
-      const v = equipmentValueCache.value;
-      const score = globalThis.DVIEquipmentValue.formatScore;
-      setNativeText(box, t("装备评分") + " " + equipmentScorePrefix(v) + score(v.score));
-      box.removeAttribute("title");
-      const meta = head.querySelector("[data-panel-meta]");
-      if (meta && /^(?:combat|战斗等级)\s+\d+$/i.test(meta.textContent.trim()))
-        setNativeText(meta, t("战斗等级 {level}", { level: meta.textContent.match(/\d+/)[0] }));
-    }
-    for (const box of document.querySelectorAll("[data-dvi-score-head]"))
-      if (!active.has(box) && !box.hidden) box.hidden = true;
-  }
-  const equipmentValueStyle = document.createElement("style");
-  equipmentValueStyle.textContent =
-    "[data-dvi-score-head]{display:inline-block;margin-left:auto;margin-right:8px;vertical-align:middle;font-size:11px;font-weight:400;letter-spacing:0;line-height:1.4;white-space:nowrap;color:var(--brass);font-variant-numeric:tabular-nums}[data-dvi-score-head][hidden]{display:none}";
-  (document.head || document.documentElement).append(equipmentValueStyle);
-
   // ---- src/combat-metrics-ui.js ----
   /* Effective damage from received/live client state. No game controls or requests. */
   function createDamageMeter(data) {
@@ -13758,6 +13314,33 @@ html.dvi-insights .enhance-grid .item-tile-cap > span {
   font-weight: 400 !important;
   text-shadow: none !important;
 }
+/* Align the native gear score with accuracy, armour and evasion. */
+html.dvi-insights[data-dvi-feature-equipment="on"] .worn-stats:has(> .worn-gs-box[data-gs]) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: 4px;
+}
+html.dvi-insights[data-dvi-feature-equipment="on"] .worn-stats:has(> .worn-gs-box[data-gs]) > span {
+  min-width: 0;
+  text-align: center;
+  white-space: normal;
+}
+html.dvi-insights[data-dvi-feature-equipment="on"]
+  #app
+  .worn-stats:has(> .worn-gs-box[data-gs])
+  > span
+  > b {
+  font-family: var(--mono, monospace);
+  font-size: var(--fs-sm, 12px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+html.dvi-insights[data-dvi-feature-equipment="on"] .worn-stats > span[data-gs].worn-gs-box {
+  padding-inline-start: 4px;
+  border-inline-start: 1px solid var(--edge);
+  color: var(--ink-muted, var(--ink));
+}
 /* Mobile market: retain scrolling/pinch zoom, avoid smart double-tap/input zoom. */
 @media (pointer: coarse) {
   html.dvi-insights .market-window {
@@ -13804,6 +13387,18 @@ html.dvi-insights .market-window .dvi-market-sort:focus-visible {
   display: none !important;
 }
 .dvi-insights .market-window .dvi-market-value {
+  font-family: var(--dvi-market-value-font-family) !important;
+  font-size: var(--dvi-market-value-font-size) !important;
+  font-style: var(--dvi-market-value-font-style) !important;
+  font-weight: var(--dvi-market-value-font-weight) !important;
+  font-stretch: var(--dvi-market-value-font-stretch) !important;
+  line-height: var(--dvi-market-value-line-height) !important;
+  letter-spacing: var(--dvi-market-value-letter-spacing) !important;
+  font-variant-numeric: var(--dvi-market-value-font-variant-numeric) !important;
+  color: var(--dvi-market-value-color) !important;
+  text-shadow: var(--dvi-market-value-text-shadow) !important;
+  -webkit-text-stroke-width: var(--dvi-market-value--webkit-text-stroke-width) !important;
+  -webkit-text-stroke-color: var(--dvi-market-value--webkit-text-stroke-color) !important;
   position: absolute;
   top: 2px !important;
   left: 2px !important;
@@ -18173,6 +17768,20 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
   const bankViews = new WeakMap();
   const bankSortWindows = new WeakMap();
   const marketValueViews = new WeakMap();
+  const marketValueFontProperties = [
+    "font-family",
+    "font-size",
+    "font-style",
+    "font-weight",
+    "font-stretch",
+    "line-height",
+    "letter-spacing",
+    "font-variant-numeric",
+    "color",
+    "text-shadow",
+    "-webkit-text-stroke-width",
+    "-webkit-text-stroke-color",
+  ];
   const inventoryValueWindows = new WeakSet();
   const fieldHelpState = new WeakMap();
   let valueQuantityProbe = null;
@@ -18239,6 +17848,13 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       if (only && only !== (css === "dvi-bank" ? "inventory" : "marketInventory")) continue;
       for (const grid of document.querySelectorAll(selector)) {
         const view = views.get(grid);
+        if (css === "dvi-market") {
+          if (view) {
+            view.sorted = false;
+            clearMarketValueSorting(grid, view);
+          }
+          continue;
+        }
         if (view) {
           view.sorted = false;
           view.signature = null;
@@ -18478,25 +18094,182 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       }
     }
   }
+  function clearMarketValueSorting(list, view) {
+    if (!view.entries) return;
+    for (const entry of view.entries) {
+      if (entry.slot.style.order !== entry.originalOrder)
+        entry.slot.style.order = entry.originalOrder;
+      if (!entry.item) continue;
+      entry.slot.classList.remove("dvi-market-valued");
+      entry.label?.remove();
+    }
+    list.classList.remove("dvi-market-sorted");
+    view.entries = null;
+    view.estimates = null;
+  }
+  function marketValueEstimates(view, state, now) {
+    const { player, books, taxBp, packTaxRampMs, quoteRevision, sessionRevision } = state;
+    const bank = player.bank || {},
+      ids = Object.keys(bank),
+      tax = packTaxRampMs == null ? taxBp : state;
+    const packTax = globalThis.DVIPlannerCore.marketTaxBp(293, tax, now);
+    const key = [quoteRevision, sessionRevision, taxBp, packTax, player.ironman].join("|");
+    const old = view.estimates;
+    if (
+      old?.key === key &&
+      now >= old.now &&
+      now < old.nextQuoteChange &&
+      ids.length === old.ids.length &&
+      ids.every((id) => bank[id] === old.bank[id])
+    )
+      return old;
+    // Let live bids age out on the same boundary as liquidation pricing.
+    let nextQuoteChange = Infinity;
+    for (const id of ids) {
+      const book = books[id];
+      if (!book || player.ironman) continue;
+      for (const at of [
+        book.bidPublic ? null : (book.bidAt ?? book.at),
+        Array.isArray(book.bids) ? (book.bidDepthAt ?? book.depthAt) : null,
+      ]) {
+        if (Number.isFinite(at) && at + 300000 >= now)
+          nextQuoteChange = Math.min(nextQuoteChange, at > now ? at : at + 300001);
+      }
+    }
+    return (view.estimates = {
+      key,
+      now,
+      nextQuoteChange,
+      ids,
+      bank: { ...bank },
+      tax,
+      groups: null,
+      rows: new Map(),
+    });
+  }
+  function syncMarketValueLabels(list, view, state) {
+    const now = Date.now(),
+      previousEstimates = view.estimates,
+      estimates = marketValueEstimates(view, state, now);
+    const root = document.documentElement;
+    const typography = [
+      root.className,
+      root.getAttribute("style"),
+      root.getAttribute("data-theme"),
+      i18n.language,
+    ].join("|");
+    if (view.typography !== typography) {
+      view.typography = typography;
+      const resolved = getComputedStyle(nativeValueQuantity());
+      // Snapshot native count typography once and share it through the list.
+      const values = marketValueFontProperties.map((property) =>
+        resolved.getPropertyValue(property),
+      );
+      marketValueFontProperties.forEach((property, index) =>
+        list.style.setProperty("--dvi-market-value-" + property, values[index]),
+      );
+    }
+    const children = list.children,
+      previous = view.entries;
+    if (
+      estimates === previousEstimates &&
+      previous?.length === children.length &&
+      previous.every(
+        ({ slot, id, item, label }, index) =>
+          slot === children[index] &&
+          slot.dataset.item === id &&
+          (!item || label.parentElement === slot),
+      )
+    )
+      return;
+
+    const inventory = globalThis.DVIInventory,
+      ironman = state.player.ironman;
+    let rerank = previous?.length !== children.length;
+    const bySlot = new Map(previous?.map((entry) => [entry.slot, entry]));
+    const entries = Array.from(children, (slot, index) => {
+      const old = bySlot.get(slot),
+        id = slot.dataset.item,
+        tile = slot.classList.contains("market-tile");
+      const item = id !== undefined && (tile || slot.classList.contains("market-row"));
+      let value = null;
+      if (item) {
+        const base = Number(id);
+        if (tile) {
+          estimates.groups ??= inventory.groupedValues(
+            estimates.bank,
+            state.books,
+            estimates.tax,
+            now,
+            GAME_DATA,
+            ironman,
+          );
+          value = estimates.groups.get(model.base(base)) ?? null;
+        } else {
+          if (!estimates.rows.has(id))
+            estimates.rows.set(
+              id,
+              inventory.value(
+                base,
+                estimates.bank[id],
+                state.books,
+                estimates.tax,
+                now,
+                GAME_DATA,
+                ironman,
+              ),
+            );
+          value = estimates.rows.get(id);
+        }
+      }
+      const prior = previous?.[index];
+      if (prior?.item !== item || prior?.value !== value) rerank = true;
+      return {
+        index,
+        slot,
+        id,
+        item,
+        value,
+        locked: !item,
+        old,
+        originalOrder: old?.originalOrder ?? slot.style.order,
+      };
+    });
+    const ranks = rerank ? inventory.ranks(entries) : null;
+    for (const entry of entries) {
+      const { slot, item, old, value } = entry;
+      const order = ranks ? String(ranks.get(entry.index)) : previous[entry.index].order;
+      if (slot.style.order !== order) slot.style.order = order;
+      entry.order = order;
+      entry.old = null;
+      if (!item) {
+        if (old?.item) {
+          old.label?.remove();
+          slot.classList.remove("dvi-market-valued");
+        }
+        continue;
+      }
+      let label = old?.label;
+      if (label?.parentElement !== slot) {
+        slot.classList.add("dvi-market-valued");
+        label = document.createElement("b");
+        label.className = "dvi-market-value";
+        label.dataset.noI18n = "";
+        slot.append(label);
+      }
+      if (label !== old?.label || old.value !== value) setNativeText(label, fmt(value, 2));
+      entry.label = label;
+    }
+    view.entries = entries;
+  }
   function syncMarketInventory() {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("marketInventory"))
       return;
-    const p = store.state.player;
-    if (!p) return;
-    const windows = [...document.querySelectorAll(".market-window")].filter(
-      (w) => !w.closest("[hidden]"),
-    );
-    if (!windows.length) return;
-    const now = Date.now(),
-      groups = globalThis.DVIInventory.groupedValues(
-        p.bank,
-        store.state.books,
-        store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
-        now,
-        GAME_DATA,
-        p.ironman,
-      );
-    for (const window of windows) {
+    const state = store.state,
+      p = state.player;
+    if (!p || document.hidden) return;
+    for (const window of document.querySelectorAll(".market-window")) {
+      if (window.closest("[hidden]")) continue;
       const list = window.querySelector("[data-market-list]"),
         tools = window.querySelector("[data-market-tools]");
       if (!list || !tools) continue;
@@ -18510,7 +18283,8 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         button.type = "button";
         button.className = "market-toggle dvi-market-sort";
         button.dataset.noI18n = "";
-        view = { button, sorted: false, orders: new WeakMap() };
+        tools.querySelector(".dvi-market-sort")?.remove();
+        view = { button, sorted: false, account: p.id };
         marketValueViews.set(list, view);
         button.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -18519,54 +18293,20 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         });
       }
       bindValueSortingReset(window, "[data-market-list]", marketValueViews, syncMarketInventory);
-      if (!own) view.sorted = false;
+      if (!own || view.account !== p.id) view.sorted = false;
+      view.account = p.id;
       if (view.button.parentElement !== tools) tools.append(view.button);
       if (view.button.hidden !== !own) view.button.hidden = !own;
       setNativeText(view.button, t("价值排序"));
       const pressed = String(view.sorted);
       if (view.button.getAttribute("aria-pressed") !== pressed)
         view.button.setAttribute("aria-pressed", pressed);
-      if (list.classList.contains("dvi-market-sorted") !== (own && view.sorted))
-        list.classList.toggle("dvi-market-sorted", own && view.sorted);
-      const entries = [];
-      for (const [index, slot] of [...list.children].entries()) {
-        if (!view.orders.has(slot)) view.orders.set(slot, slot.style.order);
-        const item = slot.matches(".market-tile[data-item],.market-row[data-item]"),
-          id = Number(slot.dataset.item);
-        const value = slot.matches(".market-tile")
-          ? (groups.get(model.base(id)) ?? null)
-          : globalThis.DVIInventory.value(
-              id,
-              p.bank?.[id],
-              store.state.books,
-              store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
-              now,
-              GAME_DATA,
-              p.ironman,
-            );
-        entries.push({ index, slot, value, locked: !item });
-        if (!own || !view.sorted || !item) {
-          slot.querySelector(".dvi-market-value")?.remove();
-          slot.classList.remove("dvi-market-valued");
-          continue;
-        }
-        if (!slot.classList.contains("dvi-market-valued")) slot.classList.add("dvi-market-valued");
-        let label = slot.querySelector(".dvi-market-value");
-        if (!label) {
-          label = document.createElement("b");
-          label.className = "dvi-market-value";
-          label.dataset.noI18n = "";
-          slot.append(label);
-        }
-        setNativeText(label, fmt(value, 2));
-        syncValueTypography(slot, label);
+      if (!view.sorted) {
+        if (view.entries) clearMarketValueSorting(list, view);
+        continue;
       }
-      const ranks = globalThis.DVIInventory.ranks(entries);
-      for (const entry of entries) {
-        const order =
-          own && view.sorted ? String(ranks.get(entry.index)) : view.orders.get(entry.slot);
-        if (entry.slot.style.order !== order) entry.slot.style.order = order;
-      }
+      if (!view.entries) list.classList.add("dvi-market-sorted");
+      syncMarketValueLabels(list, view, state);
     }
   }
   function polishFields() {
@@ -24235,10 +23975,6 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if ((id === "inventory" || id === "marketInventory") && !on) resetInsightValueSorting(id);
     if (id === "prices" && !on)
       document.querySelectorAll(".dvi-native-prices").forEach((n) => n.remove());
-    if (id === "equipment" && !on)
-      document
-        .querySelectorAll(".dvi-equipment-value,[data-dvi-inspect-score]")
-        .forEach((n) => n.remove());
     if (id === "combatMetrics") {
       combatMetricsBox?.remove();
       combatMetricsBox = null;
@@ -25618,7 +25354,6 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     syncBossWork();
 
     syncBossRecords();
-    syncEquipmentValue();
     syncInventory();
     syncMarketInventory();
     polishFields();
@@ -25732,7 +25467,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (!node?.closest) return false;
     if (
       node.closest(
-        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best,.dvi-home-supplies,.dvi-home-market-note,.dvi-insights-settings-page,.dvi-loot-log,.dvi-combat-metrics,.dvi-home-notice,.dvi-buff-price,.dvi-buff-time",
+        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best,.dvi-home-supplies,.dvi-home-market-note,.dvi-insights-settings-page,.dvi-loot-log,.dvi-market-value,.dvi-combat-metrics,.dvi-home-notice,.dvi-buff-price,.dvi-buff-time",
       )
     )
       return false;
