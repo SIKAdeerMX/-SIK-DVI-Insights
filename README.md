@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.152
+# [SIK] DVI Insights 0.4.154
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.154 适配正式服 1.0.6252。地牢补给按原料品质估算。地牢和炼金窗口使用与其他菜单一致的字体。原生炼金锅及当前任务显示三类精华的期望日利、产量、材料成本和经验。地牢记录按单人和组队汇总通关、耗时、宝箱和记录耗材。家园升级计入仓库家园精华。
 
 0.4.152 适配正式服 1.0.4915。生活计算计入 105 级采集首领工具的强化幸运加成，种植估算支持指定种子品质。
 
@@ -117,6 +119,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.154 supports 1.0.6252. Dungeon supply estimates use the quality of the ingredients. Dungeon and alchemy windows use the same typography as the other menus. The Cauldron and active task show daily profit, essence output, costs and XP. Dungeon history summarizes solo and party runs, clear times, chests and recorded supplies. Home upgrade estimates include House essence.
 
 0.4.152 supports game build 1.0.4915. Work forecasts account for the enhancement luck bonus on level 105 gathering boss tools and the selected seed rarity for farming.
 
