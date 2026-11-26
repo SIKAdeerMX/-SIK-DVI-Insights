@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.154
+# [SIK] DVI Insights 0.4.155
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.155 适配正式服 1.0.6257。地牢补给每批产出 10 件，制作预测和实际收益按产量计算。同步商店售价、炼金精华产量与家园兑换数据。
 
 0.4.154 适配正式服 1.0.6252。地牢补给按原料品质估算。地牢和炼金窗口使用与其他菜单一致的字体。原生炼金锅及当前任务显示三类精华的期望日利、产量、材料成本和经验。地牢记录按单人和组队汇总通关、耗时、宝箱和记录耗材。家园升级计入仓库家园精华。
 
@@ -119,6 +121,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.155 supports 1.0.6257. Dungeon supply crafts produce 10 items per batch. Forecasts and observed income use item quantities. Shop resale prices, alchemy essence yields and Home point data follow the new client.
 
 0.4.154 supports 1.0.6252. Dungeon supply estimates use the quality of the ingredients. Dungeon and alchemy windows use the same typography as the other menus. The Cauldron and active task show daily profit, essence output, costs and XP. Dungeon history summarizes solo and party runs, clear times, chests and recorded supplies. Home upgrade estimates include House essence.
 
