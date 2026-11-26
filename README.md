@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.156
+# [SIK] DVI Insights 0.4.157
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.157 在支持文件分享的 iPhone 和 iPad 浏览器上直接分享 JSON 快照。分享不可用时提供下载和复制。
 
 0.4.156 适配正式服 1.0.6259。战斗预估按遗物填充进度、品质和强化计入未完成地牢装备的属性。空进度沿用底装属性，武器保留攻击类型和攻速。
 
@@ -123,6 +125,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.157 shares the JSON snapshot as a file in iPhone and iPad browsers that support file sharing. Download and copy are available when file sharing is unavailable.
 
 0.4.156 supports 1.0.6259. Combat forecasts include unfinished dungeon gear, using relic progress, quality and enhancement level. Empty pieces use the source item's stats, including weapon style and attack speed.
 

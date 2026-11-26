@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.156
+// @version      0.4.157
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -6483,8 +6483,15 @@ SOFTWARE.
       "{level}级": "Lv {level}",
       "家园 · 每个 {points}点 · 还需 {qty}个": "Home · {points} pts each · Need {qty} pcs",
       导出本地计算快照: "Export local calculation snapshot",
-      "仅下载已收到的角色和行情，不上传数据。":
-        "Download received character and prices only; no upload.",
+      "仅导出已收到的角色和行情，不上传数据。":
+        "Export received character and prices only. No upload.",
+      "下载 JSON": "Download JSON",
+      "复制 JSON": "Copy JSON",
+      "已复制 JSON": "JSON copied",
+      "请手动复制下方 JSON 内容": "Copy the JSON below manually",
+      "浏览器无法分享 JSON 文件，可下载或复制 JSON。":
+        "This browser cannot share the JSON file. Download it or copy its contents.",
+      已取消导出: "Export canceled",
       尚未读取角色: "Character not received yet",
       请在代工结束后导出计算快照: "Export a calculation snapshot after your commission finishes",
       "{qty}个": "{qty} pcs",
@@ -9087,7 +9094,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.156";
+  const PLUGIN_VERSION = "0.4.157";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -18827,7 +18834,7 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
   });
 
   // ---- src/snapshot-export-ui.js ----
-  /* Manual local download for offline simulation; no game actions or upload. */
+  /* User-initiated local snapshot export for offline simulation. */
   function calculationSnapshot() {
     const p = store.state.player;
     if (!p) throw Error(t("尚未读取角色"));
@@ -18860,31 +18867,136 @@ html.dvi-insights .dvi-native-settings .dvi-update-now:focus-visible{outline:2px
     );
   }
   function mountCalculationExport(host) {
-    const link = document.createElement("a"),
-      note = document.createElement("small");
-    link.className = "dvi-update-now";
-    link.href = "#";
-    link.dataset.dviSettingsText = "导出本地计算快照";
-    link.style.display = "inline-block";
-    note.dataset.dviSettingsText = "仅下载已收到的角色和行情，不上传数据。";
+    const stockNote = "仅导出已收到的角色和行情，不上传数据。";
+    const make = (tag, label) => {
+      const element = document.createElement(tag);
+      element.dataset.dviSettingsText = label;
+      element.textContent = t(label);
+      return element;
+    };
+    const anchor = (label) => {
+      const link = make("a", label);
+      link.className = "dvi-update-now";
+      link.href = "#";
+      link.style.display = "inline-block";
+      return link;
+    };
+    const link = anchor("导出本地计算快照"),
+      note = make("small", stockNote);
     note.style.display = "block";
-    link.addEventListener("click", (event) => {
+    note.setAttribute("role", "status");
+    const fallback = document.createElement("div"),
+      download = anchor("下载 JSON"),
+      copy = make("button", "复制 JSON");
+    fallback.hidden = true;
+    copy.type = "button";
+    copy.className = "dvi-update-now";
+    const text = document.createElement("textarea");
+    text.hidden = true;
+    text.readOnly = true;
+    text.rows = 4;
+    text.style.width = "100%";
+    text.setAttribute("aria-label", "JSON");
+    fallback.append(download, document.createTextNode(" "), copy, text);
+    const onAppleMobile =
+      /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    let sharing = false;
+    const status = (label) => {
+      note.dataset.dviSettingsText = label;
+      note.textContent = t(label);
+    };
+    const clearText = () => {
+      text.hidden = true;
+      text.value = "";
+    };
+    const snapshotText = () => JSON.stringify(calculationSnapshot());
+    const filename = () =>
+      "SIK-DVI-world-snapshot-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+    const fail = (event, error) => {
+      event.preventDefault();
+      status(error.message);
+    };
+    const prepareDownload = (event, target) => {
       event.stopPropagation();
+      clearText();
       try {
-        const snapshot = calculationSnapshot(),
-          url = URL.createObjectURL(
-            new Blob([JSON.stringify(snapshot)], { type: "application/json" }),
-          );
-        link.href = url;
-        link.download =
-          "SIK-DVI-world-snapshot-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        const url = URL.createObjectURL(new Blob([snapshotText()], { type: "application/json" }));
+        target.href = url;
+        target.download = filename();
+        status(stockNote);
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+          if (target.href === url) target.href = "#";
+        }, 60000);
       } catch (error) {
-        event.preventDefault();
-        note.textContent = error.message;
+        fail(event, error);
+      }
+    };
+    const showFallback = (label) => {
+      fallback.hidden = false;
+      status(label);
+    };
+    download.addEventListener("click", (event) => prepareDownload(event, download));
+    copy.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      clearText();
+      let json;
+      try {
+        json = snapshotText();
+      } catch (error) {
+        fail(event, error);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(json);
+        status("已复制 JSON");
+      } catch {
+        text.value = json;
+        text.hidden = false;
+        text.focus();
+        text.select();
+        status("请手动复制下方 JSON 内容");
       }
     });
-    host.append(link, note);
+    link.addEventListener("click", async (event) => {
+      if (!onAppleMobile) {
+        prepareDownload(event, link);
+        return;
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      if (sharing) return;
+      clearText();
+      let json;
+      try {
+        json = snapshotText();
+      } catch (error) {
+        fail(event, error);
+        return;
+      }
+      const unavailable = "浏览器无法分享 JSON 文件，可下载或复制 JSON。";
+      try {
+        if (typeof File !== "function" || typeof navigator.share !== "function") {
+          showFallback(unavailable);
+          return;
+        }
+        const shareData = { files: [new File([json], filename(), { type: "application/json" })] };
+        if (!navigator.canShare?.(shareData)) {
+          showFallback(unavailable);
+          return;
+        }
+        fallback.hidden = true;
+        status(stockNote);
+        sharing = true;
+        await navigator.share(shareData);
+      } catch (error) {
+        showFallback(error.name === "AbortError" ? "已取消导出" : unavailable);
+      } finally {
+        sharing = false;
+      }
+    });
+    host.append(link, note, fallback);
   }
 
   // ---- src/home-appearance.js ----
