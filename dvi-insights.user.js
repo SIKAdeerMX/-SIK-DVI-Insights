@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.160
+// @version      0.4.161
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -1904,7 +1904,15 @@ SOFTWARE.
           ? Math.max(base, Math.min(1500, base + 200 * Math.floor((now - ramp) / 86400000)))
           : base;
       }
-      function valueFlows(flow, books, mode, tax, now = Date.now(), pricing = {}) {
+      function valueFlows(
+        flow,
+        books,
+        mode,
+        tax,
+        now = Date.now(),
+        pricing = {},
+        { publicPurchaseHistory = false } = {},
+      ) {
         const missing = [],
           stale = [],
           partial = [],
@@ -2007,6 +2015,23 @@ SOFTWARE.
             estimated.push(id);
             left = 0;
           }
+          const reference =
+            publicPurchaseHistory && mode === "buy" ? b.publicPurchaseHistory : null;
+          if (
+            left > 1e-9 &&
+            Number.isFinite(reference?.price) &&
+            reference.price > 0 &&
+            reference.at <= now &&
+            now <= reference.expiresAt
+          ) {
+            put(id, left, reference.price, "publicHistory", {
+              estimated: true,
+              periodDays: reference.period,
+              snapshotAt: reference.at,
+            });
+            estimated.push(id);
+            left = 0;
+          }
           // Known nontradable outputs have no cash resale value, rather than an unknown price.
           if (
             left > 1e-9 &&
@@ -2036,8 +2061,8 @@ SOFTWARE.
           coinSubtotal: sum(details.filter((x) => x.source === "coins").map((x) => x.value)),
         };
       }
-      function profits(hour, books, taxBp, now, pricing = {}) {
-        const cost = valueFlows(hour.inputs, books, "buy", taxBp, now, pricing),
+      function profits(hour, books, taxBp, now, pricing = {}, options) {
+        const cost = valueFlows(hour.inputs, books, "buy", taxBp, now, pricing, options),
           immediate = valueFlows(hour.outputs, books, "sell", taxBp, now, pricing),
           listing = valueFlows(hour.outputs, books, "list", taxBp, now, pricing),
           vendor = valueFlows(hour.outputs, books, "vendor", taxBp, now, pricing);
@@ -2061,7 +2086,7 @@ SOFTWARE.
         for (const kind of ["inputs", "outputs"])
           for (const [id, n] of Object.entries(hour[kind] || {})) daily[kind][id] = n * 24;
         // Quote depth is consumed once across the whole projected day.
-        return profits(daily, books, taxBp, now, pricing);
+        return profits(daily, books, taxBp, now, pricing, { publicPurchaseHistory: true });
       }
       function formatNumber(n, d = 0) {
         if (!Number.isFinite(n)) return "—";
@@ -5960,6 +5985,7 @@ SOFTWARE.
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     const en = {
+      "公开 {days} 日均价（估价）": "Public {days}-day trade average (estimate)",
       炼金: "Alchemy",
       炼金期望日利: "Expected alchemy profit/day",
       "按所选材料比例连续蒸馏折算24小时，含纯净精华期望，不含补料和跑路。":
@@ -8490,6 +8516,14 @@ SOFTWARE.
             row[qty] = q[qty];
           }
         }
+        for (const days of [7, 30]) {
+          const avg = q["avg" + days + "d"],
+            volume = q["vol" + days + "d"];
+          if (Number.isFinite(avg) && avg > 0 && Number.isSafeInteger(volume) && volume > 0) {
+            row["avg" + days + "d"] = avg;
+            row["vol" + days + "d"] = volume;
+          }
+        }
         if (Object.keys(row).length) items[id] = row;
       }
       return Object.keys(items).length
@@ -8551,6 +8585,27 @@ SOFTWARE.
           // A public snapshot is not a native trade/fill event. Retain the last
           // received client ask as a fallback for missing or insufficient stock.
           dirty = true;
+        }
+        const reference = old.publicPurchaseHistory;
+        if (reference && now > reference.expiresAt) {
+          delete book.publicPurchaseHistory;
+          dirty = true;
+        }
+        if (q && at > (reference?.at ?? 0)) {
+          const period = q.avg7d ? 7 : q.avg30d ? 30 : null;
+          // Price reference only. A trailing trade average never supplies a live order or its volume.
+          if (period) {
+            book.publicPurchaseHistory = {
+              price: period === 7 ? q.avg7d : q.avg30d,
+              period,
+              at,
+              expiresAt: at + MAX_AGE,
+            };
+            dirty = true;
+          } else if (reference) {
+            delete book.publicPurchaseHistory;
+            dirty = true;
+          }
         }
         if (dirty) {
           book.at = Math.max(book.bidAt || 0, book.askAt || 0);
@@ -8767,7 +8822,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.160";
+  const PLUGIN_VERSION = "0.4.161";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -10455,15 +10510,17 @@ SOFTWARE.
         ? t("待报价")
         : d.public
           ? t("公开快照（估价）")
-          : d.source === "history"
-            ? t("历史成交（估价）")
-            : d.source === "cached"
-              ? t("缓存报价（估价）")
-              : d.source === "vendor"
-                ? t("商人")
-                : d.source === "coins"
-                  ? t("金币")
-                  : t(d.estimated ? "客户端报价（估价）" : "客户端报价");
+          : d.source === "publicHistory"
+            ? t("公开 {days} 日均价（估价）", { days: d.periodDays })
+            : d.source === "history"
+              ? t("历史成交（估价）")
+              : d.source === "cached"
+                ? t("缓存报价（估价）")
+                : d.source === "vendor"
+                  ? t("商人")
+                  : d.source === "coins"
+                    ? t("金币")
+                    : t(d.estimated ? "客户端报价（估价）" : "客户端报价");
     return `<details class="dvi-cost-sources"><summary>${t("投入计价明细")}<span class="dvi-native-action" aria-hidden="true"></span></summary><table><thead><tr>${["物品", "数量/d", "单价", "价格来源"].map((x) => "<th>" + t(x) + "</th>").join("")}</tr></thead><tbody>${cost.details.map((d) => `<tr><td>${escape(name(d))}</td><td>${fmt(d.qty, 2)}</td><td>${Number.isFinite(d.price) ? fmt(d.price, 2) : "—"}</td><td>${source(d)}</td></tr>`).join("")}</tbody></table><p class="dvi-note">${t("数量为预计每日消耗；单价为金币/件。现价缺失或数量不足时，保留历史与缓存估价兜底；估价不代表可立即成交。")}</p></details>`;
   }
   function profitHint(profit, kind = "immediate") {
@@ -10496,6 +10553,10 @@ SOFTWARE.
       };
     if (details.some((x) => x.public))
       parts.push(t("含公开行情估价；仅最优报价，无完整深度，批量成交可能不同。"));
+    const historicalPeriods = [
+      ...new Set(details.filter((x) => x.source === "publicHistory").map((x) => x.periodDays)),
+    ];
+    for (const days of historicalPeriods) parts.push(t("公开 {days} 日均价（估价）", { days }));
     const quotes = details.map((x) => x.quoteAt).filter((x) => Number.isFinite(x) && x > 0);
     if (quotes.length) parts.push(t("报价 {age}", { age: age(Math.min(...quotes)) }));
     const history = details
@@ -10744,14 +10805,18 @@ SOFTWARE.
     const foodInputs = Object.fromEntries(
       Object.entries(report.hour.food).map(([id, n]) => [id, n * 24]),
     );
-    const food = core.valueFlows(foodInputs, books, "buy", 0, Date.now(), GAME_DATA);
+    const food = core.valueFlows(foodInputs, books, "buy", 0, Date.now(), GAME_DATA, {
+      publicPurchaseHistory: true,
+    });
     const potionInputs = { ...report.hour.inputs };
     for (const [id, n] of Object.entries(report.hour.food)) {
       potionInputs[id] -= n;
       if (Math.abs(potionInputs[id]) < 1e-12) delete potionInputs[id];
     }
     for (const id of Object.keys(potionInputs)) potionInputs[id] *= 24;
-    const potions = core.valueFlows(potionInputs, books, "buy", 0, Date.now(), GAME_DATA);
+    const potions = core.valueFlows(potionInputs, books, "buy", 0, Date.now(), GAME_DATA, {
+      publicPurchaseHistory: true,
+    });
     const text = report.ready ? profitText(profit) : t("观测中");
     const summary = combatBox.querySelector("[data-combat-profit]");
     setActivityValue(summary, text);
@@ -18035,6 +18100,7 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         0,
         Date.now(),
         GAME_DATA,
+        { publicPurchaseHistory: true },
       );
       for (const id of missingPriceIds(cost)) missing.add(id);
       return cost.total === null
