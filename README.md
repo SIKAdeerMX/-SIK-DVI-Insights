@@ -1,8 +1,20 @@
-# [SIK] DVI Insights 0.4.161
+# [SIK] DVI Insights 0.4.167
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.167 家园倒计时独立刷新，行情更新仅检查已挂载的仓库和市场区域。保留原生图标并减少浏览、估值和提示框的重复工作。
+
+0.4.166 跳过已隐藏提示框的重复写入，家园行情按钮随布局变化重新定位，减少仓库和市场浏览时的布局开销。
+
+0.4.165 仓库和市场按物品复用估值和标签，原生列表重绘及卖价更新时减少重复工作。
+
+0.4.164 仓库和市场恢复原生图标绘制，悬停和批量行情单独更新，并复用价值排序的样式。
+
+0.4.163 减少空闲全页刷新，仓库和市场独立更新。原生收获记录延后绘制屏外条目。移除插件自带掉落日志，保留原生记录和首领名次补充。
+
+0.4.162 优化生活和战斗列表的计价与明细渲染，减少战斗滚动和未开启价值排序时的仓库开销。
 
 0.4.161 日利缺少补给或材料报价时，已知近期成交均价可作为带标记的成本估价。
 
@@ -94,7 +106,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 - 当前任务显示有效观测时长，同一任务在近 12 小时内可跨切换、停止与刷新续记；战斗期望按区域、装备和补给配置分开。断线空档不稀释收入，离线收益在结算中单列，并按有效时长折算日利，成本不全时只显示日入。
 - 穿戴页整理原生地牢装备评分的排版，评分数值和详细说明由游戏提供。
-- 保存最近 30 场本人的已收到 Boss 排名和掉落，聊天区独立“掉落日志”按实际品质显示名称、数量和颜色；原生结算缺少个人名次时补充，未收到的排行明确标注。记录仅存本机，不补发查询。手机家园计时只在地图页显示。
+- 保存最近 30 场本人的已收到 Boss 排名，原生结算缺少个人名次时补充。记录仅存本机。手机家园计时只在地图页显示。
 - 公会日志保持原生日志，不再附加统计。成员、日志和公会列表不再铺浅色白底。公会首页在「捐献积分」按钮右侧显示当前挂售价下每分金币最少的捐献物品名称。
 
 - 工作列表显示实际路线预计 XP/h 与期望日利，经验统一 K/M/B 简写，点击“升级计算”查看目标等级的工作次数、耗时与材料缺口；材料表补充逐项估价、材料总估价和补齐成本，按买价与订单深度计算；收支只用箭头展开。
@@ -133,6 +145,18 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.167 updates home timers separately and limits quote-driven inventory checks to mounted surfaces. Reduces repeat work for bank and market browsing, valuation, and tooltips.
+
+0.4.166 skips repeated writes to hidden tooltips and updates the home market launcher position when the layout changes, reducing work while browsing the bank and market.
+
+0.4.165 reuses per-item valuations and price labels across bank and market redraws and skips repeated work when only asks change.
+
+0.4.164 restores normal native icon painting in the bank and market, isolates hover and bulk quote updates, and reuses value-label typography.
+
+0.4.163 reduces idle page scans, batches bank and market updates separately, and defers painting offscreen native Loot Log rows. Removes the plugin's chat loot log and keeps the native records and boss rank supplement.
+
+0.4.162 reduces repeat price calculations, renders skilling and combat details on demand, and lowers overhead when scrolling combat or browsing an unsorted bank.
 
 0.4.161 uses marked public trade averages as the final input-cost fallback in daily estimates when current prices or volume are missing.
 
@@ -221,7 +245,7 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 
 - Active tasks show observed duration and resume matching samples from the last twelve hours across task switches, stops and reloads. Combat expectations separate zone, equipment and food configurations. Unobserved gaps are excluded; offline settlements remain separate and show a daily profit estimate over effective duration, or income only when costs are incomplete.
 - The Worn panel aligns the native dungeon gear score with the other stats. The game provides the score and its tooltip.
-- A separate chat Loot log preserves the latest thirty received personal boss rewards, with exact rarities, quantities and colors. Empty native personal results can be supplemented with received ranks; missing ranks remain unknown. No recovery queries are sent. Mobile Home timers stay on the map tab and hide under dialogs.
+- The latest thirty received personal boss ranks can supplement empty native personal results. Mobile Home timers stay on the map tab and hide under dialogs.
 - The guild log stays native and no longer adds statistics. Member, log and guild-list pages no longer use the light paper background. The guild home page shows the best-value donation item immediately to the right of Donate points.
 
 

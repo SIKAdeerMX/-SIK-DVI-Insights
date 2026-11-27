@@ -12,7 +12,7 @@ The optional update reminder reads this script's public version metadata from `u
 
 The folded damage meter uses enemy HP/kill counters or received boss-hit events; samples stay in memory and do not upload or alter combat. Boss summon identifiers and acknowledgement times are stored in the existing plugin preferences, bounded to 64 recent entries, to suppress repeated animations after reload.
 
-The running script uses the current character's HP, current map position, inventory, XP, equipment, active bonuses, task counters, received market quotes, and settlement amounts for calculation. Recent observation counters and personal boss results are retained locally as listed below. Only exact native system notices from “The Deep” matching the personal boss-loot template are retained; ordinary chat and private messages are excluded. Credentials, cookies and payment information are not used by the calculators or written to its caches. Only copies of messages delivered to the passive listener are parsed; the game's JSON parser and message processing are unchanged. Events from before the listener attached may be unavailable and are not fabricated.
+The running script uses the current character's HP, current map position, inventory, XP, equipment, active bonuses, task counters, received market quotes, and settlement amounts for calculation. Recent observation counters and personal boss ranks are retained locally as listed below. The plugin no longer collects boss-loot notices from chat. Credentials, cookies and payment information are not used by the calculators or written to its caches. Only copies of messages delivered to the passive listener are parsed; the game's JSON parser and message processing are unchanged. Events from before the listener attached may be unavailable and are not fabricated.
 
 Bank value sorting changes CSS display order only, not the stored bank order. No sorting request is sent; locked slots remain in place. Guild presentation reads the already displayed notice, rules and recruitment text in page memory. Drafts and the matching guild acknowledgement are held only in memory to preserve editing through redraws and return to reading after the native Save succeeds. The plugin does not submit or persist these texts. Native edit controls are required before local Edit is offered. Farming status tiles reuse the game's displayed text and keep the original seed preference control. Decorative artwork and native item sprites are embedded in the script; no asset server is contacted.
 
@@ -30,7 +30,7 @@ Local storage entries on the game origin:
 | `dvi-insights.observations.v1` | Up to 1,440 observation buckets from the last 12 hours: internal character ID, task/configuration signature, observed duration, item/XP/consumption counters; no unobserved time or coordinates |
 | `dvi-insights.observations.before-clock-fix.v1` | One local backup of the old observation buckets when upgrading to the corrected snapshot clock; excluded from active calculations and kept until manually removed |
 | `dvi-insights.observations.before-socket-fix.v1` | One local backup of 0.4.91 observations when upgrading to single-receipt socket accounting; excluded from active calculations and kept until manually removed |
-| `dvi-insights.boss-records.v1` | Up to 30 personal boss results: internal character ID, boss identity, received own rank/damage, completion flag, loot system-notice payload and timestamps; no other players' identities or ordinary chat |
+| `dvi-insights.boss-records.v1` | Up to 30 personal boss ranks: internal character ID, boss identity, received own rank/damage, completion flag and timestamps. Older rows may still contain a previously saved boss-loot notice. |
 
 The offline baseline is overwritten with the latest snapshot. It contains no character name, account credentials, chat, or movement history. Market settlement records used to reconcile an in-tab away report stay in page memory and are reset on a new welcome message. Public historical estimates expire after seven days; cached ask estimates expire after one day. Each saved price cache is limited to 2,000 variants.
 
@@ -48,7 +48,7 @@ Feature preferences remain in the existing preferences entry. The optional nativ
 
 脚本只读游戏已有角色状态，并监听现有连接收到的消息；不覆盖 WebSocket、JSON.parse、发送方法、游戏回调或原生 DOM 访问器。监听前缺失的历史事件不补造。脚本在本机计算，同时匿名读取官方明确公开的规划器行情快照；不查询其他游戏接口，不操作工作或交易，不上传角色数据。离线核算需要在游戏域名的本地存储中保留最近一次角色库存、金币、收集计数和药水状态；旧快照会被覆盖。家园提醒另保留最近角色的内部 ID、工程与未关闭的完工提醒，用于重连和离线补报。以上表格列出了全部持久缓存。删除缓存时只删上表的插件条目，保留游戏的 `deepvein-seen`。插件还只读游戏已有的 `deepvein.locale` 以跟随界面语言，不写入该项。
 
-近 12 小时任务观测保存内部角色 ID、任务配置和产出/经验/消耗计数，最多 1,440 个观测桶，不保存坐标；只累计已观测的有效时间，切换与断线空档不计时，离线结算单列。Boss 记录最多保留最近 30 场本人的已收到名次、伤害及掉落；系统消息仅接受 The Deep 发出的原生个人掉落格式，不保存普通聊天、私信或其他玩家身份。装备和房屋估值只在内存计算。上述数据均不上报。
+近 12 小时任务观测保存内部角色 ID、任务配置和产出/经验/消耗计数，最多 1,440 个观测桶，不保存坐标；只累计已观测的有效时间，切换与断线空档不计时，离线结算单列。Boss 记录最多保留最近 30 场本人的已收到名次及伤害。已停止从聊天采集首领掉落，旧记录可能含有此前保存的掉落通知。装备和房屋估值只在内存计算。上述数据均不上报。
 
 快捷栏的 Alice战斗模拟器链接仅在点击时打开，不附带角色配置或来源页面信息。
 

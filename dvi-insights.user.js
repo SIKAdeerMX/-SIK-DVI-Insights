@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.161
+// @version      0.4.167
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -3461,6 +3461,59 @@ SOFTWARE.
         ]),
       ].filter((id) => bank?.[id] > 0);
     }
+    function createValueCache(estimate = value) {
+      let owner = null,
+        source = null;
+      const rows = new Map();
+      const fresh = (at, now) => Number.isFinite(at) && at <= now && now - at <= 300000;
+      return (scope, id, qty, books, tax, now, pricing, ironman = false) => {
+        if (owner !== scope || source !== pricing) {
+          owner = scope;
+          source = pricing;
+          rows.clear();
+        }
+        if (!Number.isSafeInteger(id) || id <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
+        const book = books[id] || {},
+          rate = ironman ? null : core.marketTaxBp(id, tax, now);
+        const levels =
+          rate != null && Array.isArray(book.bids) && fresh(book.bidDepthAt ?? book.depthAt, now)
+            ? book.bids
+            : null;
+        const top = rate != null && !levels && !book.bidPublic && fresh(book.bidAt ?? book.at, now);
+        const price = top ? book.bid : null,
+          amount = top ? book.bidQty : null;
+        const previous = rows.get(id);
+        // Supply prices and refreshed timestamps do not change executable sell value.
+        if (
+          previous &&
+          previous.qty === qty &&
+          previous.rate === rate &&
+          previous.floor === book.floor &&
+          previous.price === price &&
+          previous.amount === amount &&
+          (levels === null
+            ? previous.depth === null
+            : previous.depth?.length === levels.length &&
+              levels.every(
+                (level, i) =>
+                  level.price === previous.depth[i].price && level.qty === previous.depth[i].qty,
+              ))
+        )
+          return previous.total;
+        const total = estimate(id, qty, books, tax, now, pricing, ironman);
+        if (!previous && rows.size >= 8192) rows.delete(rows.keys().next().value);
+        rows.set(id, {
+          qty,
+          rate,
+          floor: book.floor,
+          price,
+          amount,
+          depth: levels?.map(({ price, qty }) => ({ price, qty })) ?? null,
+          total,
+        });
+        return total;
+      };
+    }
     function ranks(entries) {
       const movable = entries
         .filter((x) => !x.locked)
@@ -3479,92 +3532,47 @@ SOFTWARE.
     }
     // Native "My items" tiles group all qualities and enhancements by base item.
     // Price each exact variant independently before adding it to its group.
-    function groupedValues(bank, books, taxBp, now, pricing, ironman = false) {
+    function groupedValues(bank, books, taxBp, now, pricing, ironman = false, estimate = value) {
       const groups = new Map();
       for (const [key, qty] of Object.entries(bank || {})) {
         const id = Number(key);
         if (!Number.isSafeInteger(id) || id <= 0 || !Number.isFinite(qty) || qty <= 0) continue;
         const raw = id % 10000,
           base = raw >= 1000 ? raw % 1000 : raw;
-        const amount = value(id, qty, books, taxBp, now, pricing, ironman),
+        const amount = estimate(id, qty, books, taxBp, now, pricing, ironman),
           previous = groups.get(base);
         groups.set(base, amount === null || previous === null ? null : (previous || 0) + amount);
       }
       return groups;
     }
-    return { value, bankOrder, ranks, groupedValues };
+    return { value, createValueCache, bankOrder, ranks, groupedValues };
   });
 
   // ---- src/boss-records.js ----
-  /* Only received boss rankings and exact native system loot notices are retained. */
+  /* Retain received world boss ranks for the native result panel. */
   (function (root, factory) {
     if (typeof module === "object" && module.exports) module.exports = factory();
     else root.DVIBossRecords = factory();
   })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-    const lootPattern =
-      /^Your share of the (.{1,90}): (.{1,1800}?)(?: \u2014 on|\. On) your shelf at the depot\.$/;
-    function lootNotice(message) {
-      if (message?.name !== "The Deep" || typeof message.text !== "string") return null;
-      const m = message.text.match(lootPattern);
-      return m ? { name: m[1], loot: m[2] } : null;
-    }
     function fallNotice(card) {
       if (
         !card ||
         typeof card.boss !== "string" ||
         !card.boss.length ||
         card.boss.length > 90 ||
-        typeof card.loot !== "string" ||
-        card.loot.length > 1800 ||
         !Number.isSafeInteger(card.killTick) ||
         card.killTick < 0
       )
         return null;
+      if (card.loot !== undefined && (typeof card.loot !== "string" || card.loot.length > 1800))
+        return null;
       return {
         kind: "fall",
         name: card.boss,
-        loot: card.loot,
         tick: card.killTick,
         rank: Number.isSafeInteger(card.rank) && card.rank > 0 ? card.rank : null,
         points: Number.isFinite(card.points) && card.points >= 0 ? card.points : null,
       };
-    }
-    const lootNames = new WeakMap();
-    function parseLoot(data, text) {
-      if (!lootNames.has(data))
-        lootNames.set(data, new Map(data.items.map((i) => [i.name.toLowerCase(), i.id])));
-      const names = lootNames.get(data),
-        items = [],
-        rest = [];
-      let coins = 0;
-      const itemId = (name) => {
-        const exact = names.get(name.toLowerCase());
-        if (exact) return exact;
-        const m = name.match(/^(.*) \+(\d{1,2})$/),
-          id = m && names.get(m[1].toLowerCase());
-        return id ? id + Number(m[2]) * 10000 : null;
-      };
-      for (const part of text.split(", ")) {
-        let m;
-        if ((m = part.match(/^(\d+) gold$/))) {
-          coins += Number(m[1]);
-          continue;
-        }
-        if ((m = part.match(/^(\d+) Voidshards$/))) {
-          items.push({ id: data.items.find((i) => i.name === "Voidshard")?.id, qty: Number(m[1]) });
-          continue;
-        }
-        const exact = itemId(part);
-        if (exact) {
-          items.push({ id: exact, qty: 1 });
-          continue;
-        }
-        m = part.match(/^(\d+) (.+)$/);
-        const id = m && itemId(m[2]);
-        if (id) items.push({ id, qty: Number(m[1]) });
-        else rest.push(part);
-      }
-      return { coins, items, rest };
     }
     function create(saved, now = Date.now) {
       let rows = Array.isArray(saved?.rows)
@@ -3576,8 +3584,6 @@ SOFTWARE.
                   typeof r.key === "string" &&
                   typeof r.name === "string" &&
                   r.name.length <= 90 &&
-                  typeof r.loot === "string" &&
-                  r.loot.length <= 1800 &&
                   Number.isSafeInteger(r.tick),
               )
               .slice(-30)
@@ -3585,7 +3591,7 @@ SOFTWARE.
                 key: r.key.slice(0, 160),
                 account: r.account,
                 name: r.name,
-                loot: r.loot,
+                ...(typeof r.loot === "string" && r.loot.length <= 1800 ? { loot: r.loot } : {}),
                 tick: r.tick,
                 at: r.at,
                 rank: Number.isSafeInteger(r.rank) && r.rank > 0 ? r.rank : null,
@@ -3615,7 +3621,6 @@ SOFTWARE.
             Object.assign(row, {
               key,
               name: e.name,
-              loot: e.loot,
               tick: e.tick,
               rank: e.rank,
               points: e.points,
@@ -3660,6 +3665,7 @@ SOFTWARE.
               e.tick < active.startTick
             )
               return;
+            if (active?.account === e.account && active.key.startsWith("fall:")) return;
             if (!active || active.account !== e.account)
               active = {
                 account: e.account,
@@ -3683,54 +3689,9 @@ SOFTWARE.
             }
             return;
           }
-          if (e.kind !== "loot") return;
-          let row = rows.find(
-            (r) =>
-              r.account === e.account &&
-              r.name === e.name &&
-              r.tick === e.tick &&
-              r.loot === e.loot,
-          );
-          if (row) return;
-          const pending =
-            active?.account === e.account &&
-            (!Number.isSafeInteger(active.startTick) || e.tick >= active.startTick) &&
-            (active.name === e.name || active.name === "Boss")
-              ? active
-              : null;
-          row = pending ? rows.find((r) => r.account === e.account && r.key === pending.key) : null;
-          if (!row) {
-            row = {
-              key: pending?.key || "loot:" + e.tick + ":" + e.name,
-              account: e.account,
-              name: e.name,
-              loot: "",
-              tick: e.tick,
-              at: now(),
-              rank: pending?.rank ?? null,
-              points: pending?.points ?? null,
-              final: pending?.final === true,
-            };
-            rows.push(row);
-          }
-          row.loot = e.loot;
-          rows = rows.slice(-30);
-          revision++;
-          if (
-            !pending &&
-            (!active ||
-              active.account !== e.account ||
-              !Number.isSafeInteger(active.startTick) ||
-              e.tick >= active.startTick)
-          )
-            active = {
-              account: e.account,
-              name: e.name,
-              key: row.key,
-              rank: row.rank,
-              points: row.points,
-              final: row.final,
-            };
+        },
+        current(account) {
+          return active?.account === account ? active : null;
         },
         list(account) {
           return rows
@@ -3749,7 +3710,7 @@ SOFTWARE.
         },
       };
     }
-    return { create, lootNotice, fallNotice, parseLoot };
+    return { create, fallNotice };
   });
 
   // ---- src/observer.js ----
@@ -3944,12 +3905,7 @@ SOFTWARE.
         Array.isArray(p.pack) &&
         p.bank &&
         Number.isSafeInteger(p.lastTick);
-      function ownQty(id, side, price) {
-        return state.orders
-          .filter((x) => x.itemId === id && x.side === side && x.price === price)
-          .reduce((n, x) => n + (x.qtyRemaining || 0), 0);
-      }
-      function top(value) {
+      function top(value, ownQty) {
         if (!value || !Number.isSafeInteger(value.itemId) || value.itemId <= 0) return;
         const old = { ...state.books[value.itemId] };
         const copy = { itemId: value.itemId };
@@ -4042,6 +3998,30 @@ SOFTWARE.
         }
         if (!frame || !Number.isSafeInteger(frame.tick) || !Array.isArray(frame.m)) return;
         observedTick = observedTick === null ? frame.tick : Math.max(observedTick, frame.tick);
+        let indexedOrders = null;
+        const bySide = new Map();
+        function ownQty(id, side, price) {
+          if (!state.orders.length) return 0;
+          if (state.orders !== indexedOrders) {
+            indexedOrders = state.orders;
+            bySide.clear();
+            for (const order of indexedOrders) {
+              if (!order) continue;
+              let byId = bySide.get(order.side);
+              if (!byId) {
+                byId = new Map();
+                bySide.set(order.side, byId);
+              }
+              let prices = byId.get(order.itemId);
+              if (!prices) {
+                prices = new Map();
+                byId.set(order.itemId, prices);
+              }
+              prices.set(order.price, (prices.get(order.price) || 0) + (order.qtyRemaining || 0));
+            }
+          }
+          return bySide.get(side)?.get(id)?.get(price) || 0;
+        }
         let changed = false;
         for (const m of frame.m) {
           if (!m || typeof m !== "object") continue;
@@ -4087,15 +4067,6 @@ SOFTWARE.
               state.guild = guildView(m.guild);
               state.guildRevision++;
               state.inspect = null;
-              for (const entry of Array.isArray(m.chat) ? m.chat : []) {
-                const loot = bossRecords?.lootNotice(entry);
-                if (loot)
-                  bossEvent({
-                    kind: "loot",
-                    ...loot,
-                    tick: Number.isSafeInteger(entry.tick) ? entry.tick : frame.tick,
-                  });
-              }
               for (const card of Array.isArray(m.bossFalls) ? m.bossFalls : []) {
                 const fall = bossRecords?.fallNotice(card);
                 if (fall)
@@ -4155,18 +4126,6 @@ SOFTWARE.
                 });
               changed = true;
               break;
-            case "chat": {
-              const loot = bossRecords?.lootNotice(m);
-              if (loot) {
-                bossEvent({
-                  kind: "loot",
-                  ...loot,
-                  tick: Number.isSafeInteger(m.tick) ? m.tick : frame.tick,
-                });
-                changed = true;
-              }
-              break;
-            }
             case "bossFall": {
               const fall = bossRecords?.fallNotice(m.card);
               if (fall) {
@@ -4263,23 +4222,26 @@ SOFTWARE.
               }
               break;
             case "marketBook":
-              top(m.top);
+              top(m.top, ownQty);
               changed = true;
               break;
             case "marketBooks":
-              for (const v of m.tops || []) top(v);
+              for (const v of m.tops || []) top(v, ownQty);
               changed = true;
               break;
             case "marketStock":
               if (Array.isArray(m.summary))
                 for (const s of m.summary)
                   if (Array.isArray(s))
-                    top({
-                      itemId: s[0],
-                      ask: s[1] > 0 ? s[1] : null,
-                      bid: s[2] > 0 ? s[2] : null,
-                      traded: s[3] || 0,
-                    });
+                    top(
+                      {
+                        itemId: s[0],
+                        ask: s[1] > 0 ? s[1] : null,
+                        bid: s[2] > 0 ? s[2] : null,
+                        traded: s[3] || 0,
+                      },
+                      ownQty,
+                    );
               changed = true;
               break;
             case "marketDepth":
@@ -4421,6 +4383,51 @@ SOFTWARE.
           }
         }
       }
+      let sessionStamp = null,
+        nativeGuild;
+      function refreshSession(session) {
+        const p = session?.state;
+        if (!validPlayer(p)) return;
+        const orders = session.orders,
+          windows = session.context?.windows,
+          guild = session.guildInfo;
+        const stamp = [
+          p,
+          p.lastTick,
+          p.activity,
+          p.route,
+          p.route?.jobId,
+          p.route?.zoneId,
+          p.enhance?.itemId,
+          p.enhance?.toPlus,
+          p.bank,
+          p.bankOrder,
+          p.bankLocked,
+          p.equipment,
+          p.brews,
+          p.houseBuild,
+          p.houseUpgrades,
+          orders,
+          windows,
+          guild,
+        ];
+        if (sessionStamp && stamp.every((value, i) => value === sessionStamp[i])) return;
+        sessionStamp = stamp;
+        state.player = p;
+        state.orders = Array.isArray(orders) ? orders : [];
+        state.windows = Array.isArray(windows) ? windows : [];
+        if (guild !== undefined && guild !== nativeGuild) {
+          nativeGuild = guild;
+          state.guild = guildView(guild);
+        }
+        state.receivedAt = now();
+        state.revision++;
+        for (const fn of listeners) {
+          try {
+            fn(state);
+          } catch {}
+        }
+      }
       return {
         state,
         receive,
@@ -4437,24 +4444,12 @@ SOFTWARE.
           state.packTaxRampMs = null;
           state.marketAway = [];
           state.settlements = [];
+          sessionStamp = null;
+          nativeGuild = undefined;
           combatEvent({ kind: "reset", tick: session?.state?.lastTick });
-          this.refreshSession(session);
+          refreshSession(session);
         },
-        refreshSession(session) {
-          const p = session?.state;
-          if (!validPlayer(p)) return;
-          state.player = p;
-          state.orders = Array.isArray(session.orders) ? session.orders : [];
-          state.windows = Array.isArray(session.context?.windows) ? session.context.windows : [];
-          if (session.guildInfo !== undefined) state.guild = guildView(session.guildInfo);
-          state.receivedAt = now();
-          state.revision++;
-          for (const fn of listeners) {
-            try {
-              fn(state);
-            } catch {}
-          }
-        },
+        refreshSession,
         useLivePlayer(reader) {
           readLivePlayer = reader;
           syncLivePlayer();
@@ -6135,9 +6130,9 @@ SOFTWARE.
       未使用药水收纳: "Compact unused potions",
       "将未使用药水和原生喝药控件合并到增益面板底部；关闭恢复原生展示。":
         "Move unused potions and their native drink controls to the bottom of the buff panel; turn off to restore the native layout.",
-      首领排行与掉落日志: "Boss ranks and loot log",
-      "记录收到的首领排行与掉落；关闭后停止记录和保存。":
-        "Record received boss ranks and loot; turning this off stops recording and saving.",
+      首领排行: "Boss ranks",
+      "保留收到的首领排行，在原生结算需要时补充名次。":
+        "Keep received boss ranks and show the position if it is missing from the native result.",
       公会捐献性价比: "Guild donation value",
       "显示当前报价中每点成本较低的捐献物品。":
         "Show donation items with a low cost per point at received prices.",
@@ -6192,8 +6187,6 @@ SOFTWARE.
       "受到伤害 −{n}%": "−{n}% damage taken",
       家园: "Home",
       最近一笔: "Latest",
-      掉落日志: "Loot log",
-      暂无掉落记录: "No loot recorded",
       战斗装备: "Combat gear",
       工具: "Tools",
       坐骑: "Mount",
@@ -8822,7 +8815,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.161";
+  const PLUGIN_VERSION = "0.4.167";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -8981,8 +8974,8 @@ SOFTWARE.
       {
         id: "bossRecords",
         group: "增益与提醒",
-        name: "首领排行与掉落日志",
-        description: "记录收到的首领排行与掉落；关闭后停止记录和保存。",
+        name: "首领排行",
+        description: "保留收到的首领排行，在原生结算需要时补充名次。",
       },
       {
         id: "bossFeed",
@@ -10463,6 +10456,19 @@ SOFTWARE.
       }
     }
     return flow;
+  }
+  function forecastPriceKey() {
+    const { sessionRevision, quoteRevision, taxBp, packTaxRampMs } = store.state;
+    // Reprice on incoming quotes or settings, and periodically as timed prices expire.
+    return [
+      sessionRevision,
+      quoteRevision,
+      taxBp,
+      packTaxRampMs,
+      preferences.potionCost,
+      i18n.language,
+      Math.floor(Date.now() / 1000),
+    ].join(":");
   }
   function hourProfit(result, options) {
     const hour = { ...result.hour, inputs: { ...result.hour.inputs } };
@@ -12162,185 +12168,19 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
         ] || nameOf(name)
       : name;
   }
-  const logItemArt = new Map(),
-    lootChatViews = new WeakMap(),
-    logRenderedArt = new Map(),
-    logMissingArt = new Set();
-  let logArtRevision = 0,
-    logArtMissing = false;
-  function disposeLootChat(chat) {
-    const view = lootChatViews.get(chat);
-    if (!view) return;
-    view.setOpen?.(false);
-    chat.removeEventListener("click", view.nativeRoomClick);
-    view.button.remove();
-    view.log.remove();
-    lootChatViews.delete(chat);
-  }
-  function rememberLogArt(id, svg) {
-    if (!svg || !Number.isSafeInteger(id) || logItemArt.has(id % 1000)) return;
-    const copy = svg.cloneNode(true);
-    for (const n of [copy, ...copy.querySelectorAll("*")])
-      for (const a of [...n.attributes])
-        if (
-          /^on|^data-|^id$/i.test(a.name) ||
-          (/href/i.test(a.name) && !a.value.startsWith("data:image/"))
-        )
-          n.removeAttribute(a.name);
-    copy.querySelectorAll("script,foreignObject").forEach((n) => n.remove());
-    logItemArt.set(id % 1000, copy.outerHTML);
-    logArtRevision++;
-    if (logItemArt.size > 512) logItemArt.delete(logItemArt.keys().next().value);
-  }
-  function logItemHtml(id, qty) {
-    const tier = model.tier(id),
-      rarity = ["common", "uncommon", "rare", "epic", "legendary"][tier],
-      key = id % 1000;
-    let art = logItemArt.get(key) || logRenderedArt.get(key);
-    if (!art) {
-      if (!logMissingArt.has(key)) art = actionItemIcon(id);
-      if (art) {
-        logRenderedArt.set(key, art);
-        if (logRenderedArt.size > 512) logRenderedArt.delete(logRenderedArt.keys().next().value);
-      } else {
-        logArtMissing = true;
-        if (logMissingArt.size < 512) logMissingArt.add(key);
-      }
-    }
-    return (
-      '<span class="dvi-log-item rarity-' +
-      rarity +
-      '"><i>' +
-      (art || "<span>◆</span>") +
-      "</i><span>" +
-      escape(itemName(id)) +
-      "</span><b>×" +
-      fmt(qty) +
-      "</b></span>"
-    );
-  }
-  function renderLootChat(view) {
-    if (!view.open) return;
-    const key = [store.state.player?.id, bossRecords.revision, i18n.language, logArtRevision].join(
-        ":",
-      ),
-      now = Date.now(),
-      empty = !view.log.firstChild;
-    if (view.key === key && !empty && (!view.missing || now < view.retryAt)) return;
-    logArtMissing = false;
-    logMissingArt.clear();
-    const html =
-      view.rows
-        .map((r) => {
-          const loot = globalThis.DVIBossRecords.parseLoot(GAME_DATA, r.loot);
-          return (
-            "<article><header>" +
-            escape(recordedBossName(r.name)) +
-            "<time>" +
-            escape(new Date(r.at).toLocaleString(i18n.language === "en" ? "en-GB" : "zh-CN")) +
-            "</time></header>" +
-            (loot.coins ? logItemHtml(200, loot.coins) : "") +
-            loot.items.map((x) => logItemHtml(x.id, x.qty)).join("") +
-            loot.rest.map((x) => "<p>" + escape(x) + "</p>").join("") +
-            "</article>"
-          );
-        })
-        .join("") || '<p class="dvi-note">' + t("暂无掉落记录") + "</p>";
-    if (view.html !== html || empty) {
-      view.log.innerHTML = html;
-      view.html = html;
-    }
-    view.key = [store.state.player?.id, bossRecords.revision, i18n.language, logArtRevision].join(
-      ":",
-    );
-    view.missing = logArtMissing;
-    view.retryAt = now + 60000;
-  }
-  function syncLootChat(rows) {
-    for (const chat of document.querySelectorAll(".chat")) {
-      const tabs = chat.querySelector(".chat-tabs"),
-        body = chat.querySelector(".chat-body");
-      if (!tabs || !body) continue;
-      let view = lootChatViews.get(chat);
-      if (!view) {
-        const button = document.createElement("button"),
-          log = document.createElement("div");
-        button.type = "button";
-        button.className = "chat-tab dvi-loot-tab";
-        button.dataset.noI18n = "";
-        button.setAttribute("role", "tab");
-        log.className = "dvi-loot-log";
-        log.dataset.noI18n = "";
-        log.setAttribute("role", "log");
-        view = { button, log, open: false, room: chat.dataset.room, rows };
-        lootChatViews.set(chat, view);
-        view.setOpen = (open) => {
-          if (open) {
-            const nativeLog = chat.querySelector("[data-log]"),
-              height = nativeLog && getComputedStyle(nativeLog).height;
-            if (height && parseFloat(height) > 0 && view.log.style.height !== height)
-              view.log.style.height = height;
-          }
-          view.open = open;
-          view.room = chat.dataset.room;
-          chat.classList.toggle("dvi-loot-open", open);
-          for (const [key, value] of [
-            ["aria-pressed", String(open)],
-            ["aria-selected", String(open)],
-          ])
-            if (button.getAttribute(key) !== value) button.setAttribute(key, value);
-          for (const tab of tabs.querySelectorAll("[data-room]")) {
-            const selected = String(!open && tab.dataset.room === chat.dataset.room);
-            if (tab.getAttribute("aria-selected") !== selected)
-              tab.setAttribute("aria-selected", selected);
-          }
-          if (open) renderLootChat(view);
-        };
-        button.addEventListener("click", (e) => {
-          e.stopPropagation();
-          view.setOpen(!view.open);
-        });
-        view.nativeRoomClick = (e) => {
-          if (e.target.closest(".chat-tab[data-room]")) view.setOpen(false);
-        };
-        chat.addEventListener("click", view.nativeRoomClick);
-        view.setOpen(false);
-      }
-      view.rows = rows;
-      if (view.setOpen) {
-        if (chat.closest("[data-m-sub][hidden]") || view.room !== chat.dataset.room)
-          view.setOpen(false);
-        else if (view.open) view.setOpen(true);
-      }
-      if (!view.button.isConnected) tabs.append(view.button);
-      if (!view.log.isConnected) tabs.after(view.log);
-      setNativeText(view.button, t("掉落日志"));
-      renderLootChat(view);
-    }
-  }
   function syncBossRecords() {
-    if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("bossRecords"))
-      return;
-    const rows = bossRecords.list(store.state.player?.id);
-    syncLootChat(rows);
-    const fall = document.querySelector("[data-boss-fall]:not([hidden])"),
-      record = rows.find((r) => r.key === bossRecords.activeKey);
+    if (!insightFeatureEnabled("bossRecords")) return;
+    const fall = document.querySelector("[data-boss-fall]:not([hidden])");
     if (!fall) return;
-    if (!record) {
-      fall.querySelector(".dvi-boss-final-info")?.remove();
-      return;
-    }
+    const record = bossRecords.current(store.state.player?.id);
     const title = fall.querySelector("[data-boss-fall-title]")?.textContent || "";
-    if (![record.name, recordedBossName(record.name, "zh")].some((name) => title.includes(name))) {
-      fall.querySelector(".dvi-boss-final-info")?.remove();
-      return;
-    }
     const native = fall.querySelector("[data-boss-fall-you]");
     let note = fall.querySelector(".dvi-boss-final-info");
-    const parsed = globalThis.DVIBossRecords.parseLoot(GAME_DATA, record.loot),
-      icons = [...fall.querySelectorAll(".boss-loot i svg")];
-    parsed.items.forEach((x, i) => rememberLogArt(x.id, icons[i + (parsed.coins ? 1 : 0)]));
-    if (native?.textContent.trim()) {
+    if (
+      !record ||
+      native?.textContent.trim() ||
+      ![record.name, recordedBossName(record.name, "zh")].some((name) => title.includes(name))
+    ) {
       note?.remove();
       return;
     }
@@ -12351,18 +12191,9 @@ html.m-on .dvi-home-notice{bottom:calc(var(--m-tabs-h,58px) + env(safe-area-inse
     }
     setNativeText(note, bossRecordText(record));
   }
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (!event.target.closest?.("[data-m-sub-back]")) return;
-      for (const chat of document.querySelectorAll(".chat.dvi-loot-open"))
-        lootChatViews.get(chat)?.setOpen(false);
-    },
-    true,
-  );
   const bossRecordsStyle = document.createElement("style");
   bossRecordsStyle.textContent =
-    ".dvi-loot-log{display:none;flex:0 1 auto;height:260px;max-height:70dvh;min-height:0;overflow:auto;padding:4px 12px}.dvi-loot-open .dvi-loot-log{display:block}.dvi-loot-open :is([data-log],[data-compose],[data-dm-people],[data-chat-guest]){display:none!important}.dvi-loot-tab{margin-left:auto;flex-shrink:0}.dvi-loot-log article{padding:7px 0;border-bottom:1px solid var(--edge)}.dvi-loot-log header{font-size:12px;background:none;border:0;padding:0}.dvi-loot-log time{display:block;font-size:10px;color:var(--ink-faint)}.dvi-log-item{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:12px;overflow-wrap:anywhere;color:var(--rarity,var(--ink))}.dvi-log-item>i{display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;width:20px;height:20px}.dvi-log-item :is(svg,img){width:18px;height:18px;image-rendering:pixelated}.dvi-log-item>b{margin-left:auto;font-weight:400;white-space:nowrap}.dvi-boss-final-info{margin:6px 0;color:var(--brass);font-size:12px}";
+    ".dvi-boss-final-info{margin:6px 0;color:var(--brass);font-size:12px}";
   (document.head || document.documentElement).append(bossRecordsStyle);
 
   // ---- src/combat-metrics-ui.js ----
@@ -16011,8 +15842,8 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
           ? point.y - rect.height - gap
           : point.y + gap;
       const y = Math.max(10, Math.min(preferredY, win.innerHeight - rect.height - 10));
-      tip.style.left = x + "px";
-      tip.style.top = y + "px";
+      if (tip.style.left !== x + "px") tip.style.left = x + "px";
+      if (tip.style.top !== y + "px") tip.style.top = y + "px";
     }
     function paint() {
       if (!active?.element.isConnected && !retarget()) {
@@ -16028,7 +15859,7 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
           tip.append(p);
         }
       }
-      tip.hidden = false;
+      if (tip.hidden) tip.hidden = false;
       place();
     }
     function release() {
@@ -16047,13 +15878,20 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
       }
     }
     function hide() {
+      if (!active && timer === null && frame === null && tip.hidden) return;
       observer.disconnect();
       win.clearTimeout(timer);
       timer = null;
       if (frame !== null) win.cancelAnimationFrame(frame);
       frame = null;
-      tip.hidden = true;
+      if (!tip.hidden) tip.hidden = true;
       release();
+    }
+    function watchTarget(element) {
+      observer.disconnect();
+      observer.observe(element, { attributes: true, attributeFilter: ["title"] });
+      for (let parent = element.parentElement; parent; parent = parent.parentElement)
+        observer.observe(parent, { childList: true });
     }
     function retarget() {
       if ((!active?.buffGlyph && !active?.metric) || keyboard || !doc.elementFromPoint)
@@ -16076,12 +15914,15 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
       el.setAttribute("title", "");
       const described = el.getAttribute("aria-describedby");
       el.setAttribute("aria-describedby", (described ? described + " " : "") + tip.id);
+      watchTarget(el);
       return true;
     }
     function candidate(target) {
       if (
         !target?.closest ||
-        target.closest(".dvi-title-tooltip,.tip,.item-menu,.dvi-home-overview")
+        target.closest(
+          ".dvi-title-tooltip,.tip,.item-menu,.dvi-home-overview,[data-lootlog],[data-bank-grid] [data-item],[data-market-list] [data-item]",
+        )
       )
         return null;
       let el = target.closest("[title]");
@@ -16094,7 +15935,7 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
     }
     function choose(target, focused = false) {
       const el = candidate(target);
-      if (el === active?.element) return;
+      if (el === (active?.element ?? null)) return;
       hide();
       if (!el) return;
       const text = el.getAttribute("title");
@@ -16119,12 +15960,7 @@ html.dvi-insights :is(.boss-opts, .bo-sheet) button:disabled {
         const r = el.getBoundingClientRect();
         point = { x: r.left, y: r.bottom };
       }
-      observer.observe(doc.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["title"],
-      });
+      watchTarget(el);
       timer = win.setTimeout(paint, 200);
     }
     const move = (e) => {
@@ -17819,7 +17655,7 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       battleAtHome(p) ? ["home", p.houseCells] : "world",
     ]);
   }
-  function battleSignature(p) {
+  function battleSignature(p, configuration = battleConfiguration(p)) {
     const start = p.lastTick || 0,
       end = start + 6000;
     // Renewing a buff already covering this hour does not change this forecast.
@@ -17833,7 +17669,7 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       .filter(([id, n]) => n > 0 && (model.item?.(Number(id))?.heals || 0) > 0)
       .sort((a, b) => Number(a[0]) - Number(b[0]));
     return JSON.stringify([
-      battleConfiguration(p),
+      configuration,
       coverage,
       potions,
       store.state.windows,
@@ -17862,8 +17698,8 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       if (battleMapKey !== null) battleCache.clear();
       battleMapKey = mapKey;
     }
-    const signature = battleSignature(p),
-      configuration = battleConfiguration(p);
+    const configuration = battleConfiguration(p),
+      signature = battleSignature(p, configuration);
     for (const list of lists) {
       const rows = list.querySelectorAll(".route[data-zone]");
       if (!rows.length) continue;
@@ -17888,59 +17724,29 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
           for (const event of ["click", "pointerdown", "keydown"])
             box.addEventListener(event, (e) => e.stopPropagation());
           setupBattleLevel(record);
+          const details = box.querySelector("details");
+          details.addEventListener("toggle", () => {
+            const player = store.state.player;
+            if (details.open && player)
+              renderBattlePrice(record, battleCache.get(monster.id), battleConfiguration(player));
+          });
         }
         record.row = row;
         if (row.nextElementSibling !== record.box)
           row.insertAdjacentElement("afterend", record.box);
-        record.box.hidden = row.disabled;
+        if (record.box.hidden !== row.disabled) record.box.hidden = row.disabled;
         const entry = battleCache.get(monster.id),
           valid = entry?.signature === signature,
           sameConfig = entry?.configuration === configuration;
         syncBattleLevel(record, p, entry);
         syncRouteXp(row, entry?.error ? NaN : entry?.result?.hour?.xp, !!entry?.pending);
         setNativeText(record.box.querySelector(".dvi-native-action"), "");
-        record.box.setAttribute?.("aria-busy", String(!!entry?.pending));
-        const summary = record.box.querySelector("[data-battle-profit]");
-        if (entry?.result) {
-          const result = entry.result,
-            profit = globalThis.DVIPlannerCore.dailyProfits(
-              result.hour,
-              entry.player?.ironman ? {} : store.state.books,
-              entry.player?.ironman
-                ? 0
-                : store.state.packTaxRampMs == null
-                  ? store.state.taxBp
-                  : store.state,
-              Date.now(),
-              GAME_DATA,
-            );
-          setNativeText(
-            summary,
-            (result.deaths ? t("阵亡风险") + " · " : "") +
-              t("预计日利 {value}", { value: profitText(profit) }),
-          );
-          summary.title =
-            (entry.error
-              ? t("预测暂不可用") + "\n"
-              : !sameConfig || entry.pending
-                ? t("更新中…") + "\n"
-                : "") +
-            t("按当前血量、位置、食物库存和增益剩余时间，模拟接下来一小时。") +
-            "\n" +
-            t("日利和成本按这一小时的产出与消耗折算到一天，实际可能变化。") +
-            "\n" +
-            profitHint(profit);
-          const html = battleDetail(result, entry.player?.ironman);
-          const detail = record.box.querySelector("[data-battle-detail]");
-          if (detail.innerHTML !== html) detail.innerHTML = html;
-        } else {
-          setNativeText(summary, valid && entry.error ? t("预测暂不可用") : t("计算中…"));
-          summary.title = entry?.error ? errorText(entry.error) : "";
-          if (entry?.error) setNativeText(summary, errorText(entry.error));
-          const detail = record.box.querySelector("[data-battle-detail]"),
-            html = battleDetail(null);
-          if (detail.innerHTML !== html) detail.innerHTML = html;
+        const busy = String(!!entry?.pending);
+        if (record.busy !== busy) {
+          record.busy = busy;
+          record.box.setAttribute?.("aria-busy", busy);
         }
+        renderBattlePrice(record, entry, configuration, valid);
         // A rolling one-hour horizon changes on every tick near buff expiry.
         // Refresh it once per minute, while real stat/strength changes bypass the
         // interval. Keep the last completed snapshot visible during the worker.
@@ -17990,6 +17796,60 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
           record.box.remove();
           records.delete(id);
         }
+    }
+  }
+
+  function renderBattlePrice(record, entry, configuration, valid = true) {
+    const summary = record.box.querySelector("[data-battle-profit]"),
+      open = record.box.querySelector("details").open;
+    let title = "";
+    if (entry?.result) {
+      const result = entry.result,
+        stamp = forecastPriceKey();
+      let display = entry.priced;
+      if (display?.stamp !== stamp || display.result !== result) {
+        const ironman = entry.player?.ironman;
+        const profit = globalThis.DVIPlannerCore.dailyProfits(
+          result.hour,
+          ironman ? {} : store.state.books,
+          ironman ? 0 : store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
+          Date.now(),
+          GAME_DATA,
+        );
+        display = entry.priced = {
+          result,
+          stamp,
+          text:
+            (result.deaths ? t("阵亡风险") + " · " : "") +
+            t("预计日利 {value}", { value: profitText(profit) }),
+          hint: profitHint(profit),
+        };
+      }
+      setNativeText(summary, display.text);
+      title =
+        (entry.error
+          ? t("预测暂不可用") + "\n"
+          : entry.configuration !== configuration || entry.pending
+            ? t("更新中…") + "\n"
+            : "") +
+        t("按当前血量、位置、食物库存和增益剩余时间，模拟接下来一小时。") +
+        "\n" +
+        t("日利和成本按这一小时的产出与消耗折算到一天，实际可能变化。") +
+        "\n" +
+        display.hint;
+      if (open) {
+        display.html ??= battleDetail(result, entry.player?.ironman);
+        updateNativeResult(record.box.querySelector("[data-battle-detail]"), display.html);
+      }
+    } else {
+      title = entry?.error ? errorText(entry.error) : "";
+      setNativeText(summary, title || (valid && entry?.error ? t("预测暂不可用") : t("计算中…")));
+      if (open)
+        updateNativeResult(record.box.querySelector("[data-battle-detail]"), battleDetail(null));
+    }
+    if (record.summaryTitle !== title) {
+      record.summaryTitle = title;
+      summary.title = title;
     }
   }
 
@@ -18174,6 +18034,21 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
   const inventoryValueWindows = new WeakSet();
   const fieldHelpState = new WeakMap();
   let valueQuantityProbe = null;
+  const bankValueTypography = new WeakMap();
+  const inventoryLabelValues = new WeakMap();
+  const inventoryCachedValue = globalThis.DVIInventory.createValueCache();
+  function updateInventoryLabel(label, value) {
+    if (inventoryLabelValues.has(label) && inventoryLabelValues.get(label) === value) return;
+    inventoryLabelValues.set(label, value);
+    setNativeText(label, fmt(value, 2));
+  }
+  function inventoryValueReader(state, now) {
+    const { player, books, taxBp, packTaxRampMs, sessionRevision } = state;
+    const stamp = sessionRevision + ":" + player.id,
+      tax = packTaxRampMs == null ? taxBp : state;
+    return (id, qty) =>
+      inventoryCachedValue(stamp, id, qty, books, tax, now, GAME_DATA, player.ironman);
+  }
   function nativeValueQuantity() {
     const quantity = document.querySelector(
       "[data-bank-grid] .slot[data-item]:not(.barred):not(.chosen):not(:hover)>b:not(.plus):not(.dvi-bank-value)",
@@ -18194,11 +18069,14 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
   }
   function syncValueTypography(slot, label, resolvedStyle = null) {
     // Enhancement badges and our price must not be mistaken for the quantity.
-    const quantity =
-      slot.querySelector(
-        ":scope>b:not(.plus):not(.dvi-bank-value):not(.dvi-market-value),:scope>.market-tile-held",
-      ) || nativeValueQuantity();
-    const style = resolvedStyle || getComputedStyle(quantity);
+    if (resolvedStyle && bankValueTypography.get(label) === resolvedStyle) return;
+    const style =
+      resolvedStyle ||
+      getComputedStyle(
+        slot.querySelector(
+          ":scope>b:not(.plus):not(.dvi-bank-value):not(.dvi-market-value),:scope>.market-tile-held",
+        ) || nativeValueQuantity(),
+      );
     for (const property of [
       "font-family",
       "font-size",
@@ -18221,6 +18099,7 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       )
         label.style.setProperty(property, value, "important");
     }
+    if (resolvedStyle) bankValueTypography.set(label, resolvedStyle);
   }
   // Resolve the current grid at click time: native redraws may replace it.
   function resetInsightValueSorting(only = null) {
@@ -18247,7 +18126,8 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         if (view) {
           view.sorted = false;
           view.signature = null;
-          view.wasSorted = false;
+          view.labels = null;
+          view.rankInputs = null;
           for (const slot of grid.children) {
             const old = view.orders.get(slot);
             if (old !== undefined) slot.style.order = old;
@@ -18338,6 +18218,8 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         view.account = p.id;
         view.sorted = false;
         view.signature = null;
+        view.labels = null;
+        view.rankInputs = null;
       }
       bindValueSortingReset(window, "[data-bank-grid]", bankViews, syncInventory);
       // Move the original informational select; its listener and value stay native.
@@ -18351,8 +18233,23 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       const pressed = String(view.sorted);
       if (view.button.getAttribute("aria-pressed") !== pressed)
         view.button.setAttribute("aria-pressed", pressed);
-      if (grid.classList.contains("dvi-bank-sorted") !== view.sorted)
-        grid.classList.toggle("dvi-bank-sorted", view.sorted);
+      const wasSorted = grid.classList.contains("dvi-bank-sorted");
+      if (!view.sorted) {
+        if (wasSorted) {
+          grid.classList.remove("dvi-bank-sorted");
+          view.signature = null;
+          view.labels = null;
+          view.rankInputs = null;
+          for (const slot of grid.children) {
+            const old = view.orders.get(slot);
+            if (old !== undefined && slot.style.order !== old) slot.style.order = old;
+            slot.querySelector(".dvi-bank-value")?.remove();
+            slot.classList.remove("dvi-bank-valued");
+          }
+        }
+        continue;
+      }
+      if (!wasSorted) grid.classList.add("dvi-bank-sorted");
       const slots = [...grid.children],
         now = Date.now(),
         ids = slots.map((s) => Number(s.dataset.item)),
@@ -18361,6 +18258,14 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         ),
         order = globalThis.DVIInventory.bankOrder(p.bank, p.bankOrder),
         positions = new Map(order.map((id, index) => [id, index]));
+      const page = document.documentElement,
+        appearanceKey = [
+          page.className,
+          page.getAttribute("style"),
+          page.dataset.theme,
+          i18n.language,
+          innerWidth,
+        ].join("|");
       const signature = [
         p.id,
         store.state.sessionRevision,
@@ -18370,8 +18275,7 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         p.ironman,
         view.sorted,
         nativeSort?.value,
-        i18n.language,
-        document.documentElement.dataset.theme,
+        appearanceKey,
         Math.floor(now / 15000),
         JSON.stringify(p.bankLocked),
         JSON.stringify(order),
@@ -18392,15 +18296,7 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
         continue;
       view.signature = signature;
       view.slots = slots;
-      if (!view.sorted) {
-        for (const slot of slots) {
-          const old = view.orders.get(slot);
-          if (old !== undefined && slot.style.order !== old) slot.style.order = old;
-          slot.querySelector(".dvi-bank-value")?.remove();
-          slot.classList.remove("dvi-bank-valued");
-        }
-        continue;
-      }
+
       const entries = slots.map((slot, index) => {
         const id = ids[index],
           item = slot.matches(".slot[data-item]");
@@ -18421,7 +18317,11 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       canonical.forEach((entry, index) => (entry.index = index));
       // Read resolved font values before changing any slots. Computed styles are live:
       // retaining CSSStyleDeclaration across label writes forces style resolution per item.
-      const typography = new Map();
+      if (view.appearanceKey !== appearanceKey) {
+        view.appearanceKey = appearanceKey;
+        view.typography = new Map();
+      }
+      const typography = view.typography;
       for (const entry of entries) {
         if (!entry.item || typography.has(entry.appearance)) continue;
         const quantity =
@@ -18446,37 +18346,46 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
           values.set(property, style.getPropertyValue(property));
         typography.set(entry.appearance, { getPropertyValue: (property) => values.get(property) });
       }
+      const readValue = inventoryValueReader(store.state, now),
+        labels = new Map(),
+        labelTitle = t("整堆估值");
       for (const entry of entries) {
         const { slot, id, item } = entry,
           qty = p.bank?.[id];
-        entry.value = globalThis.DVIInventory.value(
-          id,
-          qty,
-          store.state.books,
-          store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
-          now,
-          GAME_DATA,
-          p.ironman,
-        );
-        if (!view.sorted || !item) {
-          slot.querySelector(".dvi-bank-value")?.remove();
+        const currentLabel = slot.querySelector(".dvi-bank-value");
+        if (!item) {
+          entry.value = null;
+          currentLabel?.remove();
           slot.classList.remove("dvi-bank-valued");
           continue;
         }
+        entry.value = readValue(id, qty);
         if (!slot.classList.contains("dvi-bank-valued")) slot.classList.add("dvi-bank-valued");
-        let label = slot.querySelector(".dvi-bank-value");
+        let label = view.labels?.get(id);
+        if (currentLabel && currentLabel !== label) currentLabel.remove();
         if (!label) {
           label = document.createElement("b");
           label.className = "dvi-bank-value";
           label.dataset.noI18n = "";
-          slot.append(label);
         }
-        setNativeText(label, fmt(entry.value, 2));
-        const title = t("整堆估值");
-        if (label.title !== title) label.title = title;
+        if (label.parentElement !== slot) slot.append(label);
+        labels.set(id, label);
+        updateInventoryLabel(label, entry.value);
+        if (label.title !== labelTitle) label.title = labelTitle;
         syncValueTypography(slot, label, typography.get(entry.appearance));
       }
-      const ranks = globalThis.DVIInventory.ranks(canonical);
+      view.labels = labels;
+      if (
+        view.rankInputs?.length !== canonical.length ||
+        !canonical.every(({ id, value, locked }, i) => {
+          const old = view.rankInputs[i];
+          return Object.is(id, old.id) && value === old.value && locked === old.locked;
+        })
+      ) {
+        view.rankInputs = canonical.map(({ id, value, locked }) => ({ id, value, locked }));
+        view.ranks = globalThis.DVIInventory.ranks(canonical);
+      }
+      const ranks = view.ranks;
       for (const entry of entries) {
         const rank = String(ranks.get(entry.index));
         if (entry.slot.style.order !== rank) entry.slot.style.order = rank;
@@ -18573,9 +18482,15 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       return;
 
     const inventory = globalThis.DVIInventory,
-      ironman = state.player.ironman;
+      ironman = state.player.ironman,
+      readValue = inventoryValueReader(state, now);
     let rerank = previous?.length !== children.length;
     const bySlot = new Map(previous?.map((entry) => [entry.slot, entry]));
+    const detached = new Map(
+      previous
+        ?.filter((entry) => entry.item && entry.label && !entry.slot.isConnected)
+        .map((entry) => [entry.id, entry.label]),
+    );
     const entries = Array.from(children, (slot, index) => {
       const old = bySlot.get(slot),
         id = slot.dataset.item,
@@ -18592,22 +18507,11 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
             now,
             GAME_DATA,
             ironman,
+            readValue,
           );
           value = estimates.groups.get(model.base(base)) ?? null;
         } else {
-          if (!estimates.rows.has(id))
-            estimates.rows.set(
-              id,
-              inventory.value(
-                base,
-                estimates.bank[id],
-                state.books,
-                estimates.tax,
-                now,
-                GAME_DATA,
-                ironman,
-              ),
-            );
+          if (!estimates.rows.has(id)) estimates.rows.set(id, readValue(base, estimates.bank[id]));
           value = estimates.rows.get(id);
         }
       }
@@ -18641,12 +18545,16 @@ html[data-dvi-feature-buffCompact="on"] .buff-sheet :is(.bt-drink,[data-bp]):dis
       let label = old?.label;
       if (label?.parentElement !== slot) {
         slot.classList.add("dvi-market-valued");
-        label = document.createElement("b");
-        label.className = "dvi-market-value";
-        label.dataset.noI18n = "";
+        label = detached.get(entry.id);
+        detached.delete(entry.id);
+        if (!label) {
+          label = document.createElement("b");
+          label.className = "dvi-market-value";
+          label.dataset.noI18n = "";
+        }
         slot.append(label);
       }
-      if (label !== old?.label || old.value !== value) setNativeText(label, fmt(value, 2));
+      updateInventoryLabel(label, value);
       entry.label = label;
     }
     view.entries = entries;
@@ -21823,6 +21731,8 @@ html.v4 [data-home-veil] .home-actions button:hover {
   const homeMarketModel = globalThis.DVIHomeMarket.create(GAME_DATA, HOME_MATERIAL_FACTS);
   let homeMarketView = null,
     homeMarketCache = null;
+  const homeMarketObstacleSelector =
+    ".nav-strip,.nav-more-menu,.panels,.ui-float,.chat,.m-tabs,.m-top,.away-timers,.home-window,.bank-window,[data-market-sheet],.item-menu,.hot-sheet,.chat-card";
   const homeMarketIconIndex = new Map(HOME_MARKET_ART.ids.map((id, index) => [id, index]));
   const homeMarketStyle = document.createElement("style");
   homeMarketStyle.textContent = `
@@ -22344,14 +22254,55 @@ html[data-theme="light"] .dvi-home-market {
     );
   }
   function resetHomeMarket() {
-    homeMarketView?.dock.dispose();
-    homeMarketView?.resize?.disconnect();
-    homeMarketView?.launch.remove();
-    homeMarketView?.panel.remove();
-    homeMarketView = null;
+    const view = homeMarketView;
+    if (view) {
+      view.dock.dispose();
+      view.resize?.disconnect();
+      view.geometry?.disconnect();
+      if (view.frame !== null) cancelAnimationFrame(view.frame);
+      view.launch.remove();
+      view.panel.remove();
+      homeMarketView = null;
+    }
     homeMarketStyle.remove();
     homeMarketCache = null;
     document.querySelectorAll(".dvi-home-unit-price").forEach((node) => node.remove());
+  }
+  function scheduleHomeMarketDock(view) {
+    if (view.frame !== null || view.launch.hidden) return;
+    view.frame = requestAnimationFrame(() => {
+      view.frame = null;
+      view.dock.refresh();
+    });
+  }
+  function syncHomeMarketDock(view) {
+    const obstacles = [...document.querySelectorAll(homeMarketObstacleSelector)];
+    const anchor = obstacles.find((node) => node.matches(".away-timers:not([hidden])"));
+    if (
+      view.anchor === anchor &&
+      view.obstacles.length === obstacles.length &&
+      obstacles.every((node, index) => view.obstacles[index] === node)
+    )
+      return;
+    view.anchor = anchor;
+    view.obstacles = obstacles;
+    view.geometry?.disconnect();
+    view.resize?.disconnect();
+    view.resize?.observe(view.launch);
+    const wrappers = new Set([document.documentElement]);
+    for (const node of obstacles) {
+      view.resize?.observe(node);
+      wrappers.add(node);
+      const veil = node.closest(".veil");
+      if (veil) wrappers.add(veil);
+    }
+    for (const node of wrappers)
+      view.geometry?.observe(node, {
+        attributes: true,
+        attributeOldValue: true,
+        attributeFilter: ["hidden", "class", "style", "data-mtab", "data-theme", "data-open"],
+      });
+    scheduleHomeMarketDock(view);
   }
   function mountHomeMarket() {
     if (homeMarketView) return;
@@ -22372,23 +22323,31 @@ html[data-theme="light"] .dvi-home-market {
     panel.setAttribute("role", "dialog");
     panel.innerHTML =
       '<header><div><h2></h2><p></p></div><button type="button" data-dvi-market-close aria-label="Close">×</button></header><div class="dvi-home-market-tools"><input type="search"><select data-dvi-market-kind></select><select data-dvi-market-quality></select></div><div class="dvi-home-market-scroll"><div class="dvi-home-market-groups"></div></div><details class="dvi-home-market-note"><summary></summary><p></p></details>';
-    const view = { launch, panel, open: false, html: "", language: null, focus: null };
+    const view = {
+      launch,
+      panel,
+      open: false,
+      html: "",
+      language: null,
+      focus: null,
+      obstacles: [],
+      anchor: null,
+      frame: null,
+    };
     homeMarketView = view;
     (document.body || document.documentElement).append(launch, panel);
     view.dock = globalThis.DVIEdgeDock.create(launch, {
       key: "dvi-insights.home-market-dock.v1",
       obstacles: () =>
-        Array.from(
-          document.querySelectorAll(
-            ".nav-strip,.nav-more-menu,.panels,.ui-float,.chat,.m-tabs,.m-top,.away-timers,.home-window,.bank-window,[data-market-sheet],.item-menu,.hot-sheet,.chat-card",
-          ),
-        )
-          .filter((e) => !e.closest("[hidden]"))
+        view.obstacles
+          .filter((e) => e.isConnected && !e.closest("[hidden]"))
           .map((e) => e.getBoundingClientRect())
           .filter((r) => r.width > 0 && r.height > 0),
       anchor: () => {
-        const r = view.anchor?.getBoundingClientRect();
-        return r?.height ? r : null;
+        const anchor = view.anchor;
+        if (!anchor?.isConnected || anchor.closest("[hidden]")) return null;
+        const rect = anchor.getBoundingClientRect();
+        return rect.height ? rect : null;
       },
       onOpen: () => {
         view.focus = launch;
@@ -22401,7 +22360,16 @@ html[data-theme="light"] .dvi-home-market {
       },
     });
     if (typeof ResizeObserver === "function")
-      view.resize = new ResizeObserver(() => view.dock.refresh());
+      view.resize = new ResizeObserver(() => scheduleHomeMarketDock(view));
+    if (typeof MutationObserver === "function")
+      view.geometry = new MutationObserver((changes) => {
+        if (
+          changes.some(
+            (change) => change.oldValue !== change.target.getAttribute(change.attributeName),
+          )
+        )
+          scheduleHomeMarketDock(view);
+      });
     const close = () => {
       view.open = false;
       panel.hidden = true;
@@ -22654,16 +22622,9 @@ html[data-theme="light"] .dvi-home-market {
       text.textContent = label;
       view.launch.querySelector("b").textContent = t("[SIK] 家园");
       view.launch.setAttribute("aria-label", label);
-      view.dock.refresh();
+      scheduleHomeMarketDock(view);
     }
-    const anchor = document.querySelector(".away-timers:not([hidden])");
-    if (anchor !== view.anchor) {
-      if (view.anchor) view.resize?.unobserve(view.anchor);
-      view.anchor = anchor;
-      if (anchor) view.resize?.observe(anchor);
-      view.dock.refresh();
-    }
-    view.dock.refresh();
+    syncHomeMarketDock(view);
     syncHomeListingPrice();
     renderHomeMarket();
   }
@@ -24332,9 +24293,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       document.querySelectorAll(".dvi-guild-best").forEach((n) => n.remove());
     if (id === "bossRecords" && !on) {
       saveBossRecords();
-      for (const chat of document.querySelectorAll(".chat")) disposeLootChat(chat);
       document.querySelectorAll(".dvi-boss-final-info").forEach((n) => n.remove());
-      logItemArt.clear();
     }
     if (id === "food" && !on) {
       document
@@ -24616,6 +24575,11 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   }
   const nativeStyle = document.createElement("style");
   nativeStyle.textContent = `
+/* Preserve the native log and defer off-screen item art and row content. */
+[data-lootlog] .ll-list > .ll-row {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 44px;
+}
 .route[data-dvi-route-xp] > .route-meta:not(.dvi-route-xp) {
   display: none !important;
 }
@@ -25507,18 +25471,23 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       })
       .join("")}</ul></details>`;
   }
-  function renderNative(record) {
+  function renderNative(record, key) {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("work")) {
       record.box.hidden = true;
       syncRouteXp(record.row, NaN);
       return;
     }
-    const unit = record.box.querySelector("[data-native-unit-price]");
-    if (unit) updateNativeResult(unit, nativeUnitPriceHtml(record.job));
+    const open = record.box.querySelector("details")?.open;
+    if (open) {
+      const unit = record.box.querySelector("[data-native-unit-price]");
+      if (unit) updateNativeResult(unit, nativeUnitPriceHtml(record.job));
+    }
     const pricing = record.box.querySelector("[data-native-pricing]");
-    const cached = nativeCache.get(nativeKey(record)),
+    key ??= nativeKey(record);
+    const cached = nativeCache.get(key),
       summary = record.box.querySelector("[data-native-summary]");
-    let text;
+    let text,
+      title = "";
     syncRouteXp(
       record.row,
       cached?.error || cached?.result?.farming ? NaN : cached?.result?.hour?.xp,
@@ -25526,22 +25495,45 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     );
     if (record.row.disabled) text = t("未解锁或当前位置无可用工作地点");
     else if (!store.state.player) text = t("等待角色数据");
-    else if (cached?.result) {
-      const p = hourProfit(cached.result, cached.options);
-      text =
-        cached.options.onFull === "drop"
-          ? t("丢弃产物 · 暂不估算日利")
-          : `${p.immediateProfit === null ? t("日利") + " " : ""}${profitText(p)}${cached.result.farming ? " · " + t("单田参考") : ""}`;
-      summary.title = cached.options.onFull === "drop" ? "" : profitHint(p);
-      if (pricing)
-        updateNativeResult(
-          pricing,
-          cached.options.onFull === "drop" ? "" : nativeCostSourcesHtml(p.cost),
-        );
+    else if (cached?.result && cached.options.onFull === "drop") {
+      text = t("丢弃产物 · 暂不估算日利");
+      if (open && pricing) updateNativeResult(pricing, "");
+    } else if (cached?.result) {
+      const stamp = forecastPriceKey();
+      let display = cached.priced;
+      if (
+        display?.stamp !== stamp ||
+        display.result !== cached.result ||
+        display.options !== cached.options
+      ) {
+        const profit = hourProfit(cached.result, cached.options);
+        text =
+          (profit.immediateProfit === null ? t("日利") + " " : "") +
+          profitText(profit) +
+          (cached.result.farming ? " · " + t("单田参考") : "");
+        display = cached.priced = {
+          stamp,
+          result: cached.result,
+          options: cached.options,
+          profit,
+          text,
+          title: profitHint(profit),
+        };
+      }
+      text = display.text;
+      title = display.title;
+      if (open && pricing) {
+        display.html ??= nativeCostSourcesHtml(display.profit.cost);
+        updateNativeResult(pricing, display.html);
+      }
     } else text = cached?.error ? errorText(cached.error) : t("正在估算经验与收益…");
-    if (pricing && !cached?.result) updateNativeResult(pricing, "");
-    if (summary.textContent !== text) summary.textContent = text;
-    record.box.hidden = !!record.row.disabled;
+    if (open && pricing && !cached?.result) updateNativeResult(pricing, "");
+    setNativeText(summary, text);
+    if (record.summaryTitle !== title) {
+      record.summaryTitle = title;
+      summary.title = title;
+    }
+    if (record.box.hidden !== !!record.row.disabled) record.box.hidden = !!record.row.disabled;
     const levels =
       typeof insightFeatureEnabled !== "function" || insightFeatureEnabled("workLevels");
     setNativeText(record.box.querySelector(".dvi-native-action"), levels ? t("升级计算") : "");
@@ -25551,6 +25543,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     record.box
       .querySelector("input")
       .setAttribute("aria-label", t("{name}目标等级", { name: nameOf(record.job.name) }));
+    if (!open) return;
     const container = record.box.querySelector("[data-native-result]");
     if (
       levels &&
@@ -25600,6 +25593,10 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
         save();
         queueNative(record, true);
       };
+      const details = box.querySelector("details");
+      details.addEventListener("toggle", () => {
+        if (details.open) renderNative(record);
+      });
       box.querySelector("button").onclick = request;
       box.querySelector("input").addEventListener("input", () => renderNative(record));
       box.querySelector("input").addEventListener("keydown", (e) => {
@@ -25635,8 +25632,8 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     )
       queueNative(record, true);
     record.calculationKey = key;
-    renderNative(record);
-    const cached = nativeCache.get(nativeKey(record));
+    renderNative(record, key);
+    const cached = nativeCache.get(key);
     if (
       !row.disabled &&
       store.state.player &&
@@ -25656,25 +25653,97 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (id === 200) return `<span>${t("金币按面值计价")}</span>`;
     return `<span title="${tax == null ? t("税率待接收") : t("税前 {value}", { value: fmt(b.bid, 2) })}">${t("求购")}${tax != null ? t("（税后）") : ""}: ${b.bidPublic && b.bid > 0 ? "≈ " : ""}${b.bid > 0 ? fmt(b.bid * (tax != null ? 1 - tax / 10000 : 1), 2) : "—"}</span><span title="${t("需等待买家")}">${t("挂售")}: ${b.askPublic && b.ask > 0 ? "≈ " : ""}${b.ask > 0 ? fmt(b.ask) : "—"}</span><span title="${t("稀有度和强化不抬高商人回收价")}">${t("商人")}: ${floor ? fmt(floor) : knownNontrade ? t("不可出售") : "—"}</span>${!(b.ask > 0) && b.purchaseCache?.price > 0 && Date.now() - b.purchaseCache.at <= 86400000 ? `<span>${t("缓存买价")}: ≈ ${fmt(b.purchaseCache.price)}</span>` : ""}${GAME_DATA.vendorBuys[id] ? `<span>${t("商人买价")}: ${fmt(GAME_DATA.vendorBuys[id])}</span>` : ""}${b.bidPublic || b.askPublic ? `<small>${t("含公开行情估价；仅最优报价，无完整深度，批量成交可能不同。")}</small>` : ""}${b.at && Date.now() - b.at > 300000 ? `<small>${t("报价已过期")}</small>` : ""}`;
   }
+  const itemPriceViews = new WeakMap(),
+    priceClampRoots = new Set();
+  let priceClampFrame = null,
+    nativeTipFrame = null;
+  function schedulePriceClamp(root) {
+    priceClampRoots.add(root);
+    if (priceClampFrame !== null) return;
+    priceClampFrame = requestAnimationFrame(() => {
+      priceClampFrame = null;
+      const moves = [];
+      for (const element of priceClampRoots) {
+        if (
+          !element.isConnected ||
+          element.closest("[hidden]") ||
+          getComputedStyle(element).position !== "fixed"
+        )
+          continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.bottom > innerHeight - 8)
+          moves.push([element, Math.max(8, innerHeight - rect.height - 8) + "px"]);
+      }
+      priceClampRoots.clear();
+      for (const [element, top] of moves) if (element.style.top !== top) element.style.top = top;
+    });
+  }
   function injectItemPrices(root, id) {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("prices")) return;
     if (!root || !Number.isSafeInteger(id) || !model.item(model.base(id))) return;
-    let box = root.querySelector(".dvi-native-prices");
-    if (!box) {
-      box = document.createElement("div");
+    let view = itemPriceViews.get(root);
+    if (!view) {
+      const box = document.createElement("div");
       box.className = "dvi-native-prices";
       box.dataset.noI18n = "";
-      root.append(box);
+      view = { box, html: null, key: null };
+      itemPriceViews.set(root, view);
     }
-    const html = itemPriceHtml(id);
-    if (box.innerHTML !== html) box.innerHTML = html;
-    const rect = root.getBoundingClientRect();
-    if (rect.bottom > innerHeight - 8 && getComputedStyle(root).position === "fixed")
-      root.style.top = Math.max(8, innerHeight - rect.height - 8) + "px";
+    const b = store.state.books[id],
+      now = Date.now();
+    const tax = globalThis.DVIPlannerCore.marketTaxBp(id, store.state, now);
+    const key = [
+      id,
+      i18n.language,
+      tax,
+      b?.bid,
+      b?.ask,
+      b?.floor,
+      b?.bidPublic,
+      b?.askPublic,
+      b?.purchaseCache?.price,
+      b?.purchaseCache?.at != null && now - b.purchaseCache.at <= 86400000,
+      b?.at != null && now - b.at > 300000,
+    ].join("|");
+    let changed = false;
+    if (view.key !== key) {
+      view.key = key;
+      const html = itemPriceHtml(id);
+      if (view.html !== html) {
+        view.box.innerHTML = html;
+        view.html = html;
+        changed = true;
+      }
+    }
+    if (view.box.parentElement !== root) {
+      root.append(view.box);
+      changed = true;
+    }
+    if (changed) schedulePriceClamp(root);
   }
   function syncNativeTip() {
+    if (hoveredItem === null) return;
     const tip = document.querySelector(".tip[data-tip]:not([hidden])");
-    if (tip && hoveredItem !== null) injectItemPrices(tip, hoveredItem);
+    if (tip) injectItemPrices(tip, hoveredItem);
+  }
+  function scheduleNativeTip() {
+    if (hoveredItem === null || document.hidden || nativeTipFrame !== null) return;
+    nativeTipFrame = requestAnimationFrame(() => {
+      nativeTipFrame = null;
+      syncNativeTip();
+    });
+  }
+  function syncInventoryPrices() {
+    const menu = document.querySelector("[data-item-menu]:not([hidden])");
+    if (menu?.querySelector(".item-menu-icon")) {
+      const id = nativeMenuId(menu);
+      if (id !== null) injectItemPrices(menu, id);
+    }
+    const sheet = document.querySelector("[data-market-sheet]:not([hidden])"),
+      icon = sheet?.querySelector("[data-sheet-icon][data-item]");
+    inventoryQuoteDetails = [menu, sheet].filter(Boolean);
+    if (icon)
+      injectItemPrices(sheet.querySelector(".sheet-title") || sheet, Number(icon.dataset.item));
   }
   function scanNative() {
     nativeTimer = null;
@@ -25682,6 +25751,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     nativeLastScan = Date.now();
     pruneNativeCache();
     i18n.refresh();
+    observeNativeSurfaces();
     syncNativePresentation();
     syncInsightSettings();
     if (!nativeStyle.isConnected) document.documentElement.append(nativeStyle);
@@ -25697,8 +25767,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     syncBossWork();
 
     syncBossRecords();
-    syncInventory();
-    syncMarketInventory();
+    scheduleInventorySurfaces();
     polishFields();
     syncBattleRows();
     for (const [row, record] of nativeRecords)
@@ -25721,15 +25790,6 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     renderDungeonHistory();
     syncCombatMetrics();
     syncNativeTip();
-    const menu = document.querySelector("[data-item-menu]:not([hidden])");
-    if (menu?.querySelector(".item-menu-icon")) {
-      const id = nativeMenuId(menu);
-      if (id !== null) injectItemPrices(menu, id);
-    }
-    const sheet = document.querySelector("[data-market-sheet]:not([hidden])"),
-      icon = sheet?.querySelector("[data-sheet-icon][data-item]");
-    if (icon)
-      injectItemPrices(sheet.querySelector(".sheet-title") || sheet, Number(icon.dataset.item));
   }
   function nativeRowAnchor(row) {
     const next = row.nextElementSibling;
@@ -25772,7 +25832,8 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
   function trackNativeScroll(e) {
     const list = e.target;
     if (!list.matches?.("[data-routes]")) return;
-    if (list.hasAttribute("data-dvi-scroll-guard")) syncBattleScrollGuard(list);
+    // The battle spacer preserves scroll position during redraws, so only the fallback needs snapshots on scroll.
+    if (list.hasAttribute("data-dvi-scroll-guard")) return;
     const old = nativeLists.get(list);
     if (
       old?.ids === nativeListIds(list) &&
@@ -25805,29 +25866,153 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       scheduleNative();
     }
   });
-  function shouldScheduleNative(change) {
-    const node = change.target.nodeType === 3 ? change.target.parentElement : change.target;
-    if (!node?.closest) return false;
+  const inventoryWindowSelector =
+    "[data-bank-veil],[data-market-veil],[data-bank-window],.market-window,[data-item-menu]";
+  const openInventorySelector =
+    "[data-bank-veil]:not([hidden]),[data-market-veil]:not([hidden]),[data-bank-window]:not([hidden]):not([data-bank-veil] *),.market-window:not([hidden]):not([data-market-veil] *)";
+  const inventorySurfaceSelector = "[data-bank-grid],[data-market-list]";
+  const inventoryPriceSelector = "[data-item-menu],[data-market-sheet]";
+  const nativeSurfaceSelector =
+    '[data-m-sub],[data-plan],[data-routes],[data-buffs],[data-buff-sheet],.away-timers,[data-fields],[data-account],[data-home-body],[data-market-sheet],.guild-window,[data-boss-fall],[data-family="mine"],' +
+    inventoryWindowSelector +
+    "," +
+    inventorySurfaceSelector;
+  const nativeIgnoredSelector =
+    ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.route-meta,.world,.chat-log,[data-log],[data-guild-log],[data-lootlog],.dvi-guild-best,.dvi-home-supplies,.dvi-home-market-note,.dvi-insights-settings-page,.dvi-market-value,.dvi-bank-value,.dvi-combat-metrics,.dvi-home-notice,.dvi-home-timer-list,.dvi-buff-price,.dvi-buff-time";
+  let inventoryTimer = null,
+    inventoryListsPending = false,
+    observedNativeSurfaces = [],
+    inventoryQuoteLists = [],
+    inventoryQuoteDetails = [];
+  function scheduleInventorySurfaces(includeLists = true) {
+    if (document.hidden) return;
+    inventoryListsPending ||= includeLists;
+    if (inventoryTimer !== null) return;
+    inventoryTimer = setTimeout(() => {
+      inventoryTimer = null;
+      const lists = inventoryListsPending;
+      inventoryListsPending = false;
+      if (document.hidden) return;
+      if (lists) {
+        syncInventory();
+        syncMarketInventory();
+      }
+      syncInventoryPrices();
+    }, 150);
+  }
+  function observeNativeSurfaces() {
+    const roots = [...document.querySelectorAll(nativeSurfaceSelector)];
     if (
-      node.closest(
-        ".dvi-native-work,.dvi-native-prices,.dvi-title-tooltip,.tip[data-tip],.route-meta,.world,.chat-log,[data-log],[data-guild-log],.dvi-guild-best,.dvi-home-supplies,.dvi-home-market-note,.dvi-insights-settings-page,.dvi-loot-log,.dvi-market-value,.dvi-combat-metrics,.dvi-home-notice,.dvi-buff-price,.dvi-buff-time",
-      )
+      roots.length === observedNativeSurfaces.length &&
+      roots.every((root, i) => root === observedNativeSurfaces[i])
     )
-      return false;
-    if (change.type === "attributes" && change.attributeName === "style") return false;
-    if (change.type === "characterData")
-      return (
-        !node.closest("[hidden]") &&
-        !!node.closest(
-          "[data-routes],[data-buff-sheet],.bank-window,.market-window,.guild-window,.away-timers",
-        )
+      return;
+    observedNativeSurfaces = roots;
+    nativeSurfaceMutations.disconnect();
+    inventoryQuoteLists = roots.filter((root) => root.matches(inventorySurfaceSelector));
+    inventoryQuoteDetails = roots.filter((root) => root.matches(inventoryPriceSelector));
+    const attributes = [
+      "hidden",
+      "aria-pressed",
+      "data-item",
+      "disabled",
+      "lang",
+      "data-open",
+      "data-mode",
+    ];
+    nativeSurfaceMutations.observe(document.documentElement, {
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ["lang"],
+    });
+    for (const root of roots) {
+      const detail = root.matches(
+        "[data-plan],[data-routes],[data-buffs],[data-buff-sheet],.away-timers",
       );
+      nativeSurfaceMutations.observe(root, {
+        attributes: true,
+        attributeOldValue: true,
+        attributeFilter: attributes,
+        ...(detail ? { subtree: true, characterData: true } : {}),
+      });
+    }
+  }
+  function shouldScheduleNative(change, node) {
+    if (!node?.closest) return false;
+    if (node.closest(".tip[data-tip]")) return false;
+    if (
+      change.type === "characterData" ||
+      (change.type === "childList" &&
+        ![...change.addedNodes, ...change.removedNodes].some((n) => n.nodeType === 1))
+    )
+      return !node.closest("[hidden]") && !!node.closest(nativeSurfaceSelector);
     return true;
   }
-  const nativeMutations = new MutationObserver((changes) => {
+  function handleNativeMutations(records) {
     if (document.hidden) return;
-    if (insightFeatureEnabled("nativeUiEfficiency")) nativePresentation.invalidate(changes);
-    changes = changes.filter(globalThis.DVIPresentation.changeHasEffect);
+    const changes = [],
+      nodes = new Map();
+    let inventory = false,
+      tip = false,
+      homeTimers = false,
+      discovery = false;
+    const hasEffect = globalThis.DVIPresentation.changeHasEffect;
+    for (const change of records) {
+      const node = change.target.nodeType === 3 ? change.target.parentElement : change.target;
+      if (!node?.matches || !hasEffect(change)) continue;
+      let scope = nodes.get(node);
+      if (scope === undefined) {
+        scope = node.matches(".tip[data-tip]")
+          ? "tip"
+          : node.closest(nativeIgnoredSelector)
+            ? "ignore"
+            : node.closest(inventorySurfaceSelector)
+              ? "inventory"
+              : node.closest(inventoryWindowSelector)
+                ? "inventory-window"
+                : node.closest(".away-timers")
+                  ? "home-timers"
+                  : "surface";
+        nodes.set(node, scope);
+      }
+      if (scope === "ignore") continue;
+      if (scope === "tip") {
+        tip = true;
+        continue;
+      }
+      if (scope === "home-timers") {
+        homeTimers = true;
+        continue;
+      }
+      if (scope === "inventory-window") {
+        if (
+          change.type === "attributes" ||
+          node.closest("[data-item-menu],[data-market-sheet],[data-market-tools],.bank-tools") ||
+          (change.type === "childList" &&
+            Array.from(change.addedNodes).some(
+              (child) =>
+                child.nodeType === 1 &&
+                (child.matches(inventoryPriceSelector) ||
+                  child.querySelector(inventoryPriceSelector)),
+            ))
+        )
+          inventory = true;
+        continue;
+      }
+      if (scope === "inventory") {
+        if (node.matches(inventorySurfaceSelector)) {
+          const view = bankViews.get(node) ?? marketValueViews.get(node);
+          if (!view || view.sorted) inventory = true;
+        }
+        continue;
+      }
+      changes.push(change);
+      if (!discovery && shouldScheduleNative(change, node)) discovery = true;
+    }
+    if (inventory) scheduleInventorySurfaces();
+    if (homeTimers) syncHomeTimers();
+    // Native hover draws its own content. Append the existing price block without a layout read.
+    if (tip) syncNativeTip();
     if (!changes.length) return;
     syncHomeAfterNativeRepaint(changes);
     // Native gives enhancement the title but leaves main-route controls beside
@@ -25843,9 +26028,6 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     // their visibility in this microtask; never restart a worker for a DOM update.
     syncRouteXpChanges(changes);
     if (changes.some((change) => change.target.matches?.("[data-fields]"))) polishFields();
-    if (changes.some((change) => change.target.matches?.("[data-bank-grid]"))) syncInventory();
-    if (changes.some((change) => change.target.matches?.("[data-market-list]")))
-      syncMarketInventory();
     if (changes.some((change) => change.target.matches?.("[data-boss-top],.boss-top")))
       polishBossRows();
     if (
@@ -25857,11 +26039,7 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     }
     if (changes.some((change) => change.target.matches?.("[data-buffs],[data-buff-sheet]")))
       syncBuffs();
-    if (changes.some((change) => change.target.matches?.(".away-timers"))) syncHomeTimers();
     // Reattach the same local panel and relocate fresh native controls before paint.
-    // The game's pointermove handler replaces the tooltip contents on every move.
-    // Restore prices in this microtask, before paint, instead of the 80ms scan.
-    if (changes.some((change) => change.target.matches?.(".tip[data-tip]"))) syncNativeTip();
     // The client replaces all list children on selection. Reattach before the next
     // paint, keeping our existing disclosure/input nodes instead of collapsing them.
     if (
@@ -25878,21 +26056,24 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       scheduleNative();
       return;
     }
-    if (changes.some(shouldScheduleNative)) scheduleNative();
-  });
+    if (discovery) scheduleNative();
+  }
+  const nativeMutations = new MutationObserver(handleNativeMutations);
+  const nativeSurfaceMutations = new MutationObserver(handleNativeMutations);
   function trackHover(e) {
     if (e.pointerType === "touch") {
-      if (hoveredItem !== null) {
-        hoveredItem = null;
-        scheduleNative();
-      }
+      hoveredItem = null;
+      return;
+    }
+    if (e.target?.closest?.("[data-lootlog]")) {
+      hoveredItem = null;
       return;
     }
     const element = e.target.closest?.("[data-item]"),
       id = element && !e.target.closest?.("[data-tip-name]") ? Number(element.dataset.item) : null;
     if (hoveredItem !== id) {
       hoveredItem = id;
-      scheduleNative();
+      if (id !== null) scheduleNativeTip();
     }
   }
   document.addEventListener("pointermove", trackHover, { capture: true, passive: true });
@@ -25912,22 +26093,19 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     passive: true,
   });
   document.addEventListener("keydown", rememberNativeSelection, { capture: true, passive: true });
-  nativeMutations.observe(document, {
-    subtree: true,
-    childList: true,
-    characterData: true,
-    attributes: true,
-    attributeOldValue: true,
-    attributeFilter: ["hidden", "aria-pressed", "data-item", "disabled", "lang", "data-open"],
-  });
+  nativeMutations.observe(document, { subtree: true, childList: true });
   const inventoryThemeMutations = new MutationObserver(scheduleNative);
   inventoryThemeMutations.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["class", "style", "data-theme"],
   });
-  let nativePlayerId = null;
+  let nativePlayerId = null,
+    nativeStateStamp = null,
+    nativeStateTimer = null,
+    nativeQuotes = null;
   store.subscribe(() => {
-    const id = store.state.player?.id;
+    const p = store.state.player,
+      id = p?.id;
     if (id !== undefined && id !== nativePlayerId) {
       nativePlayerId = id;
       nativeWorker?.terminate();
@@ -25940,7 +26118,49 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
       for (const record of nativeRecords.values())
         record.box.querySelector("button").disabled = false;
     }
-    scheduleNative();
+    const quoteChanged = store.state.quoteRevision !== nativeQuotes;
+    nativeQuotes = store.state.quoteRevision;
+    const stamp = [
+      id,
+      store.state.sessionRevision,
+      p?.activity,
+      p?.route?.jobId,
+      p?.route?.zoneId,
+      p?.enhance?.itemId,
+      p?.enhance?.toPlus,
+      store.state.offline,
+      store.state.guildRevision,
+    ];
+    if (!nativeStateStamp || stamp.some((value, i) => value !== nativeStateStamp[i])) {
+      nativeStateStamp = stamp;
+      clearTimeout(nativeStateTimer);
+      nativeStateTimer = null;
+      scheduleNative();
+    } else if (quoteChanged && document.querySelector(openInventorySelector)) {
+      if (
+        inventoryQuoteLists.some(
+          (list) =>
+            list.isConnected &&
+            list.matches(".dvi-bank-sorted,.dvi-market-sorted") &&
+            !list.closest("[hidden]"),
+        )
+      )
+        scheduleInventorySurfaces();
+      else if (
+        inventoryQuoteDetails.some((detail) => detail.isConnected && !detail.closest("[hidden]"))
+      )
+        scheduleInventorySurfaces(false);
+      scheduleNativeTip();
+    } else if (
+      (quoteChanged || p?.route || p?.enhance) &&
+      !document.hidden &&
+      nativeStateTimer === null
+    ) {
+      nativeStateTimer = setTimeout(() => {
+        nativeStateTimer = null;
+        scheduleNative();
+      }, 650);
+    }
   });
   scheduleNative();
   const nativeInterval = setInterval(scheduleNative, 5000);
@@ -25948,11 +26168,17 @@ html.m-on .account-tabs .dvi-insights-settings-tab{white-space:normal;overflow-w
     if (e.persisted) return;
     window.removeEventListener("storage", localeStorageChanged);
     nativeMutations.disconnect();
+    nativeSurfaceMutations.disconnect();
     inventoryThemeMutations.disconnect();
     nativeWorker?.terminate();
     clearTimeout(nativeTimeout);
     clearTimeout(nativeTimer);
+    clearTimeout(nativeStateTimer);
+    clearTimeout(inventoryTimer);
     clearInterval(nativeInterval);
+    if (priceClampFrame !== null) cancelAnimationFrame(priceClampFrame);
+    if (nativeTipFrame !== null) cancelAnimationFrame(nativeTipFrame);
+    priceClampRoots.clear();
     document.removeEventListener("pointermove", trackHover, true);
     document.removeEventListener("focusin", trackHover, true);
     document.removeEventListener("scroll", trackNativeScroll, true);
