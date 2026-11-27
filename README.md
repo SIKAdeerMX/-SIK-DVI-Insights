@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.158
+# [SIK] DVI Insights 0.4.159
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.159 离线总结缺少原始结算时可用可见项目估算产值。炼金按当前精华的单位材料成本推荐前三，并显示库存。
 
 0.4.158 移除插件旧装备估值分，整理穿戴页的原生地牢装备评分。优化市场「我的物品」价值排序，减少大列表重复估价和重绘。
 
@@ -127,6 +129,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.159 estimates visible offline output when the original settlement is unavailable. Alchemy ranks up to three materials by cost per unit of the selected essence and shows stored quantities.
 
 0.4.158 removes the old equipment value score and aligns the native dungeon gear score in the Worn panel. Value sorting in My items reuses estimates and reduces large-list rendering work.
 

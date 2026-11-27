@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.158
+// @version      0.4.159
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5185,7 +5185,24 @@ SOFTWARE.
         }
         return { ticks: 3600000 / data.constants.tickMs, inputs, outputs, xp, duration };
       }
-      return { rate, hour };
+      function recommend(player, product, quote) {
+        const index = products.indexOf(product),
+          recipe = rules?.products[product];
+        if (!recipe || !Number.isFinite(player?.skills?.alchemy)) return [];
+        const level = model.level(player.skills.alchemy),
+          locked = new Set(player.bankLocked);
+        if (level < recipe.level) return [];
+        const ranked = [];
+        for (const [id, row] of materials) {
+          const perItem = row[3 + index] / 1000;
+          if (locked.has(id) || level < row[1] || !(perItem > 0 && row[3] > 0)) continue;
+          const priced = quote(id);
+          if (Number.isFinite(priced?.price) && priced.price > 0)
+            ranked.push({ id, perItem, cost: priced.price / perItem, estimated: priced.estimated });
+        }
+        return ranked.sort((a, b) => a.cost - b.cost || a.id - b.id).slice(0, 3);
+      }
+      return { rate, hour, recommend };
     }
     return { create };
   });
@@ -6163,6 +6180,15 @@ SOFTWARE.
       有效观测: "Observed time",
       折算日入: "Daily gross estimate",
       稀有优先: "Best first",
+      离线可见产值: "Visible offline output value",
+      按原生总结可见项目估算: "Estimated from visible entries in the in-game recap",
+      "当前离线总结缺少可估价的记录。": "This offline recap has no entries Insights can value.",
+      按商人价: "At vendor prices",
+      库存: "In storage",
+      炼金材料推荐: "Recommended alchemy materials",
+      "金币/精华": "Coins / essence",
+      "按当前精华的单位材料成本取前三。报价为单价参考，不计纯净精华和药水。":
+        "The three cheapest materials per unit of the selected essence. Uses reference unit prices and excludes clean essence and potions.",
       "有效时长 {time}": "Effective time {time}",
       结算有效时长: "Effective duration",
       离线折算日利: "Offline daily net estimate",
@@ -8742,7 +8768,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.158";
+  const PLUGIN_VERSION = "0.4.159";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -11096,10 +11122,8 @@ SOFTWARE.
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("offline")) return;
     if (
       !store.state.player ||
-      (!force &&
-        (document.hidden ||
-          document.querySelector(".away-veil .away") ||
-          Date.now() - offlineResumeAt < 10000))
+      document.querySelector(".away-veil:not([hidden]) .away") ||
+      (!force && (document.hidden || Date.now() - offlineResumeAt < 10000))
     )
       return;
     if (
@@ -11121,30 +11145,97 @@ SOFTWARE.
     else offlineResumeAt = Date.now();
   });
   window.addEventListener("pagehide", () => captureOfflineBaseline(true));
+  function visibleOfflineDuration(host) {
+    const text = host.querySelector(".away-since")?.textContent.trim() || "";
+    const zh = /^工作了\s+(?:(\d+)\s*小时(?:\s+(\d+)\s*分)?|(\d+)\s*分钟)(?=[，。]|$)/.exec(text);
+    if (zh) return (Number(zh[1] || 0) * 60 + Number(zh[2] || zh[3] || 0)) * 60;
+    const en = /^(?:(\d+)h\s+(\d+)m|(\d+)\s+hours?|(\d+)\s+minutes?)\s+of work\b/i.exec(text);
+    return en ? (Number(en[1] || en[3] || 0) * 60 + Number(en[2] || en[4] || 0)) * 60 : null;
+  }
+  function visibleOfflineFlow(host, seconds) {
+    if (!(seconds > 0)) return null;
+    const items = {},
+      names = new Map();
+    for (const item of GAME_DATA.items) {
+      if (item.id >= 1000) continue;
+      for (const name of new Set([item.name, nameOf(item.name)])) {
+        names.set(name, names.has(name) ? null : item.id);
+      }
+    }
+    const tiers = ["", "rarity-uncommon", "rarity-rare", "rarity-epic", "rarity-legendary"];
+    for (const chip of host.querySelectorAll(".away-haul:not(.away-used) > .away-chip.item")) {
+      const parsed = /^([\d,]+)\s*×\s*(.+)$/.exec(chip.textContent.trim());
+      if (!parsed || chip.querySelector("[data-unfinished]")) continue;
+      const [, amount, label] = parsed,
+        enhanced = /^(.*) \+(\d{1,2})$/.exec(label);
+      const base = names.get(enhanced?.[1] ?? label),
+        tier = Math.max(
+          0,
+          tiers.findIndex((key) => key && chip.classList.contains(key)),
+        );
+      const id = base + tier * 1000 + Number(enhanced?.[2] ?? 0) * 10000,
+        qty = Number(amount.replaceAll(",", ""));
+      if (base && model.item(id) && Number.isSafeInteger(qty) && qty > 0)
+        items[id] = (items[id] ?? 0) + qty;
+    }
+    for (const chip of host.querySelectorAll(".away-stat[data-away-embers]")) {
+      const id = Number(chip.dataset.awayEmbers),
+        value = /^\+([\d,]+)(?=\s)/.exec(chip.textContent.trim());
+      if (model.item(id) && value) {
+        const qty = Number(value[1].replaceAll(",", ""));
+        if (Number.isSafeInteger(qty) && qty > 0) items[id] = qty;
+      }
+    }
+    const coinLine = [...host.querySelectorAll(".away-stats > .away-stat:not(.embers)")]
+      .map((node) => /^([+−-][\d,]+)\s+(?:coins?|金币)$/i.exec(node.textContent.trim()))
+      .find(Boolean);
+    const coins = coinLine ? Number(coinLine[1].replaceAll(",", "").replace("−", "-")) : null;
+    if (!Object.keys(items).length && coins === null) return null;
+    const flow = globalThis.DVIActivity.offlineFlow({
+      ticksApplied: seconds / 0.6,
+      itemsGained: items,
+      coins,
+    });
+    return { ...flow, cash: coins, complete: false, estimated: true, source: "visible" };
+  }
   function renderOfflineIncome() {
     if (typeof insightFeatureEnabled === "function" && !insightFeatureEnabled("offline")) return;
-    const host = document.querySelector(".away-veil .away");
+    const host = document.querySelector(".away-veil:not([hidden]) .away");
     if (!host) {
       captureOfflineBaseline();
       return;
     }
-    let flow = offlineViews.get(host);
-    if (!flow) {
-      const after = globalThis.DVIActivity.offlineSnapshot(
-        store.state.player,
-        GAME_DATA.collectionBatchSizes,
-      );
+    const { player, offline: raw, seen: liveSeen } = store.state;
+    if (!player) return;
+    let view = offlineViews.get(host);
+    if (!view) {
+      const after = globalThis.DVIActivity.offlineSnapshot(player, GAME_DATA.collectionBatchSizes);
       if (!after) return;
-      let before = offlineBaseline?.id === after.id ? offlineBaseline : null;
-      const seen = store.state.seen || gameSeenBaseline;
-      if (
-        seen?.id === after.id &&
-        seen.tick < after.tick &&
-        (!before || seen.tick - before.tick > 100)
-      )
-        before = seen;
-      const raw = store.state.offline,
-        currentRaw = raw?.ticksApplied > 0 && Math.abs(raw.endTick - after.tick) <= 100;
+      view = { after, seconds: visibleOfflineDuration(host) };
+      offlineViews.set(host, view);
+    }
+    const { after, seconds } = view;
+    if (after.id !== player.id) return;
+    let before =
+      offlineBaseline?.id === after.id && offlineBaseline.tick < after.tick
+        ? offlineBaseline
+        : null;
+    const seen = liveSeen || gameSeenBaseline;
+    if (
+      seen?.id === after.id &&
+      seen.tick < after.tick &&
+      (!before || seen.tick - before.tick > 100)
+    )
+      before = seen;
+    const currentRaw = raw?.ticksApplied > 0 && Math.abs(raw.endTick - after.tick) <= 100;
+    if (
+      before &&
+      seconds !== null &&
+      Math.abs((after.tick - before.tick) * 0.6 - seconds) > 60 &&
+      (!currentRaw || Math.abs(after.tick - before.tick - raw.ticksElapsed) > 100)
+    )
+      before = null;
+    if (view.before !== before || view.raw !== raw || !view.resolved) {
       const start = currentRaw ? after.tick - raw.ticksApplied : before?.tick;
       const potionKinds = [...new Set(GAME_DATA.potions.map((x) => x.kind))];
       const potions = before?.buffsKnown
@@ -11170,10 +11261,14 @@ SOFTWARE.
           store.state.lastDropTick > before.tick && store.state.lastDropTick <= after.tick;
         after.tradeRecordGap = store.state.settlementFloorTick > before.tick;
       }
-      flow = globalThis.DVIActivity.offlineAccounting(raw, before, after, trades, potions);
-      if (!flow) return;
-      offlineViews.set(host, flow);
+      view.before = before;
+      view.raw = raw;
+      view.resolved = true;
+      view.flow =
+        globalThis.DVIActivity.offlineAccounting(raw, before, after, trades, potions) ||
+        visibleOfflineFlow(host, seconds);
     }
+    const { flow } = view;
     let box = host.querySelector(".dvi-native-offline");
     if (!box) {
       box = document.createElement("div");
@@ -11183,23 +11278,36 @@ SOFTWARE.
       if (head) head.insertAdjacentElement("afterend", box);
       else host.prepend(box);
     }
+    if (!flow) {
+      setNativeText(box, t("当前离线总结缺少可估价的记录。"));
+      return;
+    }
     const p = globalThis.DVIPlannerCore.profits(
       flow,
-      store.state.books,
-      store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
+      player.ironman ? {} : store.state.books,
+      player.ironman ? 0 : store.state.packTaxRampMs == null ? store.state.taxBp : store.state,
       Date.now(),
       GAME_DATA,
     );
-    const net = flow.complete ? p.immediateProfit : null,
-      estimated = flow.estimated || p.cost.estimated.length || p.immediate.estimated.length,
-      prefix = estimated ? "≈ " : "";
-    const label = net !== null ? "离线净收益" : "离线产值",
-      value = net !== null ? net : p.immediate.total;
-    const drops = p.immediate.pricedSubtotal - Math.max(0, flow.cash || 0),
+    const visible = flow.source === "visible",
+      vendor = p.immediate.unknownTax,
+      valuation = vendor ? p.vendor : p.immediate;
+    const net = flow.complete ? (vendor ? p.vendorProfit : p.immediateProfit) : null;
+    const estimated = flow.estimated || p.cost.estimated.length || valuation.estimated.length,
+      partial = valuation.total === null && valuation.pricedSubtotal > 0;
+    const label = net !== null ? "离线净收益" : visible ? "离线可见产值" : "离线产值";
+    const value = net ?? valuation.total ?? (partial ? valuation.pricedSubtotal : null);
+    const prefix = partial ? "≥ " : estimated ? "≈ " : "";
+    const basis =
+      (visible ? " · " + t("按原生总结可见项目估算") : "") + (vendor ? " · " + t("按商人价") : "");
+    const drops = valuation.pricedSubtotal - Math.max(0, flow.cash || 0),
       cost = p.cost.pricedSubtotal - Math.max(0, -(flow.cash || 0));
     const unknown = !flow.complete || p.cost.total === null;
     const rows = [
-      ["掉落产值", p.immediate.total === null ? t("待报价") : fmt(drops) + " " + t("金币")],
+      [
+        "掉落产值",
+        valuation.total === null && !partial ? t("待报价") : fmt(drops) + " " + t("金币"),
+      ],
       ["金币变化", Number.isFinite(flow.cash) ? fmt(flow.cash) + " " + t("金币") : "—"],
       [
         "素材 / 食物 / 药水",
@@ -11221,7 +11329,10 @@ SOFTWARE.
       ],
     );
     if (net === null && value !== null && flow.seconds > 0)
-      rows.push(["离线折算日入", "≈ " + fmt((value * 86400) / flow.seconds) + " " + t("金币/d")]);
+      rows.push([
+        "离线折算日入",
+        (partial ? "≥ " : "≈ ") + fmt((value * 86400) / flow.seconds) + " " + t("金币/d"),
+      ]);
     const title = `${duration(flow.seconds)}${
       missingPriceIds(p.cost).length
         ? " · " +
@@ -11239,8 +11350,11 @@ SOFTWARE.
         '<details><summary><span class="dvi-native-summary" data-offline-profit></span><span class="dvi-native-action" aria-hidden="true"></span></summary><div class="dvi-native-breakdown" data-offline-details></div></details><p class="dvi-note" data-offline-rate></p>';
     const summary = box.querySelector("[data-offline-profit]");
     setNativeText(box.querySelector(".dvi-native-action"), "");
-    summary.textContent = `${t(label)} ${value === null ? "—" : prefix + fmt(value) + " " + t("金币")}`;
-    summary.title = title;
+    setNativeText(
+      summary,
+      `${t(label)} ${value === null ? "—" : prefix + fmt(value) + " " + t("金币")}`,
+    );
+    if (summary.title !== title) summary.title = title;
     setNativeText(
       box.querySelector("[data-offline-rate]"),
       t("有效时长 {time}", { time: i18n.remainingDuration(flow.seconds) }) +
@@ -11248,9 +11362,10 @@ SOFTWARE.
         t(net !== null ? "离线折算日利" : "离线折算日入") +
         " " +
         (value !== null && flow.seconds > 0
-          ? "≈ " + fmt((value * 86400) / flow.seconds) + " " + t("金币/d")
+          ? (partial ? "≥ " : "≈ ") + fmt((value * 86400) / flow.seconds) + " " + t("金币/d")
           : "—") +
-        (net === null ? " · " + t("消耗记录不全，未扣完整成本") : ""),
+        basis +
+        (net === null && !visible ? " · " + t("消耗记录不全，未扣完整成本") : ""),
     );
     const details = box.querySelector("[data-offline-details]"),
       html = rows.map(([name, value]) => `<span>${t(name)}</span><span>${value}</span>`).join("");
@@ -11422,7 +11537,8 @@ SOFTWARE.
   const alchemyModel = globalThis.DVIAlchemy.create(GAME_DATA, model);
   let alchemySelectionBox = null,
     alchemyWorkBox = null,
-    dungeonHistoryBox = null;
+    dungeonHistoryBox = null,
+    alchemyRecommendation = null;
   function activityExtension(box, host, className) {
     if (!host) {
       box?.remove();
@@ -11485,6 +11601,66 @@ SOFTWARE.
           : ""),
     );
   }
+  function renderAlchemyRecommendation(box, p, product) {
+    let recommendation = box.querySelector("[data-dvi-alchemy-recommendation]");
+    if (!recommendation) {
+      recommendation = document.createElement("details");
+      recommendation.dataset.dviAlchemyRecommendation = "";
+      recommendation.open = innerHeight >= 600;
+      recommendation.innerHTML = "<summary></summary><div></div>";
+      box.append(recommendation);
+    }
+    setNativeText(recommendation.querySelector("summary"), t("炼金材料推荐"));
+    const now = Date.now(),
+      state = store.state;
+    const key = JSON.stringify([
+      p.id,
+      product,
+      model.level(p.skills?.alchemy ?? 0),
+      p.ironman,
+      p.bankLocked,
+      state.sessionRevision,
+      state.quoteRevision,
+      Math.floor(now / 15000),
+    ]);
+    if (alchemyRecommendation?.key !== key) {
+      const ranked = alchemyModel.recommend(p, product, (id) =>
+        p.ironman ? { price: GAME_DATA.vendorBuys?.[id] } : bossFeedPrice(id, p, now),
+      );
+      alchemyRecommendation = { key, ranked };
+    }
+    const { ranked } = alchemyRecommendation;
+    const rows = ranked
+      .map(
+        (row) =>
+          '<tr><td class="row-name ' +
+          (bossFeedRarities[model.tier(row.id)] || "") +
+          '">' +
+          escape(itemName(row.id)) +
+          "</td><td>" +
+          fmt(p.bank?.[row.id] ?? 0) +
+          "</td><td>" +
+          (row.estimated ? "≈ " : "") +
+          fmt(row.cost, 2) +
+          "</td></tr>",
+      )
+      .join("");
+    const heading = ["物品", "库存", "金币/精华"]
+      .map((label) => '<th scope="col">' + t(label) + "</th>")
+      .join("");
+    updateNativeResult(
+      recommendation.querySelector("div"),
+      rows
+        ? "<table><thead><tr>" +
+            heading +
+            "</tr></thead><tbody>" +
+            rows +
+            '</tbody></table><p class="dvi-note">' +
+            t("按当前精华的单位材料成本取前三。报价为单价参考，不计纯净精华和药水。") +
+            "</p>"
+        : '<p class="dvi-note">' + t("暂无可比较报价") + "</p>",
+    );
+  }
   function renderAlchemy(actual) {
     const p = store.state.player,
       windowEl = document.querySelector("[data-al-veil]:not([hidden]) [data-al-window]");
@@ -11510,6 +11686,7 @@ SOFTWARE.
         return limit > 0 && owned > 0 ? [{ id, qty: Math.min(owned, limit) }] : [];
       });
       paintAlchemy(alchemySelectionBox, p, product, picks, false);
+      renderAlchemyRecommendation(alchemySelectionBox, p, product);
     }
     const route = p?.route?.alchemy;
     alchemyWorkBox = activityExtension(
@@ -13313,6 +13490,29 @@ html.dvi-insights .enhance-grid .item-tile-cap > span {
   color: inherit;
   font-weight: 400 !important;
   text-shadow: none !important;
+}
+html.dvi-insights [data-al-window] .dvi-alchemy-selection {
+  flex: none;
+  max-height: min(32vh, 230px);
+  overflow-y: auto;
+}
+html.dvi-insights [data-dvi-alchemy-recommendation] {
+  margin: 4px 0 0;
+  padding: 4px 6px;
+  border-top: 1px solid var(--edge);
+}
+html.dvi-insights [data-dvi-alchemy-recommendation] table {
+  width: 100%;
+  table-layout: fixed;
+}
+html.dvi-insights [data-dvi-alchemy-recommendation] :is(th, td) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+html.dvi-insights [data-dvi-alchemy-recommendation] :is(th, td):first-child {
+  width: 55%;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 /* Align the native gear score with accuracy, armour and evasion. */
 html.dvi-insights[data-dvi-feature-equipment="on"] .worn-stats:has(> .worn-gs-box[data-gs]) {
