@@ -1,8 +1,10 @@
-# [SIK] DVI Insights 0.4.159
+# [SIK] DVI Insights 0.4.160
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.160 炼金材料推荐沿用生活首领的紧凑排版。推荐入口和日利并排，点开查看前三。
 
 0.4.159 离线总结缺少原始结算时可用可见项目估算产值。炼金按当前精华的单位材料成本推荐前三，并显示库存。
 
@@ -129,6 +131,8 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.160 moves alchemy recommendations into a compact popover beside the daily projection, using the skilling boss recommendation layout.
 
 0.4.159 estimates visible offline output when the original settlement is unavailable. Alchemy ranks up to three materials by cost per unit of the selected essence and shows stored quantities.
 

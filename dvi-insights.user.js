@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.159
+// @version      0.4.160
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -6184,8 +6184,7 @@ SOFTWARE.
       按原生总结可见项目估算: "Estimated from visible entries in the in-game recap",
       "当前离线总结缺少可估价的记录。": "This offline recap has no entries Insights can value.",
       按商人价: "At vendor prices",
-      库存: "In storage",
-      炼金材料推荐: "Recommended alchemy materials",
+      材料推荐: "Top materials",
       "金币/精华": "Coins / essence",
       "按当前精华的单位材料成本取前三。报价为单价参考，不计纯净精华和药水。":
         "The three cheapest materials per unit of the selected essence. Uses reference unit prices and excludes clean essence and potions.",
@@ -8768,7 +8767,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.159";
+  const PLUGIN_VERSION = "0.4.160";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -11606,11 +11605,29 @@ SOFTWARE.
     if (!recommendation) {
       recommendation = document.createElement("details");
       recommendation.dataset.dviAlchemyRecommendation = "";
-      recommendation.open = innerHeight >= 600;
-      recommendation.innerHTML = "<summary></summary><div></div>";
+      recommendation.innerHTML =
+        '<summary><span></span><span class="dvi-native-action" aria-hidden="true"></span></summary><div class="dvi-feed-best"></div>';
+      recommendation.lastElementChild.style.setProperty(
+        "--dvi-feed-art",
+        'url("' + HOME_MARKET_ART.source + '")',
+      );
+      recommendation.addEventListener("toggle", () => {
+        const player = store.state.player;
+        if (recommendation.open && recommendation.isConnected && player)
+          renderAlchemyRecommendation(box, player, recommendation.dataset.product);
+      });
+      recommendation.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !recommendation.open) return;
+        recommendation.open = false;
+        e.preventDefault();
+        e.stopPropagation();
+      });
       box.append(recommendation);
     }
-    setNativeText(recommendation.querySelector("summary"), t("炼金材料推荐"));
+    const selected = product ?? "";
+    if (recommendation.dataset.product !== selected) recommendation.dataset.product = selected;
+    setNativeText(recommendation.querySelector("summary>span"), t("材料推荐"));
+    if (!recommendation.open) return;
     const now = Date.now(),
       state = store.state;
     const key = JSON.stringify([
@@ -11629,38 +11646,35 @@ SOFTWARE.
       );
       alchemyRecommendation = { key, ranked };
     }
-    const { ranked } = alchemyRecommendation;
-    const rows = ranked
-      .map(
-        (row) =>
-          '<tr><td class="row-name ' +
-          (bossFeedRarities[model.tier(row.id)] || "") +
+    const rows = alchemyRecommendation.ranked
+      .map((row, index) => {
+        const name = nameOf(model.item(model.base(row.id))?.name || itemName(row.id));
+        const price = (row.estimated ? "≈ " : "") + fmt(row.cost, 2);
+        const ratio =
+          escape(price) +
+          ' <span class="dvi-feed-unit" title="' +
+          escape(t("按当前精华的单位材料成本取前三。报价为单价参考，不计纯净精华和药水。")) +
           '">' +
-          escape(itemName(row.id)) +
-          "</td><td>" +
-          fmt(p.bank?.[row.id] ?? 0) +
-          "</td><td>" +
-          (row.estimated ? "≈ " : "") +
-          fmt(row.cost, 2) +
-          "</td></tr>",
-      )
-      .join("");
-    const heading = ["物品", "库存", "金币/精华"]
-      .map((label) => '<th scope="col">' + t(label) + "</th>")
+          escape(t("金币/精华")) +
+          "</span>";
+        return feedChoiceHtml(row.id, name, "×" + fmt(p.bank?.[row.id] ?? 0), ratio, index === 0);
+      })
       .join("");
     updateNativeResult(
-      recommendation.querySelector("div"),
-      rows
-        ? "<table><thead><tr>" +
-            heading +
-            "</tr></thead><tbody>" +
-            rows +
-            '</tbody></table><p class="dvi-note">' +
-            t("按当前精华的单位材料成本取前三。报价为单价参考，不计纯净精华和药水。") +
-            "</p>"
-        : '<p class="dvi-note">' + t("暂无可比较报价") + "</p>",
+      recommendation.lastElementChild,
+      rows || '<p class="dvi-note">' + escape(t("暂无可比较报价")) + "</p>",
     );
   }
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      const recommendation = alchemySelectionBox?.querySelector(
+        "[data-dvi-alchemy-recommendation][open]",
+      );
+      if (recommendation && !recommendation.contains(e.target)) recommendation.open = false;
+    },
+    true,
+  );
   function renderAlchemy(actual) {
     const p = store.state.player,
       windowEl = document.querySelector("[data-al-veil]:not([hidden]) [data-al-window]");
@@ -11668,13 +11682,15 @@ SOFTWARE.
       p && windowEl && insightFeatureEnabled("work")
         ? windowEl.querySelector("[data-al-foot]")
         : null;
-    // A sibling stays mounted when the game refreshes its own footer.
+    // Keep the floating recommendations above their trigger and the game actions below it.
     alchemySelectionBox = activityExtension(
       alchemySelectionBox,
       selection?.parentElement,
       "dvi-alchemy-selection",
     );
     if (alchemySelectionBox) {
+      if (alchemySelectionBox.nextElementSibling !== selection)
+        selection.before(alchemySelectionBox);
       const product = windowEl.querySelector('[data-al="product"][aria-pressed="true"]')?.dataset.v;
       const picks = [
         ...windowEl.querySelectorAll("[data-al-list] [data-item]:not(.al-prow-off)"),
@@ -13491,28 +13507,135 @@ html.dvi-insights .enhance-grid .item-tile-cap > span {
   font-weight: 400 !important;
   text-shadow: none !important;
 }
-html.dvi-insights [data-al-window] .dvi-alchemy-selection {
-  flex: none;
-  max-height: min(32vh, 230px);
-  overflow-y: auto;
+html.dvi-insights .dvi-feed-best {
+  margin: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
 }
-html.dvi-insights [data-dvi-alchemy-recommendation] {
-  margin: 4px 0 0;
-  padding: 4px 6px;
+html.dvi-insights .dvi-feed-choice {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+}
+html.dvi-insights .dvi-feed-choice + .dvi-feed-choice {
   border-top: 1px solid var(--edge);
 }
-html.dvi-insights [data-dvi-alchemy-recommendation] table {
-  width: 100%;
-  table-layout: fixed;
+html.dvi-insights .dvi-feed-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
 }
-html.dvi-insights [data-dvi-alchemy-recommendation] :is(th, td) {
-  text-align: right;
+html.dvi-insights .dvi-feed-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html.dvi-insights .dvi-feed-qty {
+  flex: none;
+  color: var(--ink-muted);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-html.dvi-insights [data-dvi-alchemy-recommendation] :is(th, td):first-child {
-  width: 55%;
-  text-align: left;
-  overflow-wrap: anywhere;
+html.dvi-insights .dvi-feed-best-label {
+  flex: none;
+  color: var(--brass);
+  font-weight: 600;
+}
+html.dvi-insights .dvi-feed-ratio {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  background-image: var(--dvi-feed-art);
+  background-size: 512px 480px;
+  background-position: var(--dvi-feed-pos) !important;
+  background-repeat: no-repeat;
+}
+html.dvi-insights [data-al-window] .dvi-alchemy-selection {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 10px;
+  padding: 0 10px 4px;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-details] {
+  min-width: 0;
+}
+html.dvi-insights [data-al-window] .dvi-alchemy-selection summary {
+  min-height: 32px;
+  box-sizing: border-box;
+  align-items: center;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-metric] {
+  flex-wrap: nowrap;
+  gap: 5px;
+  min-width: 0;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-metric] .dvi-plan-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-metric] .dvi-plan-value {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] > summary {
+  padding: 0 4px 0 8px;
+  border-inline-start: 1px solid var(--edge);
+  white-space: nowrap;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] > summary .dvi-native-action {
+  min-width: 10px;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] > .dvi-feed-best {
+  position: absolute;
+  z-index: 3;
+  inset-inline-end: 8px;
+  bottom: calc(100% + 4px);
+  width: min(350px, calc(100% - 16px));
+  max-height: min(42vh, 160px);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2px 8px;
+  color: var(--ink);
+  box-shadow: 0 4px 14px #0004;
+  overflow: auto;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] .dvi-feed-choice {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  min-height: 34px;
+  gap: 5px;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] .dvi-feed-ratio {
+  justify-self: end;
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] .dvi-feed-unit {
+  color: var(--ink-muted);
+  font-size: var(--fs-2xs, 10px);
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] .dvi-feed-qty {
+  font-size: var(--fs-2xs, 10px);
+}
+html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] .dvi-feed-best-label {
+  font-size: var(--fs-2xs, 10px);
 }
 /* Align the native gear score with accuracy, armour and evasion. */
 html.dvi-insights[data-dvi-feature-equipment="on"] .worn-stats:has(> .worn-gs-box[data-gs]) {
@@ -22924,57 +23047,8 @@ html.dvi-insights .bo-menu[data-dvi-boss-feed] .dvi-feed-sort[data-active="true"
   color: var(--brass);
   background: color-mix(in srgb, var(--brass) 10%, transparent);
 }
-html.dvi-insights .dvi-feed-best {
-  margin: 6px;
-  padding: 2px 6px;
-  border: 1px solid var(--edge);
-  border-radius: 5px;
-  background: var(--panel);
-  color: inherit;
-  font: inherit;
-}
-html.dvi-insights .dvi-feed-choice {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-}
-html.dvi-insights .dvi-feed-choice + .dvi-feed-choice {
-  border-top: 1px solid var(--edge);
-}
-html.dvi-insights .dvi-feed-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  white-space: nowrap;
-}
-html.dvi-insights .dvi-feed-item-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-html.dvi-insights .dvi-feed-qty {
-  flex: none;
-  color: var(--ink-muted);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-html.dvi-insights .dvi-feed-best-label {
-  flex: none;
-  color: var(--brass);
-  font-weight: 600;
-}
 html.dvi-insights .dvi-feed-native-pick-count {
   margin-left: 4px;
-  font-variant-numeric: tabular-nums;
-}
-html.dvi-insights .dvi-feed-ratio {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 html.dvi-insights .dvi-feed-point-icon {
@@ -22988,17 +23062,38 @@ html.dvi-insights .dvi-feed-point-icon svg {
   width: 100%;
   height: 100%;
 }
-html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
-  display: inline-block;
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
-  background-image: var(--dvi-feed-art);
-  background-size: 512px 480px;
-  background-position: var(--dvi-feed-pos) !important;
-  background-repeat: no-repeat;
-}
 `;
+  function feedChoiceHtml(id, name, qty, ratioHtml, best) {
+    const tile = homeMarketIconIndex.get(model.base(id));
+    const pos =
+      tile === undefined
+        ? ""
+        : -((tile % HOME_MARKET_ART.columns) * 32) +
+          "px -" +
+          Math.floor(tile / HOME_MARKET_ART.columns) * 32 +
+          "px";
+    const icon = homeMarketItemIcon(id) || '<span aria-hidden="true"></span>';
+    const rarity = bossFeedRarities[model.tier(id)] || "";
+    return (
+      '<div class="dvi-feed-choice" style="--dvi-feed-pos:' +
+      pos +
+      '">' +
+      icon +
+      '<span class="dvi-feed-name"><span class="dvi-feed-item-name row-name ' +
+      rarity +
+      '">' +
+      escape(name) +
+      "</span>" +
+      '<b class="dvi-feed-qty">' +
+      escape(qty) +
+      "</b>" +
+      (best ? '<b class="dvi-feed-best-label">' + escape(t("最佳")) + "</b>" : "") +
+      "</span>" +
+      '<span class="dvi-feed-ratio">' +
+      ratioHtml +
+      "</span></div>"
+    );
+  }
   function resetBossFeedMenu(menu, record) {
     for (const b of menu.querySelectorAll(".dvi-feed-sort")) {
       b.querySelector("[data-dvi-feed-arrow]")?.remove();
@@ -23192,38 +23287,20 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
         ? result.ranked
             .map((best, index) => {
               const name = nameOf(
-                  model.item(model.base(best.itemId))?.name || itemName(best.itemId),
-                ),
-                price =
-                  (best.quote.estimated ? "≈ " : "") +
-                  best.coins.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
-                    maximumFractionDigits: 2,
-                  }),
-                tile = homeMarketIconIndex.get(best.itemId % 1000),
-                pos =
-                  -((tile % HOME_MARKET_ART.columns) * 32) +
-                  "px -" +
-                  Math.floor(tile / HOME_MARKET_ART.columns) * 32 +
-                  "px",
-                qty = bossFeedModel.quantity(p, best.itemId).toLocaleString("en-GB");
-              return (
-                '<div class="dvi-feed-choice" style="--dvi-feed-pos:' +
-                pos +
-                '">' +
-                homeMarketItemIcon(best.itemId) +
-                '<span class="dvi-feed-name"><span class="dvi-feed-item-name row-name ' +
-                bossFeedRarities[best.tier] +
-                '">' +
-                escape(name) +
-                '</span><b class="dvi-feed-qty">' +
-                escape(qty) +
-                "</b>" +
-                (index ? "" : '<b class="dvi-feed-best-label">' + escape(t("最佳")) + "</b>") +
-                '</span><span class="dvi-feed-ratio">' +
-                escape(price) +
-                " " +
-                unit +
-                "</span></div>"
+                model.item(model.base(best.itemId))?.name || itemName(best.itemId),
+              );
+              const price =
+                (best.quote.estimated ? "≈ " : "") +
+                best.coins.toLocaleString(i18n.language === "en" ? "en-US" : "zh-CN", {
+                  maximumFractionDigits: 2,
+                });
+              const qty = bossFeedModel.quantity(p, best.itemId).toLocaleString("en-GB");
+              return feedChoiceHtml(
+                best.itemId,
+                name,
+                qty,
+                escape(price) + " " + unit,
+                index === 0,
               );
             })
             .join("")
