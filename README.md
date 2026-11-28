@@ -1,8 +1,14 @@
-# [SIK] DVI Insights 0.4.168
+# [SIK] DVI Insights 0.4.171
 
 By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LICENSE) · [Privacy](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/PRIVACY.md)
 
 ## 中文介绍
+
+0.4.171 去除炼金排行表头点按时的文字选区和焦点描边，键盘焦点通过下划线显示。
+
+0.4.170 炼金排行可直接点击金币/精华、金币/件或精华/件排序，再点同一列切换升降序。当前列加粗。
+
+0.4.169 炼金锅新增材料性价比排行，显示游戏物品图标，支持按精华、品质、库存或报价筛选，支持搜索及升降序。
 
 0.4.168 战斗技能预估采用原生武器伤害分布，修正普通战斗的击杀速度、经验和日利估算。
 
@@ -147,6 +153,12 @@ By SIKAer · [MIT](https://github.com/SIKAdeerMX/-SIK-DVI-Insights/blob/main/LIC
 - 轻量更新提醒重新打开页面时检查 Greasy Fork 公开版本信息，随后每小时检查、失败后 15 分钟重试；跨标签共享一分钟最短间隔。设置独立挂载，显示运行版本、立即检查与更新页面入口。有新版时显示独立小提示，手机切换界面也可见；可关闭自动检查或忽略当前版本。不强制更新，不上传角色数据。
 
 ## English description
+
+0.4.171 removes accidental text selection and focus outlines from the Cauldron ranking headers. Keyboard focus is shown with an underline.
+
+0.4.170 makes the three cost and yield column headers clickable in the Cauldron rankings. Click the active column again to reverse its sort direction.
+
+0.4.169 adds material rankings to the Cauldron, with native item art, search, filters for essence, quality, stock and quotes, and ascending or descending sorting.
 
 0.4.168 uses the game's weapon damage distribution in combat skill forecasts, correcting kill rate, XP and profit estimates for regular monsters.
 

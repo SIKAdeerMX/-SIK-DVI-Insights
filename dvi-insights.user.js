@@ -2,7 +2,7 @@
 // @name         [SIK] DVI Insights
 // @name:zh-CN   [SIK] DVI信息增强
 // @namespace    SIKAer.DVIInsights
-// @version      0.4.168
+// @version      0.4.171
 // @author       SIKAer
 // @copyright    2026, SIKAer
 // @license      MIT
@@ -5249,24 +5249,45 @@ SOFTWARE.
         }
         return { ticks: 3600000 / data.constants.tickMs, inputs, outputs, xp, duration };
       }
-      function recommend(player, product, quote) {
+      function* candidates(player, product) {
         const index = products.indexOf(product),
           recipe = rules?.products[product];
-        if (!recipe || !Number.isFinite(player?.skills?.alchemy)) return [];
+        if (!recipe || !Number.isFinite(player?.skills?.alchemy)) return;
         const level = model.level(player.skills.alchemy),
           locked = new Set(player.bankLocked);
-        if (level < recipe.level) return [];
-        const ranked = [];
         for (const [id, row] of materials) {
           const perItem = row[3 + index] / 1000;
-          if (locked.has(id) || level < row[1] || !(perItem > 0 && row[3] > 0)) continue;
+          if (!(perItem > 0 && row[3] > 0)) continue;
+          const required = Math.max(recipe.level, row[1]);
+          yield { id, perItem, required, locked: locked.has(id), unlocked: level >= required };
+        }
+      }
+      function rankings(player, product, quote) {
+        const rows = [];
+        for (const row of candidates(player, product)) {
+          const { id, perItem } = row;
+          const priced = quote(id);
+          const price = Number.isFinite(priced?.price) && priced.price > 0 ? priced.price : null;
+          rows.push({
+            ...row,
+            price,
+            cost: price === null ? null : price / perItem,
+            estimated: priced?.estimated,
+          });
+        }
+        return rows;
+      }
+      function recommend(player, product, quote) {
+        const ranked = [];
+        for (const { id, perItem, locked, unlocked } of candidates(player, product)) {
+          if (locked || !unlocked) continue;
           const priced = quote(id);
           if (Number.isFinite(priced?.price) && priced.price > 0)
             ranked.push({ id, perItem, cost: priced.price / perItem, estimated: priced.estimated });
         }
         return ranked.sort((a, b) => a.cost - b.cost || a.id - b.id).slice(0, 3);
       }
-      return { rate, hour, recommend };
+      return { rate, hour, recommend, rankings };
     }
     return { create };
   });
@@ -6251,6 +6272,27 @@ SOFTWARE.
       "金币/精华": "Coins / essence",
       "按当前精华的单位材料成本取前三。报价为单价参考，不计纯净精华和药水。":
         "The three cheapest materials per unit of the selected essence. Uses reference unit prices and excludes clean essence and potions.",
+      性价比排行: "Rankings",
+      炼金性价比排行: "Alchemy rankings",
+      精华类型: "Essence type",
+      家园精华: "House essence",
+      首领精华: "Boss essence",
+      强化精华: "Enhance essence",
+      材料范围: "Material scope",
+      当前可炼: "Can distil",
+      有库存: "In stock",
+      有报价: "Quoted",
+      "精华/件": "Essence/item",
+      上一页: "Previous page",
+      下一页: "Next page",
+      关闭: "Close",
+      库存: "Stock",
+      已锁定: "Locked",
+      "第 {page}/{pages} 页 · {count} 项": "Page {page}/{pages} · {count} items",
+      "需炼金 {level} 级": "Alchemy Lv {level}",
+      "按每件原料报价 ÷ 精华产量计算，≈ 为估价。":
+        "Material unit price ÷ essence yield. ≈ means estimate.",
+      "按商人回收价估算，≈ 为估价。": "Uses merchant resale values. ≈ means estimate.",
       "有效时长 {time}": "Effective time {time}",
       结算有效时长: "Effective duration",
       离线折算日利: "Offline daily net estimate",
@@ -8859,7 +8901,7 @@ SOFTWARE.
   });
 
   // ---- Plugin version ----
-  const PLUGIN_VERSION = "0.4.168";
+  const PLUGIN_VERSION = "0.4.171";
 
   // ---- src/settings.js ----
   /* Public feature preferences; never reads or changes native game settings. */
@@ -11653,6 +11695,334 @@ SOFTWARE.
     alchemyWorkBox = null,
     dungeonHistoryBox = null,
     alchemyRecommendation = null;
+  let alchemyRankingsView = null;
+  const alchemyRankingPageSize = 40;
+  const alchemyRankingProducts = { house: "家园精华", boss: "首领精华", enhance: "强化精华" };
+  const alchemyRankingColumns = [
+    ["cost", "金币/精华"],
+    ["price", "金币/件"],
+    ["perItem", "精华/件"],
+  ];
+  function mountAlchemyRankings(box) {
+    const launch = document.createElement("button");
+    launch.type = "button";
+    launch.className = "bank-arrange dvi-alchemy-rank-launch";
+    launch.setAttribute("aria-haspopup", "dialog");
+    launch.setAttribute("aria-controls", "dvi-alchemy-rankings");
+    const view = { launch, dialog: null, offset: 0, sort: "cost", direction: 1, composing: false };
+    launch.addEventListener("click", () => {
+      const player = store.state.player;
+      if (!player || view.dialog?.open) return;
+      if (!view.dialog) attachAlchemyRankings(view, box);
+      translateAlchemyRankings(view);
+      view.tools.product.value = view.product;
+      view.offset = 0;
+      view.scroll.scrollTop = 0;
+      view.dialog.showModal();
+      renderAlchemyRankings(view, player);
+    });
+    box.append(launch);
+    return view;
+  }
+  function attachAlchemyRankings(view, box) {
+    const dialog = document.createElement("dialog");
+    dialog.id = "dvi-alchemy-rankings";
+    dialog.className = "bank-window dvi-alchemy-rankings";
+    dialog.setAttribute("aria-labelledby", "dvi-alchemy-rank-title");
+    dialog.style.setProperty("--dvi-home-item-atlas", 'url("' + HOME_MARKET_ART.source + '")');
+    dialog.style.setProperty(
+      "--dvi-alchemy-item-atlas",
+      'url("' + ALCHEMY_RANKING_ART.source + '")',
+    );
+    dialog.innerHTML = `<h2><span id="dvi-alchemy-rank-title"></span><button class="close" type="button" autofocus>×</button></h2>
+    <div class="dvi-alchemy-rank-tools">
+      <select data-rank="product"></select><input type="search" data-rank="search" autocomplete="off">
+      <select data-rank="quality"></select><select data-rank="scope"></select>
+    </div>
+    <div class="dvi-alchemy-rank-scroll" tabindex="0" role="region" aria-labelledby="dvi-alchemy-rank-title">
+      <table><thead><tr><th scope="col" data-rank-material></th>
+        ${alchemyRankingColumns
+          .map(
+            ([
+              key,
+            ]) => `<th scope="col"${key === view.sort ? ' aria-sort="' + (view.direction === 1 ? "ascending" : "descending") + '"' : ""}>
+          <button type="button" data-rank-sort="${key}"><span></span><i aria-hidden="true"></i></button></th>`,
+          )
+          .join("")}
+        <th scope="col" data-rank-stock></th></tr></thead><tbody></tbody></table>
+    </div>
+    <footer><small></small><nav><button type="button" data-rank="prev" class="bank-arrange">‹</button>
+      <span role="status"></span><button type="button" data-rank="next" class="bank-arrange">›</button></nav></footer>`;
+    const tools = Object.fromEntries(
+      [...dialog.querySelectorAll("[data-rank]")].map((node) => [node.dataset.rank, node]),
+    );
+    const headers = [...dialog.querySelectorAll("[data-rank-sort]")];
+    Object.assign(view, {
+      dialog,
+      tools,
+      headers,
+      close: dialog.querySelector(".close"),
+      scroll: dialog.querySelector(".dvi-alchemy-rank-scroll"),
+      body: dialog.querySelector("tbody"),
+      status: dialog.querySelector('[role="status"]'),
+    });
+    box.append(dialog);
+    view.close.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => {
+      if (dialog.open) return;
+      view.composing = false;
+      view.data = null;
+      view.result = null;
+      view.paint = null;
+      view.body.replaceChildren();
+    });
+    dialog.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      if (e.isComposing || view.composing || e.keyCode === 229) return;
+      e.preventDefault();
+      dialog.close();
+    });
+    dialog.addEventListener("cancel", (e) => {
+      if (view.composing) e.preventDefault();
+    });
+    const redraw = () => {
+      if (dialog.open && store.state.player) renderAlchemyRankings(view, store.state.player);
+    };
+    const reset = () => {
+      view.offset = 0;
+      view.scroll.scrollTop = 0;
+      redraw();
+    };
+    tools.search.addEventListener("compositionstart", () => {
+      view.composing = true;
+    });
+    tools.search.addEventListener("compositionend", () => {
+      view.composing = false;
+      reset();
+    });
+    tools.search.addEventListener("input", (e) => {
+      if (!view.composing && !e.isComposing) reset();
+    });
+    for (const control of [tools.product, tools.quality, tools.scope])
+      control.addEventListener("change", reset);
+    for (const button of headers)
+      button.addEventListener("click", () => {
+        const key = button.dataset.rankSort;
+        if (view.sort === key) view.direction *= -1;
+        else {
+          dialog.querySelector("[aria-sort]")?.removeAttribute("aria-sort");
+          view.sort = key;
+          view.direction = key === "perItem" ? -1 : 1;
+        }
+        button.parentElement.setAttribute(
+          "aria-sort",
+          view.direction === 1 ? "ascending" : "descending",
+        );
+        reset();
+      });
+    for (const [button, direction] of [
+      [tools.prev, -1],
+      [tools.next, 1],
+    ])
+      button.addEventListener("click", () => {
+        view.offset += direction * alchemyRankingPageSize;
+        view.scroll.scrollTop = 0;
+        redraw();
+        if (button.disabled)
+          (direction === 1 ? tools.prev : tools.next).focus({ preventScroll: true });
+      });
+  }
+  function translateAlchemyRankings(view) {
+    if (view.language === i18n.language) return;
+    view.language = i18n.language;
+    const { dialog, tools } = view;
+    const options = (control, label, choices) => {
+      const value = control.value;
+      control.setAttribute("aria-label", t(label));
+      control.replaceChildren(...choices.map(([id, text]) => new Option(t(text), id)));
+      if (value) control.value = value;
+    };
+    setNativeText(dialog.querySelector("#dvi-alchemy-rank-title"), t("炼金性价比排行"));
+    view.close.setAttribute("aria-label", t("关闭"));
+    tools.prev.setAttribute("aria-label", t("上一页"));
+    tools.next.setAttribute("aria-label", t("下一页"));
+    tools.search.placeholder = t("搜索物品");
+    tools.search.setAttribute("aria-label", t("搜索物品"));
+    options(tools.product, "精华类型", Object.entries(alchemyRankingProducts));
+    options(tools.quality, "品质", [
+      ["all", "全部品质"],
+      ...TIERS.map((tier, index) => [String(index), tier]),
+    ]);
+    options(tools.scope, "材料范围", [
+      ["all", "全部材料"],
+      ["usable", "当前可炼"],
+      ["owned", "有库存"],
+      ["quoted", "有报价"],
+    ]);
+    setNativeText(dialog.querySelector("[data-rank-material]"), t("材料"));
+    setNativeText(dialog.querySelector("[data-rank-stock]"), t("库存"));
+    view.headers.forEach((button, index) =>
+      setNativeText(button.firstElementChild, t(alchemyRankingColumns[index][1])),
+    );
+  }
+  function renderAlchemyRankings(view, p) {
+    if (!view.dialog.open || view.composing || document.hidden) return;
+    translateAlchemyRankings(view);
+    const { tools, dialog } = view,
+      state = store.state,
+      now = Date.now(),
+      product = tools.product.value;
+    setNativeText(
+      dialog.querySelector("footer small"),
+      t(p.ironman ? "按商人回收价估算，≈ 为估价。" : "按每件原料报价 ÷ 精华产量计算，≈ 为估价。"),
+    );
+    const level = model.level(p.skills?.alchemy ?? 0);
+    const key = [
+      p.id,
+      state.sessionRevision,
+      product,
+      level,
+      p.ironman,
+      (p.bankLocked ?? []).join(","),
+    ].join(":");
+    const filters = [
+      tools.search.value.trim().toLowerCase(),
+      tools.quality.value,
+      tools.scope.value,
+    ];
+    const [needle, quality, scope] = filters,
+      sort = view.sort;
+    const inventoryAffectsRanking = scope === "owned";
+    const data = view.data,
+      age = now - (data?.time ?? 0);
+    if (
+      data?.key !== key ||
+      (!p.ironman && (age >= 15000 || (age >= 1000 && data.revision !== state.quoteRevision)))
+    ) {
+      const merchantBooks = {};
+      const candidates = alchemyModel.rankings(p, product, (id) =>
+        p.ironman
+          ? {
+              price: globalThis.DVIPlannerCore.vendorPrice(id, merchantBooks, GAME_DATA),
+              estimated: true,
+            }
+          : bossFeedPrice(id, p, now),
+      );
+      // Quote batches can contain unrelated items or repeat the current prices.
+      const unchanged =
+        data?.key === key &&
+        candidates.length === data.rows.length &&
+        candidates.every(
+          (row, index) =>
+            row.price === data.rows[index].price && row.estimated === data.rows[index].estimated,
+        );
+      const rows = unchanged ? data.rows : candidates;
+      view.data = { key, time: now, revision: state.quoteRevision, rows };
+    }
+    const filterKey = JSON.stringify([view.language, ...filters, sort, view.direction]);
+    if (
+      view.result?.catalog !== view.data.rows ||
+      view.result.filterKey !== filterKey ||
+      (inventoryAffectsRanking &&
+        ((view.result.bank !== p.bank && now - view.result.time >= 1000) ||
+          now - view.result.time >= 15000))
+    ) {
+      const rows = [];
+      for (const row of view.data.rows) {
+        const { id, cost, locked, unlocked } = row,
+          tier = model.tier(id),
+          owned = p.bank?.[id] ?? 0;
+        if (
+          (quality !== "all" && tier !== +quality) ||
+          (scope === "usable" && (locked || !unlocked)) ||
+          (scope === "owned" && !owned) ||
+          (scope === "quoted" && cost === null)
+        )
+          continue;
+        const english = model.item(model.base(id))?.name ?? String(id),
+          name = nameOf(english);
+        const chinese = GAME_DATA.labels?.[english] ?? name;
+        if (
+          needle &&
+          !english.toLowerCase().includes(needle) &&
+          !chinese.toLowerCase().includes(needle) &&
+          String(id) !== needle
+        )
+          continue;
+        rows.push({ ...row, tier, name });
+      }
+      rows.sort((a, b) =>
+        a[sort] === null
+          ? +(b[sort] !== null) || a.id - b.id
+          : b[sort] === null
+            ? -1
+            : (a[sort] - b[sort]) * view.direction || a.id - b.id,
+      );
+      view.result = { catalog: view.data.rows, filterKey, rows, bank: p.bank, time: now };
+    }
+    const { rows } = view.result,
+      size = alchemyRankingPageSize,
+      total = rows.length;
+    view.offset = Math.min(view.offset, Math.max(0, Math.ceil(total / size) - 1) * size);
+    const page = rows.slice(view.offset, view.offset + size);
+    const inventory = page.map((row) => p.bank?.[row.id] ?? 0);
+    const paintKey = inventory.join(",");
+    if (
+      view.paint?.result === view.result &&
+      view.paint.offset === view.offset &&
+      view.paint.key === paintKey
+    )
+      return;
+    view.paint = { result: view.result, offset: view.offset, key: paintKey };
+    const money = (value) =>
+      value < 0.01 ? Number(value.toPrecision(3)).toString() : fmt(value, 2);
+    const html = page
+      .map((row, index) => {
+        const { id, name, tier, unlocked, locked, required, price, cost, estimated, perItem } = row;
+        const status = [
+          t(TIERS[tier]),
+          !unlocked ? t("需炼金 {level} 级", { level: required }) : "",
+          locked ? t("已锁定") : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        const quote = (value) =>
+          value === null ? "—" : escape((estimated ? "≈ " : "") + money(value));
+        return `<tr data-rank-id="${id}"><th scope="row"><div class="dvi-alchemy-rank-item">${alchemyRankingIcon(id)}
+      <span><b class="row-name ${bossFeedRarities[tier] || ""}">${escape(name)}</b><small>${escape(status)}</small></span></div></th>
+      <td class="dvi-alchemy-rank-cost"${cost === null ? ' title="' + escape(t("待报价")) + '"' : ""}>${quote(cost)}</td>
+      <td>${quote(price)}</td><td>${escape(fmt(perItem, 3))}</td><td>${escape(fmt(inventory[index]))}</td></tr>`;
+      })
+      .join("");
+    updateNativeResult(
+      view.body,
+      html ||
+        '<tr><td colspan="5" class="dvi-alchemy-rank-empty">' +
+          escape(t("没有符合条件的物品")) +
+          "</td></tr>",
+    );
+    tools.prev.disabled = view.offset === 0;
+    tools.next.disabled = view.offset + size >= total;
+    setNativeText(
+      view.status,
+      t("第 {page}/{pages} 页 · {count} 项", {
+        page: view.offset / size + 1,
+        pages: Math.max(1, Math.ceil(total / size)),
+        count: total,
+      }),
+    );
+  }
+  function alchemyRankingIcon(id) {
+    const icon = homeMarketItemIcon(id);
+    if (icon) return icon;
+    const art = ALCHEMY_RANKING_ART,
+      index = art.ids.indexOf(model.base(id));
+    if (index < 0) return '<i class="dvi-market-item-icon" aria-hidden="true"></i>';
+    const x = (index % art.columns) * art.tile,
+      y = Math.floor(index / art.columns) * art.tile;
+    return `<i class="dvi-market-item-icon dvi-alchemy-extra-art" data-dvi-item-art="${model.base(id)}" style="background-position:-${x}px -${y}px" aria-hidden="true"></i>`;
+  }
   function activityExtension(box, host, className) {
     if (!host) {
       box?.remove();
@@ -11803,6 +12173,10 @@ SOFTWARE.
       selection?.parentElement,
       "dvi-alchemy-selection",
     );
+    if (!alchemySelectionBox && alchemyRankingsView) {
+      if (alchemyRankingsView.dialog?.open) alchemyRankingsView.dialog.close();
+      alchemyRankingsView = null;
+    }
     if (alchemySelectionBox) {
       if (alchemySelectionBox.nextElementSibling !== selection)
         selection.before(alchemySelectionBox);
@@ -11818,6 +12192,11 @@ SOFTWARE.
       });
       paintAlchemy(alchemySelectionBox, p, product, picks, false);
       renderAlchemyRecommendation(alchemySelectionBox, p, product);
+      if (!alchemyRankingsView) alchemyRankingsView = mountAlchemyRankings(alchemySelectionBox);
+      const view = alchemyRankingsView;
+      view.product = Object.hasOwn(alchemyRankingProducts, product) ? product : "house";
+      setNativeText(view.launch, t("性价比排行"));
+      if (view.dialog?.open) renderAlchemyRankings(view, p);
     }
     const route = p?.route?.alchemy;
     alchemyWorkBox = activityExtension(
@@ -13509,10 +13888,10 @@ html.dvi-insights .dvi-feed-best [data-dvi-item-art] {
 html.dvi-insights [data-al-window] .dvi-alchemy-selection {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: start;
-  gap: 0 10px;
-  padding: 0 10px 4px;
+  gap: 0 6px;
+  padding: 0 8px 4px;
 }
 html.dvi-insights [data-al-window] [data-dvi-alchemy-details] {
   min-width: 0;
@@ -13576,6 +13955,236 @@ html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] .dvi-feed-q
 }
 html.dvi-insights [data-al-window] [data-dvi-alchemy-recommendation] .dvi-feed-best-label {
   font-size: var(--fs-2xs, 10px);
+}
+html.dvi-insights .dvi-alchemy-rank-launch {
+  margin: 0;
+  min-height: 32px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  color: var(--brass);
+}
+html.dvi-insights dialog.dvi-alchemy-rankings:not([open]) {
+  display: none;
+}
+html.dvi-insights dialog.dvi-alchemy-rankings[open] {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  padding: 0;
+  box-sizing: border-box;
+  width: min(660px, calc(100% - 16px));
+  height: min(630px, calc(100vh - 16px));
+  height: min(630px, calc(100dvh - 16px));
+  max-width: none;
+  max-height: none;
+  border: 1px solid var(--edge);
+  overflow: hidden;
+  color: var(--ink);
+  font: 400 var(--fs-sm, 12px) / 1.3 var(--sans, system-ui, sans-serif);
+}
+.dvi-alchemy-rankings::backdrop {
+  background: #0007;
+}
+.dvi-alchemy-rankings > h2 {
+  flex: none;
+}
+.dvi-alchemy-rank-tools {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.8fr) repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel-raised);
+}
+.dvi-alchemy-rank-tools :is(input, select) {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  min-height: 34px;
+  padding: 3px 5px;
+  border: 1px solid var(--edge);
+  border-radius: 0;
+  background: var(--panel-sunken);
+  color: var(--ink);
+  font: inherit;
+}
+.dvi-alchemy-rank-tools select:focus {
+  outline: none;
+  box-shadow: none;
+}
+.dvi-alchemy-rank-tools select:focus-visible {
+  background-color: var(--panel-raised);
+}
+.dvi-alchemy-rankings footer button {
+  min-width: 36px;
+  min-height: 34px;
+  margin: 0;
+}
+.dvi-alchemy-rank-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.dvi-insights .dvi-alchemy-rankings table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: inherit;
+}
+.dvi-alchemy-rankings :is(th, td) {
+  box-sizing: border-box;
+  padding: 4px 5px;
+  border-bottom: 1px solid var(--edge);
+  text-align: right;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.dvi-alchemy-rankings :is(th, td):first-child {
+  width: 39%;
+  text-align: left;
+  padding-inline-start: 8px;
+}
+.dvi-insights .dvi-alchemy-rankings thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-raised);
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+html.dvi-insights .dvi-alchemy-rankings thead [data-rank-sort] {
+  display: block;
+  min-height: 32px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: 0;
+  outline: none;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500 !important;
+  line-height: 1.15;
+  text-align: inherit;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+html.dvi-insights .dvi-alchemy-rankings thead [aria-sort] [data-rank-sort] {
+  color: var(--brass);
+  font-weight: 700 !important;
+}
+.dvi-alchemy-rankings [data-rank-sort]:focus-visible > span {
+  text-decoration: underline;
+}
+.dvi-alchemy-rankings [aria-sort] [data-rank-sort] i {
+  margin-inline-start: 2px;
+  font-style: normal;
+}
+.dvi-alchemy-rankings [aria-sort="ascending"] [data-rank-sort] i::before {
+  content: "↑";
+}
+.dvi-alchemy-rankings [aria-sort="descending"] [data-rank-sort] i::before {
+  content: "↓";
+}
+.dvi-alchemy-rankings tbody th {
+  font-weight: 400;
+}
+.dvi-alchemy-rankings tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--panel-sunken) 30%, var(--panel));
+}
+.dvi-alchemy-rankings .dvi-alchemy-rank-cost {
+  color: var(--brass);
+  font-weight: 700;
+}
+.dvi-alchemy-rankings .dvi-alchemy-rank-cost[title] {
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+.dvi-alchemy-rank-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.dvi-alchemy-rank-item b {
+  font-weight: 600;
+}
+.dvi-alchemy-rank-item small {
+  display: block;
+  color: var(--ink-muted);
+  font-size: var(--fs-2xs, 10px);
+}
+.dvi-alchemy-rankings .dvi-market-item-icon {
+  display: block;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  background: var(--dvi-home-item-atlas) no-repeat;
+  background-size: 384px 360px;
+  image-rendering: pixelated;
+}
+.dvi-alchemy-rankings .dvi-alchemy-extra-art {
+  background-image: var(--dvi-alchemy-item-atlas);
+  background-size: auto;
+}
+.dvi-alchemy-rankings .dvi-alchemy-rank-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--ink-muted);
+}
+.dvi-alchemy-rankings footer {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px 8px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--edge);
+  background: var(--panel-raised);
+}
+.dvi-alchemy-rankings footer small {
+  color: var(--ink-muted);
+}
+.dvi-alchemy-rankings footer nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+.dvi-alchemy-rankings :is(button:not([data-rank-sort]), input, [tabindex]):focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: -2px;
+}
+@media (max-width: 600px) {
+  .dvi-alchemy-rank-tools {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dvi-alchemy-rank-tools input {
+    grid-column: 1/-1;
+    grid-row: 1;
+    font-size: 16px;
+  }
+  .dvi-alchemy-rankings :is(th, td) {
+    padding-inline: 2px;
+  }
+  .dvi-alchemy-rankings :is(th, td):first-child {
+    width: 37%;
+    padding-inline-start: 4px;
+  }
+  .dvi-alchemy-rankings thead th:nth-child(2) {
+    width: 19%;
+  }
 }
 /* Align the native gear score with accuracy, armour and evasion. */
 html.dvi-insights[data-dvi-feature-equipment="on"] .worn-stats:has(> .worn-gs-box[data-gs]) {
@@ -21541,6 +22150,31 @@ html.v4 [data-home-veil] .home-actions button:hover {
       "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",
+    ].join("");
+  const ALCHEMY_RANKING_ART = {
+    ids: [
+      100, 163, 164, 165, 180, 191, 192, 572, 573, 575, 576, 698, 699, 711, 712, 718, 719, 770, 771,
+      772, 773, 774, 850, 851, 853, 854, 855, 856, 857, 858, 859, 860, 861, 862, 863, 864, 865, 866,
+      867, 868, 869, 870, 871, 872, 873, 874, 875, 876, 877, 878, 879, 880, 881, 882, 883, 884, 885,
+      886, 887, 888, 889, 890, 891, 892, 893, 894, 895, 896, 898, 899, 906, 907, 908, 915, 916, 917,
+      962, 963, 964, 965, 966, 967, 968, 969, 970, 974, 975, 976,
+    ],
+    columns: 12,
+    tile: 24,
+    width: 288,
+    height: 192,
+  };
+  ALCHEMY_RANKING_ART.source =
+    "data:image/webp;base64," +
+    [
+      "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",
     ].join("");
 
   // ---- src/edge-dock.js ----
